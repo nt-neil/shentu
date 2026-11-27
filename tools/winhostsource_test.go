@@ -335,3 +335,14 @@ func TestWinAdminKeysUnreadSaid(t *testing.T) {
 		t.Errorf("a BOM before a comment: keys %+v, %v", a.AdminKeys, err)
 	}
 }
+
+// A Windows host read (wherever the check runs) is surveyed as Windows
+// (onWindows goes by the host source), and its profile says Apache there
+// is not checked rather than skipping it quietly.
+func TestSurveyWindowsApacheUnchecked(t *testing.T) {
+	withHost(t, newWinRead())
+	p := Survey(context.Background(), &Env{})
+	if !slices.ContainsFunc(p.Risks, func(r Risk) bool { return r.Key == "unchecked:apache:windows" && strings.Contains(r.Summary, "CVE-2026-119618") }) {
+		t.Errorf("risks %+v: no Apache-on-Windows not-checked line", p.Risks)
+	}
+}

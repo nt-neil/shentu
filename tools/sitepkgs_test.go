@@ -267,7 +267,7 @@ func TestSitePackagesPth(t *testing.T) {
 			return false
 		}
 		for _, d := range []string{appDir, app2Dir, filepath.Join(root, "app3")} {
-			if p == d || strings.HasPrefix(p, d+string(filepath.Separator)) || strings.HasPrefix(d, p+string(filepath.Separator)) || p == string(filepath.Separator) {
+			if p == d || strings.HasPrefix(p, d+string(filepath.Separator)) || strings.HasPrefix(d, p+string(filepath.Separator)) || p == filepath.VolumeName(p)+string(filepath.Separator) {
 				return true
 			}
 		}

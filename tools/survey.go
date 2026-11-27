@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net"
 	"regexp"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -91,11 +90,18 @@ var roles = map[string]string{
 var riskyIfPublic = map[string]bool{"mysqld": true, "mariadbd": true, "postgres": true, "mongod": true,
 	"redis-server": true, "memcached": true, "rpcbind": true, "smbd": true}
 
+// apacheWindowsUnchecked says what Windows does not check yet: an Apache
+// there (C:\Apache24, XAMPP) is not evaluated for CVE-2026-119618, so it is
+// said every time rather than skipped quietly.
+var apacheWindowsUnchecked = Risk{uncheckedPrefix + "apache:windows", "info",
+	"Apache on Windows (C:\\Apache24, XAMPP and the like) is not checked yet: if it runs here, CVE-2026-119618 (HTTP/2) is not evaluated; check its version and whether it serves HTTP/2 by hand"}
+
 // Survey builds the profile. It only reads; nothing is changed.
 func Survey(ctx context.Context, env *Env) SiteProfile {
-	if runtime.GOOS == "windows" {
+	if onWindows() {
 		p := surveyFromFacts(windowsFacts(ctx), env)
 		p.Risks = append(p.Risks, phpRisks(ctx)...)
+		p.Risks = append(p.Risks, apacheWindowsUnchecked)
 		return p
 	}
 	p := SiteProfile{Time: time.Now().UTC(), Firewall: firewall(ctx)}
@@ -332,7 +338,7 @@ func Drift(old, now SiteProfile) []Risk {
 	}
 	for _, f := range diff(now.CronFiles, old.CronFiles) {
 		what := "new cron file"
-		if runtime.GOOS == "windows" {
+		if onWindows() {
 			what = "new autostart entry (run key, service, scheduled task, startup folder or WMI subscription)"
 		}
 		out = append(out, Risk{"drift:cron:" + f, "warning", what + " since the last survey: " + f})

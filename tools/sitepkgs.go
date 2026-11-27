@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -524,8 +525,17 @@ func systemModule(dir, rel string) bool {
 // recordHas: a dist-info matching glob in dir lists rel in its RECORD, and
 // the file there now has the sha256 RECORD gives; rec is that RECORD.
 func recordHas(src hostenv.Source, dir, glob, rel string) (rec string, ok bool) {
-	for _, m := range hostenv.Glob(src, filepath.Join(dir, glob)) {
-		b, ok := readHead(src, filepath.Join(m, "RECORD"), 4<<20)
+	// glob is one name (a dist-info folder): matched against dir's entries,
+	// so the host's path form does not matter (hostenv.Glob is POSIX-only:
+	// on a Windows host no RECORD was found, and a setuptools .pth was
+	// listed as one to look at).
+	names, _ := src.ReadDir(dir)
+	for _, n := range names {
+		if m, _ := path.Match(glob, n); !m {
+			continue
+		}
+		recp := hostJoin(src, dir, n, "RECORD")
+		b, ok := readHead(src, recp, 4<<20)
 		if !ok {
 			continue
 		}
@@ -535,14 +545,25 @@ func recordHas(src hostenv.Source, dir, glob, rel string) (rec string, ok bool) 
 				continue
 			}
 			want, _, _ = strings.Cut(want, ",")
-			b, ok := readHead(src, filepath.Join(dir, filepath.FromSlash(rel)), 4<<20)
+			b, ok := readHead(src, hostJoin(src, dir, rel), 4<<20)
 			sum := sha256.Sum256(b)
 			if ok && want != "" && base64.RawURLEncoding.EncodeToString(sum[:]) == want {
-				return filepath.Join(m, "RECORD"), true
+				return recp, true
 			}
 		}
 	}
 	return "", false
+}
+
+// hostJoin joins dir and the slash-separated names after it as the host
+// source writes paths: with \ on Windows, / elsewhere, whichever OS runs
+// the check.
+func hostJoin(src hostenv.Source, dir string, names ...string) string {
+	rel := path.Join(names...)
+	if src.Info().GOOS != "windows" {
+		return path.Join(dir, rel)
+	}
+	return strings.TrimRight(dir, `\`) + `\` + strings.ReplaceAll(rel, "/", `\`)
 }
 
 // editableLine is setuptools' editable-install finder line; the module it
