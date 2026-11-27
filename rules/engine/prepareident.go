@@ -27,13 +27,17 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 	// -- then a part not written out may start a comment or not: each such
 	// place is read both ways, every combination of them, and what any finds
 	// is kept. Past maxDashUnknown of them, every %s counts.
-	k := strings.Count(f, "--\x00")
+	// k counts the places met where a comment may start, not those inside an
+	// SQL string or another comment: the reading with none of them a comment
+	// meets each, the others meet no more.
+	out, k := identScan(f, len(splitArgs), 0, false)
 	if k > maxDashUnknown {
-		return identScan(f, len(splitArgs), 0, true)
+		all, _ := identScan(f, len(splitArgs), 0, true)
+		return all
 	}
-	var out []int
-	for mask := uint(0); mask < 1<<k; mask++ {
-		for _, n := range identScan(f, len(splitArgs), mask, false) {
+	for mask := uint(1); mask < 1<<k; mask++ {
+		more, _ := identScan(f, len(splitArgs), mask, false)
+		for _, n := range more {
 			if !slices.Contains(out, n) {
 				out = append(out, n)
 			}
@@ -48,8 +52,9 @@ const maxDashUnknown = 6
 
 // identScan is identArgs over the format text f, for a call of nargs
 // arguments. The n-th -- before a part not written out (0) starts a comment
-// when bit n of mask is set; all takes every %s for an identifier.
-func identScan(f string, nargs int, mask uint, all bool) []int {
+// when bit n of mask is set; all takes every %s for an identifier. It also
+// returns how many such places it met.
+func identScan(f string, nargs int, mask uint, all bool) ([]int, int) {
 	var out []int
 	seq, dash := 0, 0
 	var quote byte
@@ -127,7 +132,7 @@ func identScan(f string, nargs int, mask uint, all bool) []int {
 			i = placeholder(i, quote == '`')
 		}
 	}
-	return out
+	return out, dash
 }
 
 // formatText joins the strings written in a format argument, each part that is
