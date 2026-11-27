@@ -672,27 +672,31 @@ func sudoersFiles(entries []*entry) map[string]bool {
 		files[p] = true
 		for _, ln := range sudoersLines(string(e.data)) {
 			f := strings.Fields(ln)
-			if len(f) < 2 || !strings.HasPrefix(f[0], "#include") && !strings.HasPrefix(f[0], "@include") {
+			kind := ""
+			if len(f) >= 2 {
+				kind = sudoIncludeDirective(f[0])
+			}
+			if kind == "" {
 				continue
 			}
 			q := strings.Trim(strings.Join(f[1:], " "), `"`)
 			if !path.IsAbs(q) {
 				q = path.Join(path.Dir(p), q)
 			}
-			if !strings.HasSuffix(f[0], "includedir") {
+			if kind == "include" {
 				add(q, depth+1)
 				continue
 			}
 			for o := range byPath {
-				if path.Dir(o) == q {
+				if path.Dir(o) == q && !sudoIncludedirSkips(path.Base(o)) {
 					add(o, depth+1)
 				}
 			}
 		}
 	}
 	add("/etc/sudoers", 0)
-	for p := range byPath {
-		if path.Dir(p) == "/etc/sudoers.d" {
+	for p := range byPath { // sudo's default includedir, as read even with no /etc/sudoers recorded
+		if path.Dir(p) == "/etc/sudoers.d" && !sudoIncludedirSkips(path.Base(p)) {
 			add(p, 1)
 		}
 	}

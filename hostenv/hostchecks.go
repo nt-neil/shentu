@@ -37,6 +37,25 @@ func (r SudoRule) OneUser() bool {
 
 func (r SudoRule) String() string { return r.File + ": " + r.Line }
 
+// sudoIncludeDirective is "include" or "includedir" for sudoers' four
+// directives (#include, @include, #includedir, @includedir), "" for any
+// other word (#includes is a comment).
+func sudoIncludeDirective(w string) string {
+	switch w {
+	case "#include", "@include":
+		return "include"
+	case "#includedir", "@includedir":
+		return "includedir"
+	}
+	return ""
+}
+
+// sudoIncludedirSkips: sudo skips a name in an includedir that ends in ~
+// or holds a dot.
+func sudoIncludedirSkips(name string) bool {
+	return strings.HasSuffix(name, "~") || strings.Contains(name, ".")
+}
+
 // cloudInitSudoers is the file cloud-init writes for the image's default
 // user; only this path (a file of the same name included from elsewhere is
 // not it).
@@ -103,7 +122,7 @@ func SudoNopasswd(src Source) SudoNoPass {
 				continue
 			}
 			switch {
-			case strings.HasPrefix(f[0], "#include") || strings.HasPrefix(f[0], "@include"):
+			case sudoIncludeDirective(f[0]) != "":
 				if len(f) < 2 || strings.Contains(ln, "%") {
 					s.Unread = append(s.Unread, p+": "+ln+" (an include named by host or user)")
 					continue
@@ -112,14 +131,13 @@ func SudoNopasswd(src Source) SudoNoPass {
 				if !path.IsAbs(q) {
 					q = path.Join(path.Dir(p), q)
 				}
-				if strings.HasSuffix(f[0], "includedir") {
+				if sudoIncludeDirective(f[0]) == "includedir" {
 					names, err := src.ReadDir(q)
 					if err != nil && !gone(err) {
 						s.Unread = append(s.Unread, q+" ("+whyUnread(err)+")")
 					}
 					for _, n := range names {
-						// sudo skips names ending in ~ or holding a dot
-						if !strings.HasSuffix(n, "~") && !strings.Contains(n, ".") {
+						if !sudoIncludedirSkips(n) {
 							read(path.Join(q, n), depth+1)
 						}
 					}

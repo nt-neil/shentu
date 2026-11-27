@@ -373,3 +373,13 @@ func TestCloudDefaultUserOtherForms(t *testing.T) {
 		}
 	}
 }
+
+// S-274-9: #includes is a comment, not an include.
+func TestSudoNopasswdIncludesComment(t *testing.T) {
+	h := newFake(true)
+	h.files["/etc/sudoers"] = "#includes /etc/other\n"
+	h.files["/etc/other"] = "bob ALL=(ALL) NOPASSWD: ALL\n"
+	if s := SudoNopasswd(h); len(s.Rules) != 0 {
+		t.Errorf("#includes followed: %+v", s.Rules)
+	}
+}

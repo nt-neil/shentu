@@ -105,8 +105,7 @@ Chinese for the zh-TW pages; keep the two in step.
   files (`/etc/sudoers`, `/etc/sudoers.d/*` and what they include), in their rule lines, where the
   word after the tag is a command (`ALL=NOPASSWD: /path`, `(root) NOPASSWD: DEPLOY`, `sudoedit`, an
   option), so a replay reads these rules as written; everywhere else the secret masking is as
-  before, and also masks a value after a tag when it is not a command (`(x) PASSWD: !<password>`,
-  `FOO: PASSWD: ALL-<password>`). `reboot:pending` (a warning): an update waits
+  before, and now also masks the value in `(x) PASSWD: !<password>` and `FOO: PASSWD: ALL-<password>`. `reboot:pending` (a warning): an update waits
   for a reboot, its old kernel or libraries still running. On Debian and Ubuntu it is
   `/run/reboot-required` (with the packages it names); elsewhere a kernel in `/boot` newer than the
   running one of the same flavor (`+debug`, UEK and the distribution's own kernel compared apart).
