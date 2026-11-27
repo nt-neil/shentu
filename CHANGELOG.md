@@ -88,17 +88,24 @@ Chinese for the zh-TW pages; keep the two in step.
   mixed them; `package` set still gives each one's `fixed_version`, without the counts.
 - site_profile on Linux and macOS says two more risks. `sudo:nopasswd` (a warning): sudoers lets
   someone run every command with no password: `ALL` anywhere among the commands a NOPASSWD tag
-  covers (it holds up to a PASSWD tag), a command alias that is ALL or cannot be told, or
+  covers (it holds up to a PASSWD tag), a command alias that is ALL or cannot be told, a command
+  whose path is a folder or holds a wildcard (`/usr/bin/`, `/usr/bin/*`: sh among them; a
+  wildcard in the arguments only is not), a command masked as a secret would be, or
   `Defaults !authenticate` for everyone, a user or a run-as account; in any sudoers file, for a
   group or ALL. The one exception is the cloud image's default user: such a rule in
   `/etc/sudoers.d/90-cloud-init-users` (that path only) for cloud-init's `default_user` (read from
-  `/etc/cloud/cloud.cfg` and `cloud.cfg.d/*.cfg`, not user-data) alone is `sudo:nopasswd:cloud-init`
+  `/etc/cloud/cloud.cfg` and `cloud.cfg.d/*.cfg`, not user-data; one set in a way not read, such as
+  `{name: x}`, is none) alone is `sudo:nopasswd:cloud-init`
   (info, in the report only), whose text says it is safe only while that user logs in with a key
   alone. NOPASSWD for some commands only, or `Defaults!cmd !authenticate` for some, is
   `sudo:nopasswd:some` (info). Each rule is listed with what it runs and the account it runs as.
   The rules are read through every `#include`/`@include` and `includedir` as sudo reads them (names
   with a dot or ending in `~` skipped). A file not read, or sudoers from sss or ldap, is said as
-  `unchecked:sudoers`, never taken for no such rule. `reboot:pending` (a warning): an update waits
+  `unchecked:sudoers`, never taken for no such rule. The secret masking every host read goes through
+  now keeps sudoers' `NOPASSWD:` tag in a rule with no run-as list (`ALL=NOPASSWD: /path`), before a
+  command alias after a run-as list or tag, before an option and before `sudoedit`, so these rules
+  are read and shown as written; an upper-case name right after `x=PASSWD:`, or after a `)` or word
+  that is not a sudoers rule's, is still masked as a secret. `reboot:pending` (a warning): an update waits
   for a reboot, its old kernel or libraries still running. On Debian and Ubuntu it is
   `/run/reboot-required` (with the packages it names); elsewhere a kernel in `/boot` newer than the
   running one of the same flavor (`+debug`, UEK and the distribution's own kernel compared apart).

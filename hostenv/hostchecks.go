@@ -385,6 +385,11 @@ func expandCmds(cmds []string, aliases map[string][]string, depth int) ([]string
 				return nil, true
 			}
 			out = append(out, sub...)
+		case len(name) > 0 && (strings.HasSuffix(name[0], "/") || strings.ContainsAny(name[0], "*?[")):
+			// a folder (every program in it) or a wildcard in the path
+			// itself (/usr/bin/*, /usr/*/sh): every command, sh among
+			// them (S-274-7); one in the arguments only is not
+			return nil, true
 		default:
 			out = append(out, c)
 		}
@@ -439,7 +444,10 @@ func CloudDefaultUser(src Source) string {
 			}
 			return ""
 		}
-		if n := cfgDefaultUser(string(b)); n != "" {
+		switch n, seen := cfgDefaultUser(string(b)); {
+		case seen && n == "":
+			return "" // set in a way not read ({name: x}): not told (S-274-6)
+		case seen:
 			name = n
 		}
 	}
@@ -448,7 +456,9 @@ func CloudDefaultUser(src Source) string {
 
 // cfgDefaultUser finds default_user's name in one cloud-init YAML file:
 // default_user: (top level or under system_info:), then name: inside it.
-func cfgDefaultUser(s string) string {
+// seen: the file sets default_user; its name "" when it could not be read
+// (a flow mapping, no name: in the block).
+func cfgDefaultUser(s string) (name string, seen bool) {
 	indent := func(l string) int { return len(l) - len(strings.TrimLeft(l, " ")) }
 	in, at, parent := false, 0, ""
 	for _, l := range strings.Split(s, "\n") {
@@ -459,19 +469,22 @@ func cfgDefaultUser(s string) string {
 		d := indent(l)
 		if in {
 			if d <= at {
-				in = false
+				return "", true // its block ended with no name:
 			} else if v, ok := strings.CutPrefix(t, "name:"); ok {
-				return strings.Trim(strings.TrimSpace(v), `"'`)
+				return strings.Trim(strings.TrimSpace(v), `"'`), true
 			}
 		}
 		if d == 0 {
 			parent = strings.TrimSuffix(t, ":")
 		}
-		if t == "default_user:" && (d == 0 || parent == "system_info") {
+		if strings.HasPrefix(t, "default_user:") && (d == 0 || parent == "system_info") {
+			if t != "default_user:" {
+				return "", true // a value on the line: {name: x}, an anchor
+			}
 			in, at = true, d
 		}
 	}
-	return ""
+	return "", in
 }
 
 // RebootPending is whether the host waits for a reboot to run what an

@@ -133,10 +133,11 @@ func TestSudoNopasswdCommandList(t *testing.T) {
 		"Cmnd_Alias ANY = ALL\nbob ALL=(ALL) NOPASSWD: ANY": true,
 		"bob ALL=(ALL) NOPASSWD: UNDEFINED":                 true,
 		"bob ALL=(ALL) NOPASSWD: /bin/ls, PASSWD: ALL":      false,
-		// MaskSecrets (every Source) masks what follows a NOPASSWD: tag when
-		// it is an alias or an option: not told, so every command.
-		"Cmnd_Alias SVC = /bin/systemctl restart a, /bin/systemctl restart b\nbob ALL=(ALL) NOPASSWD: SVC": true,
-		"bob ALL=(ALL) NOPASSWD: CWD=/tmp /bin/ls":                                                         true,
+		// An alias or option right after the tag is kept by MaskSecrets
+		// (N-274-5) and read; a command it masks is every command.
+		"Cmnd_Alias SVC = /bin/systemctl restart a, /bin/systemctl restart b\nbob ALL=(ALL) NOPASSWD: SVC": false,
+		"bob ALL=(ALL) NOPASSWD: CWD=/tmp /bin/ls":                                                         false,
+		"bob ALL=(ALL) NOPASSWD: rel/cmd":                                                                  true, // masked: not told
 		// After another tag the alias is not masked, and is expanded.
 		"Cmnd_Alias SVC = /bin/systemctl restart a, /bin/systemctl restart b\nbob ALL=(ALL) NOPASSWD: SETENV: SVC": false,
 		"Cmnd_Alias ANY = /bin/ls, ALL\nbob ALL=(ALL) NOPASSWD: SETENV: ANY":                                       true,
@@ -213,13 +214,13 @@ func TestSudoCloudDefault(t *testing.T) {
 	if CloudDefaultUser(h) != "" {
 		t.Errorf("a cfg not read: %q", CloudDefaultUser(h))
 	}
-	if got := cfgDefaultUser("default_user:\n  name: ec2-user\n"); got != "ec2-user" {
+	if got, _ := cfgDefaultUser("default_user:\n  name: ec2-user\n"); got != "ec2-user" {
 		t.Errorf("top-level default_user: %q", got)
 	}
-	if got := cfgDefaultUser("other:\n  default_user:\n    name: eve\n"); got != "" {
+	if got, _ := cfgDefaultUser("other:\n  default_user:\n    name: eve\n"); got != "" {
 		t.Errorf("default_user under another key: %q", got)
 	}
-	if got := cfgDefaultUser("users:\n  - name: bob\n"); got != "" {
+	if got, _ := cfgDefaultUser("users:\n  - name: bob\n"); got != "" {
 		t.Errorf("a user that is not default_user: %q", got)
 	}
 }
@@ -302,5 +303,53 @@ func TestSudoRuleHostSpecs(t *testing.T) {
 	h.files["/etc/sudoers"] = "bob h1 = /bin/ls : h2 = NOPASSWD: ALL\n"
 	if s := SudoNopasswd(h); len(s.Rules) != 1 || !s.Rules[0].All {
 		t.Errorf("another host's NOPASSWD: ALL, read: %+v", s.Rules)
+	}
+}
+
+// N-274-5 through the masking fake host (every Source masks): the common
+// deploy rules are some, shown as written, with nothing masked; S-274-7:
+// a folder or a wildcard in a command's path is every command.
+func TestSudoDeployRules(t *testing.T) {
+	for line, all := range map[string]bool{
+		"deploy ALL=NOPASSWD: /usr/bin/systemctl restart app":                                     false, // O2
+		"deploy ALL = NOPASSWD: /bin/ls, /bin/cat":                                                false, // O6
+		"Cmnd_Alias DEPLOY = /usr/bin/systemctl restart app\n%deploy ALL=(root) NOPASSWD: DEPLOY": false, // O3
+		"bob ALL=(root) NOPASSWD: sudoedit /etc/hosts":                                            false,
+		"bob ALL=NOPASSWD: sudoedit /etc/hosts":                                                   false,
+		"bob ALL=(root) NOPASSWD: /usr/bin/systemctl restart *":                                   false, // a wildcard in the arguments only
+		"bob ALL=(root) NOPASSWD: /usr/bin/":                                                      true,
+		"bob ALL=(root) NOPASSWD: /usr/bin/*":                                                     true,
+		"bob ALL=(root) NOPASSWD: /usr/*/sh":                                                      true,
+		"bob ALL=NOPASSWD: /usr/bin/ls, /usr/sbin/[a-z]*":                                         true,
+		"Cmnd_Alias BIN = /usr/bin/\nbob ALL=(root) NOPASSWD: BIN":                                true,
+	} {
+		h := newFake(true)
+		h.files["/etc/sudoers"] = line + "\n"
+		s := SudoNopasswd(h)
+		if len(s.Rules) != 1 || s.Rules[0].All != all || strings.Contains(s.Rules[0].Line, "[REDACTED") {
+			t.Errorf("%q: want all=%v, got %+v", line, all, s.Rules)
+		}
+	}
+}
+
+// S-274-6: default_user set in a way not read (a flow mapping) is no
+// default user, even past one read in cloud.cfg.
+func TestCloudDefaultUserFlow(t *testing.T) {
+	h := newFake(true)
+	h.files["/etc/cloud/cloud.cfg"] = "system_info:\n  default_user:\n    name: ubuntu\n"
+	h.files["/etc/cloud/cloud.cfg.d/90-mine.cfg"] = "system_info:\n  default_user: {name: admin}\n"
+	h.files["/etc/sudoers"] = "@includedir /etc/sudoers.d\n"
+	h.files["/etc/sudoers.d/90-cloud-init-users"] = "ubuntu ALL=(ALL) NOPASSWD:ALL\n"
+	if u := CloudDefaultUser(h); u != "" {
+		t.Errorf("default user %q, want none told", u)
+	}
+	if r := SudoNopasswd(h).Rules; len(r) != 1 || r[0].CloudDefault {
+		t.Errorf("ubuntu taken for the default user: %+v", r)
+	}
+	if n, seen := cfgDefaultUser("system_info:\n  default_user:\n    lock_passwd: true\n"); n != "" || !seen {
+		t.Errorf("a block with no name: %q %v", n, seen)
+	}
+	if n, seen := cfgDefaultUser("system_info:\n  default_user:\n    lock_passwd: true\n  distro: ubuntu\n"); n != "" || !seen {
+		t.Errorf("a block with no name, ended by the next key: %q %v", n, seen)
 	}
 }
