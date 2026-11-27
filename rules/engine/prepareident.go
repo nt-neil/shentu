@@ -28,22 +28,32 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 	// place is read both ways, every combination of them, and what any finds
 	// is kept. Past maxDashUnknown of them, every %s counts.
 	// k counts the places met where a comment may start, not those inside an
-	// SQL string or another comment: the reading with none of them a comment
-	// meets each, the others meet no more.
-	out, k := identScan(f, len(splitArgs), 0, false)
-	if k > maxDashUnknown {
-		all, _ := identScan(f, len(splitArgs), 0, true)
-		return all
-	}
-	for mask := uint(1); mask < 1<<k; mask++ {
-		more, _ := identScan(f, len(splitArgs), mask, false)
-		for _, n := range more {
-			if !slices.Contains(out, n) {
-				out = append(out, n)
+	// SQL string or another comment. One reading can meet more than another
+	// (a quote a comment hides no longer hides the -- after it), so k grows to
+	// the most any reading met and the readings are made again, until none
+	// meets more; past maxDashUnknown, every %s counts.
+	_, k := identScan(f, len(splitArgs), 0, false)
+	for {
+		if k > maxDashUnknown {
+			all, _ := identScan(f, len(splitArgs), 0, true)
+			return all
+		}
+		var out []int
+		most := k
+		for mask := uint(0); mask < 1<<k; mask++ {
+			more, met := identScan(f, len(splitArgs), mask, false)
+			most = max(most, met)
+			for _, n := range more {
+				if !slices.Contains(out, n) {
+					out = append(out, n)
+				}
 			}
 		}
+		if most == k {
+			return out
+		}
+		k = most
 	}
-	return out
 }
 
 // maxDashUnknown bounds the -- before a part not written out read both ways
