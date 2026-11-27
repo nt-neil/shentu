@@ -258,8 +258,8 @@ func TestSudoRuleHostSpecs(t *testing.T) {
 	for line, want := range map[string]struct{ ok, all bool }{
 		"bob h1 = /bin/ls : h2 = NOPASSWD: ALL":                  {true, true},
 		"bob h1 = NOPASSWD: /bin/ls : h2 = NOPASSWD: ALL":        {true, true},
-		"bob h1 = NOPASSWD: /bin/ls : h2 = ALL":                  {true, false},
-		"bob h1 = (root) NOPASSWD: /bin/ls : h2 = (ALL:ALL) ALL": {true, false},
+		"bob h1 = NOPASSWD: /bin/ls : h2 = ALL":                  {true, true}, // over-warns: ALL after a NOPASSWD anywhere (fail closed)
+		"bob h1 = (root) NOPASSWD: /bin/ls : h2 = (ALL:ALL) ALL": {true, true}, // over-warns: ALL after a NOPASSWD anywhere (fail closed)
 		"bob ALL = (ALL:ALL) NOPASSWD: CWD=/tmp /bin/ls":         {true, false},
 		"bob ALL=(ALL) NOPASSWD: /usr/bin/env A=1":               {true, false},
 		"bob ALL=(ALL) NOPASSWD:":                                {true, true},
@@ -281,6 +281,17 @@ func TestSudoRuleHostSpecs(t *testing.T) {
 	r, ok = sudoRule(sudoRaw{file: "/etc/sudoers", line: "bob ALL = NOPASSWD: " + d + " /bin/true"}, nil)
 	if !ok || r.All || !slices.Equal(r.Cmds, []string{d + " /bin/true"}) {
 		t.Errorf("a digest before /bin/true: %+v", r)
+	}
+	// A word named like a digest or a tag before a real separator: the
+	// split at every ':' (and ALL after NOPASSWD anywhere) keeps it in.
+	if r, ok := sudoRule(sudoRaw{file: "/etc/sudoers", line: "bob h1 = NOPASSWD: /bin/ls sha256 : h2 = NOPASSWD: ALL"}, nil); !ok || !r.All {
+		t.Errorf("sha256 before a separator, then ALL: %+v", r)
+	}
+	if r, ok := sudoRule(sudoRaw{file: "/etc/sudoers", line: "bob h1 = NOPASSWD: /bin/ls sha256 : h2 = NOPASSWD: ANY"}, map[string][]string{"ANY": {"ALL"}}); !ok || !r.All {
+		t.Errorf("sha256 before a separator, then an alias of ALL: %+v", r)
+	}
+	if !nopassAllToken(" ALL = NOPASSWD:ALL") || nopassAllToken(" ALL = (ALL:ALL) NOPASSWD: /bin/ls, PASSWD: ALL") || nopassAllToken(" ALL = (ALL) ALL") || nopassAllToken(" ALL = (root) NOPASSWD: /bin/ls, ( ALL ) /bin/cat") {
+		t.Error("nopassAllToken")
 	}
 	// An argument with a ':' and an '=' looks like another host part: the
 	// whole-line reading keeps the ALL after it.

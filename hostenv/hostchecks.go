@@ -193,23 +193,22 @@ func sudoRule(r sudoRaw, aliases map[string][]string) (SudoRule, bool) {
 	}
 	rule.Who = f[0]
 	spec := strings.TrimPrefix(ln, f[0])
-	// Read as split into host parts, and, when it splits, as one part too:
-	// the worse of the two stands, so a ':' taken for a separator wrongly
-	// cannot hide a command (fail closed).
-	readings := [][]string{hostSpecs(spec)}
-	if len(readings[0]) > 1 {
-		readings = append(readings, []string{spec})
-	}
-	var cmds []string
-	for _, specs := range readings {
+	// Read split into host parts as sudo would, split at every ':' that
+	// could be a separator, and whole; and ALL after a NOPASSWD tag
+	// anywhere is every command. The worst reading stands, so a ':' told
+	// wrongly either way cannot hide a command (fail closed).
+	readings := [][]string{hostSpecs(spec, true), hostSpecs(spec, false), {spec}}
+	var shown, every []string // the commands as sudo reads them; those of any reading
+	all := nopassAllToken(spec)
+	for n, specs := range readings {
 		c, runas, told := nopassCmds(specs)
-		if !told {
-			rule.All = true
-			return rule, true
+		all = all || !told
+		if n == 0 {
+			shown = c
 		}
 		for _, x := range c {
-			if !slices.Contains(cmds, x) {
-				cmds = append(cmds, x)
+			if !slices.Contains(every, x) {
+				every = append(every, x)
 			}
 		}
 		for _, a := range runas {
@@ -218,17 +217,55 @@ func sudoRule(r sudoRaw, aliases map[string][]string) (SudoRule, bool) {
 			}
 		}
 	}
-	if len(cmds) == 0 {
-		// NOPASSWD on the line, yet no command told under it: every
-		// command, never dropped (fail closed)
+	if len(every) == 0 && !all && !reNoPassTag.MatchString(r.line) {
+		return rule, false // no NOPASSWD tag after all
+	}
+	if _, a := expandCmds(every, aliases, 0); a || all || len(every) == 0 {
+		// ALL in a reading, not told, or NOPASSWD with no command told
+		// under it: every command, never dropped (fail closed)
 		rule.All = true
-		return rule, reNoPassTag.MatchString(r.line)
+		return rule, true
 	}
-	rule.Cmds, rule.All = expandCmds(cmds, aliases, 0)
-	if rule.All {
-		rule.Cmds = nil
-	}
+	rule.Cmds, _ = expandCmds(shown, aliases, 0)
 	return rule, true
+}
+
+// nopassAllToken: an ALL outside parentheses whose nearest tag before it
+// is NOPASSWD, wherever it sits on the line (a command, or a host list
+// after a ':': taken as every command either way).
+func nopassAllToken(spec string) bool {
+	b := []byte(spec)
+	depth := 0
+	for i, c := range b { // run-as lists ((ALL:ALL)) blanked
+		switch {
+		case c == '(':
+			depth++
+		case c == ')':
+			depth--
+			b[i] = ' '
+			continue
+		}
+		if depth > 0 {
+			b[i] = ' '
+		}
+	}
+	s := reColonSpace.ReplaceAllString(string(b), ":")
+	nopass := false
+	for _, field := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == '=' || r == ' ' || r == '\t' }) {
+		parts := strings.Split(field, ":")
+		for k, p := range parts {
+			tag := k < len(parts)-1 // a word a ':' follows
+			switch {
+			case tag && p == "NOPASSWD":
+				nopass = true
+			case tag && p == "PASSWD":
+				nopass = false
+			case p == "ALL" && nopass:
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // nopassCmds are the commands with no password of host parts ("host =
@@ -279,7 +316,8 @@ func nopassCmds(specs []string) (cmds, runasList []string, told bool) {
 
 var (
 	reNoPassTag  = regexp.MustCompile(`\bNOPASSWD\s*:`)
-	reHostSpecAt = regexp.MustCompile(`^\s*[^=():!]+?\s*=`)
+	reHostSpecAt = regexp.MustCompile(`^\s*[^=():]+?\s*=`)
+	reColonSpace = regexp.MustCompile(`\s*:\s*`)
 	reTagBefore  = regexp.MustCompile(`([A-Za-z0-9_]+)\s*$`)
 	sudoDigests  = map[string]bool{"sha224": true, "sha256": true, "sha384": true, "sha512": true}
 )
@@ -287,7 +325,9 @@ var (
 // hostSpecs splits a user specification past its user list into its
 // "host = commands" parts: at a ':' outside parentheses, not escaped,
 // not ending a tag (NOPASSWD:), and followed by a host list and '='.
-func hostSpecs(s string) []string {
+// skip keeps a tag's or a digest's colon whole; without it every ':'
+// followed by a host list and '=' splits.
+func hostSpecs(s string, skip bool) []string {
 	var out []string
 	depth, start := 0, 0
 	for i := 0; i < len(s); i++ {
@@ -304,7 +344,7 @@ func hostSpecs(s string) []string {
 			}
 			// a tag's colon (NOPASSWD: CWD=/x, NOPASSWD: env A=1) is not
 			// one, nor a digest's (sha256:<base64>= /bin/x)
-			if m := reTagBefore.FindStringSubmatch(s[start:i]); m != nil && (sudoTags[m[1]] || sudoDigests[strings.ToLower(m[1])]) {
+			if m := reTagBefore.FindStringSubmatch(s[start:i]); skip && m != nil && (sudoTags[m[1]] || sudoDigests[strings.ToLower(m[1])]) {
 				continue
 			}
 			if !reHostSpecAt.MatchString(s[i+1:]) {
