@@ -80,6 +80,7 @@ type crule struct {
 	args                   map[*pat]*argCond
 	argsMore               map[*pat][]*argCond // a sink's further [[args]] blocks: a finding when any one holds
 	leading                bool                // some sink needs a fixed prefix, so values track raw input
+	recvNames, recvPkgs    []string            // receivers: names (lower case) and Composer packages (Project.ownMethodOnly)
 	notArray               bool                // some sink's argument does not count as an array (not_array): summaries record it (sinkArr)
 	ctypes                 bool                // some args block has unless_content_type: record Content-Type statements (ctype.go)
 	srcScope               map[*pat][]string   // sources of a route model that count on $this only in a class extending one of these (routes.go)
@@ -259,6 +260,16 @@ func compileRule(r rules.Rule) (*crule, error) {
 	}
 	foldMembers(c.sinks)
 	foldMembers(c.sanitizers)
+	for _, n := range r.Receivers {
+		if r.Lang != "php" {
+			return nil, fmt.Errorf("receivers: PHP rules only")
+		}
+		if n = strings.ToLower(strings.Trim(n, `\`)); strings.Contains(n, "/") {
+			c.recvPkgs = append(c.recvPkgs, n)
+		} else if n != "" {
+			c.recvNames = append(c.recvNames, n)
+		}
+	}
 	for _, a := range r.Args {
 		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, fixedExt: a.FixedExt, notArray: a.NotArray, recvNames: a.ReceiverNames, identPh: a.IdentPlaceholder, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}

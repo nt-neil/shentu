@@ -2760,6 +2760,11 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		if a.ownMethod(t, i+1) {
 			return false // $term_query->query($args): a method of the code's own, followed by its summary
 		}
+		if i+1 < len(t) && a.proj.ownMethodOnly(a.r, t[i+1].Text) {
+			// $Db->find(...) in a project that never names MongoDB and declares a find(): its own (receivers).
+			// Only where calls are followed in the project (proj): a file scanned on its own knows no project.
+			return false
+		}
 		recv = t[a.chainStart(t, i):i]
 		if a.expr(st, recv, false).san {
 			return false // a method of an object a sanitizer made (SandboxedEnvironment().from_string)

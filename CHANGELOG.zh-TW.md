@@ -21,6 +21,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - PHP 規則：WordPress 的 `$wpdb` 存在屬性裡（`$this->wpdb = $wpdb`、`$this->db = &$wpdb`、`self::$mysqli =& $wpdb`），同一個檔案透過它查詢時（`$this->wpdb->get_results(...)`），現在就當成 `$wpdb`，所以把 request 輸入接進這種查詢會回報；以前只有 `$wpdb` 本身算 sink。這個 class（或它 use 的、同一個檔案裡的 trait）要看得到這個指派：只是屬性叫 `wpdb` 或 `db`、在別的檔案（例如上層類別的建構式）設定的，或是同一個檔案裡另一個 class 的同名屬性，都不算 `$wpdb`。
 - PHP 規則：request 輸入透過 `$wpdb->prepare()` 傳給寫在反引號裡的 `%s`（這時值是欄位或資料表名稱，有編號的 `%2$s` 也一樣）時，現在會回報（`php-sqli-prepare-identifier`）：`prepare()` 把值當字串加上引號，擋不住欄位或資料表名稱。以前 `prepare()` 一律當成每個值都已處理。放在引號裡、單獨出現、在 `ORDER BY` 後面或 `LIMIT` 裡的 `%s`，以及 `%d` 和 `%i`，都不會回報。
 - PHP 規則：放進 `array(...)` 再傳給別的函式的輸入，現在和 `[...]` 一樣保留下來（`edit_status(array($_REQUEST['id']))`）；以前 `array(...)` 被當成引擎不認得的呼叫，輸入不會跟進那個函式的 sink。
+- `php-nosqli-mongo-query`，以及 CodeIgniter、Doctrine、Drupal、Joomla、Yii 的 SQL 規則：從別的檔案接過去的 method sink（`$Db->find(...)`、`->where(...)`），如果整個專案都沒有提到那個函式庫（PHP 程式、字串、composer.json、composer.lock、vendor/ 路徑都沒有），而且專案自己的類別有宣告同名的方法，就不再回報：那是專案自己的方法（例如 WordPress plugin 自己寫的 SQL 類別）。以前任何物件上的同名方法都算。只要有一處提到那個函式庫、專案沒有宣告這個方法，或有檔案沒有讀完或沒有建完索引，仍然會回報；在同一個檔案裡找到的呼叫也照樣回報。
 - `php-deserialization-wp-maybe-unserialize`：每條路徑上都是 array 的參數不再回報（`maybe_unserialize(array('fields' => $_POST['f']))`、用 key 寫入的 array、`explode()` 的結果），由程式自己的函式把參數原樣傳過去時也一樣：`maybe_unserialize()` 只會 unserialize 字串，array 會原樣傳回。以前 array 裡的輸入照樣算數。取出 array 裡的一個值、由它組成的字串，以及有一條路徑給的是字串，仍然會回報。
 
 ### 已知問題

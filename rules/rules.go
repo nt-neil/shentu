@@ -29,6 +29,15 @@ type Rule struct {
 	Tier       string   `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report; "reference" (no sources only): listed last, counted in one line of the daily report, never given to attack detection
 	Title      string   `toml:"title"`
 	Frameworks []string `toml:"frameworks"`
+	// Receivers (PHP method sinks): the names of the library the sinks belong
+	// to, its classes, namespaces and functions (MongoDB, CI_Model, db_select),
+	// and its Composer packages (an entry with a "/": mongodb/mongodb). A
+	// method sink then does not count in a project that never names one of
+	// them (in its PHP, its composer.json or composer.lock, or a vendor/
+	// path), whose own classes declare a method of that name, and whose every
+	// file was read to its end: the call is the project's own method
+	// ($Db->find() of a plugin's SQL helper). See Project.ownMethodOnly.
+	Receivers []string `toml:"receivers"`
 	// RouteInput false: a route handler's parameters are not this rule's
 	// input, only its sources are (a rule for the Host header: the query a
 	// route model makes input is not the host).

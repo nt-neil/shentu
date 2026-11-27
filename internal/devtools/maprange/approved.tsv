@@ -61,3 +61,7 @@ analysis.setRealOf	st	1	e1ab6416fc0a			SAFE	Charge len(st) once before the loop,
 analysis.realOrigins	st	1	233a98f875b1			SORTED	Charge len(st) once before the loops; the origins found are sorted by key before they are appended.
 analysis.extractAny	st	1	c875cc4e15c1		value join	SAFE	Each variable key of st (but the kept defaults variable) is rewritten from its own entry joined with the extracted value; the value, the flag and the kept name are fixed before the loop, no key is added or deleted, no budget. The call not followed is the local closure join, which only reads its argument.
 closureScope	x	1	44f530e57de7			SAFE	Deletes every extractKey marker of x; which keys are deleted does not depend on the order, and the use (...) variables were set from the markers before the loop. No budget, no call.
+Project.readComposer	m	1	65b490c63e38			SAFE	Adds each required package to the set p.pkgs; the set is the same in any order.
+recvNamed	want	1	dd20368e577a			SAFE	Adds each name a string holds to the set got, sorted before it is returned.
+Project.ownMethodOnly	p.pkgs	1	8f7f0d76eb92			SAFE	Returns false when any package holds any receivers name: the answer is the same in any order.
+Project.ownMethodOnly	p.files	1	a06671a0bdd3			SAFE	Adds each class's methods to the set p.methods; the set is the same in any order.

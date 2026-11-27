@@ -8,6 +8,8 @@ title = "Request input placed in a MongoDB query without forcing it to a string"
 frameworks = ["laravel"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$request->input(", "$request->all(", "$request->get(", "->get_param(", "json_decode(file_get_contents('php://input'", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["->findOne(", "->find(", "->findOneAndUpdate(", "->findOneAndDelete(", "->updateOne(", "->updateMany(", "->deleteOne(", "->deleteMany(", "->countDocuments(", "->count(", "$where"]
+# a method sink of a project that never names the library and declares a method of that name is its own (Project.ownMethodOnly)
+receivers = ["MongoDB", "MongoClient", "MongoCollection", "Mongo", "Jenssegers", "mongodb/mongodb", "jenssegers/mongodb", "mongodb/laravel-mongodb", "alcaeus/mongo-php-adapter"]
 sanitizers = ["(string)", "strval", "intval", "absint", "(int)", "is_string"]
 text = ["$where"]
 fix = "Cast each request value to the type the field holds ((string), (int)) before it goes into a query, so a value such as user[$ne]= cannot become an operator; never build a $where expression from input."

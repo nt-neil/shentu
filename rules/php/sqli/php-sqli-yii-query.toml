@@ -8,6 +8,8 @@ title = "Yii request input written into SQL text, a string condition or a sort e
 sources = ["->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(", "->getRequest()->get(", "->getRequest()->post(", "->getRequest()->getParam(", "$request->get(", "$request->post(", "$request->getQueryParam(", "$request->getBodyParam(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 # ->orderBy( is php-sqli-orderby-identifier's (Yii's key form included), which reads Yii's request too.
 sinks = ["->createCommand(", "->addOrderBy(", "->where(", "->andWhere(", "->orWhere(", "->having(", "->addCondition(", "->groupBy("]
+# a method sink of a project that never names the library and declares a method of that name is its own (Project.ownMethodOnly)
+receivers = ["Yii", "YiiBase", "yiisoft/yii2", "yiisoft/yii"]
 sanitizers = ["intval", "(int)", "in_array", "array_key_exists", "->quoteValue(", "->quoteColumnName("]
 fix = "Use the hash or operator format (where(['status' => $status]), ['like', 'name', $q]) or bound parameters (createCommand('... WHERE id = :id', [':id' => $id])); map sort fields and directions to a fixed allowlist."
 refs = ["CVE-2026-29174", "CVE-2026-29172", "CVE-2026-50636"]

@@ -123,6 +123,13 @@ Chinese for the zh-TW pages; keep the two in step.
 - PHP rules: input put in `array(...)` and passed to another function keeps its input, as `[...]`
   did (`edit_status(array($_REQUEST['id']))`); before, `array(...)` read as a call the engine does
   not know, so the input did not cross into that function's sinks.
+- `php-nosqli-mongo-query` and the CodeIgniter, Doctrine, Drupal, Joomla and Yii SQL rules: a
+  method sink (`$Db->find(...)`, `->where(...)`) reached from another file is not reported in a
+  project that never names the library (in its PHP code, a string, composer.json, composer.lock or
+  a vendor/ path) and whose own classes declare a method of that name: the call is the project's
+  own (a WordPress plugin's SQL helper). Before, a method of that name counted on any object. Any
+  mention of the library, a project that declares no such method, or a file that was not read or
+  indexed to its end keeps it reported, as does a call found in the file it is written in.
 - `php-deserialization-wp-maybe-unserialize`: an argument that is an array on every path is not
   reported (`maybe_unserialize(array('fields' => $_POST['f']))`, an array written by key, `explode()`),
   also when a function of the code's own passes its parameter on as is: `maybe_unserialize()`

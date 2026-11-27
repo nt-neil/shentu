@@ -7,6 +7,8 @@ tier = "info"
 title = "Joomla request input written into a database query without quote() or a cast"
 sources = ["->getString(", "->getRaw(", "->getHtml(", "->getArray(", "->getBase64(", "->getPath(", "->getUserStateFromRequest(", "JRequest::getVar(", "JRequest::getString(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["->setQuery(", "->where(", "->orWhere(", "->order(", "->having(", "$query->select(", "$query->group("]
+# a method sink of a project that never names the library and declares a method of that name is its own (Project.ownMethodOnly)
+receivers = ["Joomla", "JFactory", "JDatabase", "JDatabaseQuery", "JDatabaseDriver", "joomla/database", "joomla/joomla-cms"]
 # ->where(, ->orWhere( and ->having( are Yii's calls too: input both read on
 # the same call ($_GET) is php-sqli-yii-query's (yields.go); Joomla's own
 # input (->getString(, JRequest::) stays here.
