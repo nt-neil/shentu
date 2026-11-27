@@ -93,6 +93,12 @@ func TestAuditMemoryUnderCgroup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and scans a large project")
 	}
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		// The guarantee is the systemd cgroup's memory budget (Linux); macOS
+		// CI runs it as a check of the budget's arithmetic. On Windows the
+		// runtime's heap behaves otherwise and there is no cgroup to honor.
+		t.Skip("a cgroup memory budget is Linux's")
+	}
 	fakeSystem(t, map[string]string{unit: "0::/shentu.service\n", "cgroup/shentu.service/memory.max": "536870912\n"})
 	dir := t.TempDir()
 	writeLargeProject(t, dir, 1200, 60)
