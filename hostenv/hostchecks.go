@@ -187,57 +187,103 @@ func sudoRule(r sudoRaw, aliases map[string][]string) (SudoRule, bool) {
 		}
 		return rule, true
 	}
-	if len(f) > 0 {
-		rule.Who = f[0]
-	}
-	_, rest, ok := strings.Cut(r.line, "=")
-	if !ok {
-		rule.All = true // not told: every command
+	if len(f) == 0 {
+		rule.All = true
 		return rule, true
 	}
-	nopass, runas := false, ""
+	rule.Who = f[0]
 	var cmds []string
-	for _, item := range splitSudoList(rest) {
-		if strings.HasPrefix(item, "(") {
-			end := strings.IndexByte(item, ')')
-			if end < 0 {
-				rule.All = true
-				return rule, true
-			}
-			runas, item = strings.TrimSpace(item[1:end]), strings.TrimSpace(item[end+1:])
+	for _, spec := range hostSpecs(strings.TrimPrefix(ln, f[0])) {
+		// host = commands: tags and the run-as list start anew in each
+		_, rest, ok := strings.Cut(spec, "=")
+		if !ok {
+			rule.All = true // not told: every command
+			return rule, true
 		}
-		for {
-			if m := reSudoOption.FindString(item); m != "" {
-				item = strings.TrimSpace(item[len(m):])
-				continue
+		nopass, runas := false, ""
+		for _, item := range splitSudoList(rest) {
+			if strings.HasPrefix(item, "(") {
+				end := strings.IndexByte(item, ')')
+				if end < 0 {
+					rule.All = true
+					return rule, true
+				}
+				runas, item = strings.TrimSpace(item[1:end]), strings.TrimSpace(item[end+1:])
 			}
-			i := strings.IndexByte(item, ':')
-			if i < 0 || !sudoTags[strings.TrimSpace(item[:i])] {
-				break
+			for {
+				if m := reSudoOption.FindString(item); m != "" {
+					item = strings.TrimSpace(item[len(m):])
+					continue
+				}
+				i := strings.IndexByte(item, ':')
+				if i < 0 || !sudoTags[strings.TrimSpace(item[:i])] {
+					break
+				}
+				switch strings.TrimSpace(item[:i]) {
+				case "NOPASSWD":
+					nopass = true
+				case "PASSWD":
+					nopass = false
+				}
+				item = strings.TrimSpace(item[i+1:])
 			}
-			switch strings.TrimSpace(item[:i]) {
-			case "NOPASSWD":
-				nopass = true
-			case "PASSWD":
-				nopass = false
-			}
-			item = strings.TrimSpace(item[i+1:])
-		}
-		if nopass && item != "" {
-			cmds = append(cmds, item)
-			if !slices.Contains(rule.Runas, runas) {
-				rule.Runas = append(rule.Runas, runas)
+			if nopass && item != "" {
+				cmds = append(cmds, item)
+				if !slices.Contains(rule.Runas, runas) {
+					rule.Runas = append(rule.Runas, runas)
+				}
 			}
 		}
 	}
 	if len(cmds) == 0 {
-		return rule, false
+		// NOPASSWD on the line, yet no command told under it: every
+		// command, never dropped (fail closed)
+		rule.All = true
+		return rule, reNoPassTag.MatchString(r.line)
 	}
 	rule.Cmds, rule.All = expandCmds(cmds, aliases, 0)
 	if rule.All {
 		rule.Cmds = nil
 	}
 	return rule, true
+}
+
+var (
+	reNoPassTag  = regexp.MustCompile(`\bNOPASSWD\s*:`)
+	reHostSpecAt = regexp.MustCompile(`^\s*[^=():!]+?\s*=`)
+	reTagBefore  = regexp.MustCompile(`([A-Z_]+)\s*$`)
+)
+
+// hostSpecs splits a user specification past its user list into its
+// "host = commands" parts: at a ':' outside parentheses, not escaped,
+// not ending a tag (NOPASSWD:), and followed by a host list and '='.
+func hostSpecs(s string) []string {
+	var out []string
+	depth, start := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ':':
+			if depth != 0 {
+				continue
+			}
+			// a tag's colon (NOPASSWD: CWD=/x, NOPASSWD: env A=1) is not one
+			if m := reTagBefore.FindStringSubmatch(s[start:i]); m != nil && sudoTags[m[1]] {
+				continue
+			}
+			if !reHostSpecAt.MatchString(s[i+1:]) {
+				continue
+			}
+			out = append(out, s[start:i])
+			start = i + 1
+		}
+	}
+	return append(out, s[start:])
 }
 
 // expandCmds expands command aliases; all: ALL among them, an alias not

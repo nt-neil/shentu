@@ -250,3 +250,30 @@ func TestRebootKernelFlavor(t *testing.T) {
 		t.Errorf("a newer +debug, +debug running: %+v", r)
 	}
 }
+
+// A user specification of several "host = commands" parts: each one's
+// commands with their own tags; NOPASSWD on a line with no command told
+// under it is every command, never dropped (fail closed).
+func TestSudoRuleHostSpecs(t *testing.T) {
+	for line, want := range map[string]struct{ ok, all bool }{
+		"bob h1 = /bin/ls : h2 = NOPASSWD: ALL":                  {true, true},
+		"bob h1 = NOPASSWD: /bin/ls : h2 = NOPASSWD: ALL":        {true, true},
+		"bob h1 = NOPASSWD: /bin/ls : h2 = ALL":                  {true, false},
+		"bob h1 = (root) NOPASSWD: /bin/ls : h2 = (ALL:ALL) ALL": {true, false},
+		"bob ALL = (ALL:ALL) NOPASSWD: CWD=/tmp /bin/ls":         {true, false},
+		"bob ALL=(ALL) NOPASSWD: /usr/bin/env A=1":               {true, false},
+		"bob ALL=(ALL) NOPASSWD:":                                {true, true},
+		"bob ALL=(ALL) NOPASSWD":                                 {false, false}, // not a tag: sudoers refuses the file
+		"bob ALL=(ALL) ALL # NOPASSWD in a comment cut":          {false, false},
+	} {
+		r, ok := sudoRule(sudoRaw{file: "/etc/sudoers", line: line}, nil)
+		if ok != want.ok || ok && r.All != want.all {
+			t.Errorf("%q: ok %v all %v, want %+v (%+v)", line, ok, r.All, want, r)
+		}
+	}
+	h := newFake(true)
+	h.files["/etc/sudoers"] = "bob h1 = /bin/ls : h2 = NOPASSWD: ALL\n"
+	if s := SudoNopasswd(h); len(s.Rules) != 1 || !s.Rules[0].All {
+		t.Errorf("another host's NOPASSWD: ALL, read: %+v", s.Rules)
+	}
+}
