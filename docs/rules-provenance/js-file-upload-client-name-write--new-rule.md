@@ -24,6 +24,8 @@
   - sinks: `fs.createWriteStream(`, `fs.writeFile(`, `fs.writeFileSync(`,
     `fs.promises.writeFile(`, the first argument (the path) only;
   - sanitizers: the server-made names of `js-file-upload-client-name`.
+  - `route_input = false`: request values a route model makes input (a header,
+    the query) are not this rule's; added after the full measurement (see Measurement).
 - Why not in `js-file-upload-client-name`: its sources include `req.file` and
   `req.files`. With the write sinks there:
   - `fs.createWriteStream(req.file.path + '.copy')` was reported. `req.file.path`
@@ -73,4 +75,30 @@ release still reports (a fixed false positive). In 1.1.7 the type check returns
 early for a type outside `allowedMimeType`, then `routes/admin.js:461` writes
 under the client's name as before; the rule does not read a MIME allowlist as a
 check. Load (1-minute) 12.0 at the start, 13.3 at the peak sampled, no segment
-voided. The full runs are pending.
+voided.
+
+Full measurement, base b8c15062 (integ), head 26ba87d6 (the rules of this
+change); E7 twice on each side, cvebench on the three sets, all segments valid,
+the 1-minute load peaking at 9.6 (first head run) and 14.5 (second), none voided
+or rerun:
+
+| set | caught base → head | with sink lines | fixed FP |
+|---|---|---|---|
+| cves, all (106) | 17 → 21 | 21 → 25 | 1 → 2 |
+| cves, rule source | 5/27 → 9/31 | 5 → 9 | 0 → 1 |
+| cves, independent | 12/79 → 12/75 (the same 12 cases) | 16 → 16 | 1 → 1 |
+| holdout (22) | 3 → 3 | 4 → 4 | 0 → 0 |
+| cves-ts (18) | 1 → 1 | 1 → 1 | 1 → 1 |
+
+E7: the same 120 findings and the same cuts and unfinished files on every run.
+cvebench lines: 23 more in cves (the four cases' own findings, two in tornado's
+test handlers, and false positives of kinds listed as known issues), none fewer; holdout and
+cves-ts line for line the same.
+
+This rule's new lines: express-cart 1.1.6 `routes/admin.js:430` (the case) and
+1.1.7 `:461` (the fixed false positive). The first head run also reported
+actual's `packages/sync-server/src/app-sync.ts:298` / `:307` in cves-ts: a
+header (`x-actual-file-id`) in the file's path, a path-traversal flow, not an
+upload stored under its client-sent name. The Express route model makes every
+request value a rule's input; the rule now has `route_input = false`, so only
+`.originalname` counts, and the second run no longer reports them.

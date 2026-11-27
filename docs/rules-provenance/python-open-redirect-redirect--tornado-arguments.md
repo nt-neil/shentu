@@ -105,5 +105,28 @@ held-out cases PY7, PY27, PY28 and QB32 lose the mark that held this rule back
 (they are reported now, as they should be), and the CHANGELOG lists the case
 under known issues. Moving cvebench to the product path, and dropping a per-file
 finding the project scan shows safe, are separate work. Load (1-minute) 12.0 at the start, 13.3 at the peak
-sampled, no segment voided. The full runs (independent, rule source, holdout,
-E7) are pending.
+sampled, no segment voided.
+
+Full measurement, base b8c15062 (integ), head 26ba87d6 (the rules of this
+change); E7 twice on each side, cvebench on the three sets, all segments valid,
+the 1-minute load peaking at 9.6 (first head run) and 14.5 (second), none voided
+or rerun:
+
+| set | caught base → head | with sink lines | fixed FP |
+|---|---|---|---|
+| cves, all (106) | 17 → 21 | 21 → 25 | 1 → 2 |
+| cves, rule source | 5/27 → 9/31 | 5 → 9 | 0 → 1 |
+| cves, independent | 12/79 → 12/75 (the same 12 cases) | 16 → 16 | 1 → 1 |
+| holdout (22) | 3 → 3 | 4 → 4 | 0 → 0 |
+| cves-ts (18) | 1 → 1 | 1 → 1 | 1 → 1 |
+
+E7: the same 120 findings and the same cuts and unfinished files on every run.
+cvebench lines: 23 more in cves (the four cases' own findings, two in tornado's
+test handlers, and false positives of kinds listed as known issues), none fewer; holdout and
+cves-ts line for line the same.
+
+This rule's new lines: taguette 1.5.1 `views.py:85`, `:144` (the case);
+tornado's test handlers `auth_test.py:563` and `httpclient_test.py:60` (input
+redirected, in test code); and `views.py:472` (1.5.1) / `:468` (1.5.2),
+`self.redirect(self.reverse_url('project', project.id))`, a false positive:
+`reverse_url` builds a path on the site, and the id is a database integer.

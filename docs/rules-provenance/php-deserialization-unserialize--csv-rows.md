@@ -66,4 +66,25 @@ safe one was clean for that reason and did not test `allowed_classes`.
 ## Measurement
 Single case, base faac5b02, rules at e99a52e5: missed → caught; the fixed
 release is not reported. Load (1-minute) 12.0 at the start, 13.3 at the peak
-sampled, no segment voided. The full runs are pending.
+sampled, no segment voided.
+
+Full measurement, base b8c15062 (integ), head 26ba87d6 (the rules of this
+change); E7 twice on each side, cvebench on the three sets, all segments valid,
+the 1-minute load peaking at 9.6 (first head run) and 14.5 (second), none voided
+or rerun:
+
+| set | caught base → head | with sink lines | fixed FP |
+|---|---|---|---|
+| cves, all (106) | 17 → 21 | 21 → 25 | 1 → 2 |
+| cves, rule source | 5/27 → 9/31 | 5 → 9 | 0 → 1 |
+| cves, independent | 12/79 → 12/75 (the same 12 cases) | 16 → 16 | 1 → 1 |
+| holdout (22) | 3 → 3 | 4 → 4 | 0 → 0 |
+| cves-ts (18) | 1 → 1 | 1 → 1 | 1 → 1 |
+
+E7: the same 120 findings and the same cuts and unfinished files on every run.
+cvebench lines: 23 more in cves (the four cases' own findings, two in tornado's
+test handlers, and false positives of kinds listed as known issues), none fewer; holdout and
+cves-ts line for line the same.
+
+This rule's new line: wp-ultimate-csv-importer 7.33.1 `SingleImportExport.php:116`
+(the case).
