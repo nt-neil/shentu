@@ -125,10 +125,15 @@ Chinese for the zh-TW pages; keep the two in step.
   it was said "connection failed" there (Windows gives WSAECONNREFUSED).
 - sudo's risk texts say each rule by its file, whom it is for, what it runs and as whom
   (`/etc/sudoers.d/90-admins: %admin (every command, as root)`), not by its line: a pushed text
-  is no longer masked to `[REDACTED]`. A secret written as `key=value` in a command's arguments
-  or a run-as list (`mysql --password=...`) is masked in the text itself, so the survey's own
-  output (onboard, the saved profile) does not hold it either; `-p<secret>`, a password given as
-  the next argument and `-u user:<secret>` are not masked (known issue).
+  is no longer masked to `[REDACTED]`. A secret in a command's arguments or a run-as list is
+  masked in the text itself, so the survey's own output (onboard, the saved profile) does not
+  hold it either.
+- The secret masking (fixtures, logs, what the model is given, Windows checks' command lines)
+  now also masks a password given as a command's own argument: mysql's `-p<secret>` (mysqldump,
+  mariadb and mysqladmin too), `--password <secret>` or `--passwd <secret>` as the next argument,
+  and curl's or wget's `-u user:<secret>` / `--user user:<secret>`; `key=value` was masked
+  before. A git refspec (`git push -u main:main`), `-P 3306`, `--password-file=/path` and a bare
+  `-p` are left as they are.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
@@ -209,8 +214,6 @@ Chinese for the zh-TW pages; keep the two in step.
   (`h.env.from_string(s)`) is known by its name only, even where the file assigns it
   (`h.env = Engine()`). `o.system(cmd)` after `import os as o`, and a function imported under
   another name (`m(x)` after `from hashlib import md5 as m`), are not reported.
-- In a sudo rule's commands, a password not written as `key=value` (`mysql -p<secret>`,
-  `--password <secret>`, `curl -u user:<secret>`) is not masked in the survey's texts.
 - On a non-Windows machine replaying a Windows host's recording, the code audit's ASP check, its
   web-root ACL check and its case-insensitive path comparison are not turned on yet (v0.5.9).
 
