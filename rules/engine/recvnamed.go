@@ -80,6 +80,14 @@ func (p *Project) vendorPkg(f string) {
 // vendor/ path), some class of the project declares a method of that name,
 // and every file was indexed to its end and read when needed. Any doubt
 // counts the call as the rule's sink.
+//
+// p.named, p.pkgs and p.gap are fixed when NewProject has indexed every file,
+// before any scan. p.unread and p.stopped can still grow during a scan, so a
+// call decided before that is not decided again; the file read late was
+// indexed already, so its mentions of the library are in p.named, and what
+// it adds is a file gone or changed since indexing, or one whose parse was
+// cut short by the clock or the work cap; the scan reports either as
+// Unsteady.
 func (p *Project) ownMethodOnly(r *crule, method string) bool {
 	if p == nil || len(r.recvNames) == 0 && len(r.recvPkgs) == 0 || p.gap || p.stopped != "" || len(p.unread) > 0 {
 		return false
