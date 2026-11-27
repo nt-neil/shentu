@@ -77,6 +77,14 @@ Chinese for the zh-TW pages; keep the two in step.
   images", and the daily report lists it under what this release does not check yet. The store is
   read only when the host read is this machine itself: a replay says the images were not checked.
   A `.pth` in an image is never taken as a tool's own.
+- package_vulns' overview tells how many of the vulnerabilities a fix is known to be out for
+  (`fix_available`, also per package) and how many it is not known for (`fix_unconfirmed`). A
+  fix is known when the advisory is a distribution's update notice (DSA, DLA, USN, RLSA, ALSA,
+  SUSE-SU) or an ALAS; for a php.net or nginx.org entry, the fixed release is out upstream, though
+  the repository the package came from (sury, for one) may not have packaged it yet. The rest, such as
+  a CVE entry of Debian's or Ubuntu's tracker, are unconfirmed: the overview does not fetch each
+  advisory to tell, and `fix_note` says that unconfirmed is not "no fix". Until now the count
+  mixed them; `package` set still gives each one's `fixed_version`, without the counts.
 - site_profile on Linux and macOS says two more risks. `sudo:nopasswd` (a warning): sudoers lets
   every command run as root with no password (`NOPASSWD: ALL`, or `Defaults !authenticate`), in
   any sudoers file, or for a group or ALL. The one exception is the cloud image's default user:

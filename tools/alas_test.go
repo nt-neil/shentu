@@ -72,7 +72,7 @@ func TestPackageVulnsAmazonLinux(t *testing.T) {
 	}
 	b, _ := json.Marshal(out)
 	s := string(b)
-	for _, want := range []string{`"ecosystem":"Amazon Linux 2023"`, `"packages_checked":2`, `"affected_packages":1`, `"upgrade_command":"dnf upgrade --security"`, `ALAS2023-2025-100`, `CVE-2099-0001`} {
+	for _, want := range []string{`"ecosystem":"Amazon Linux 2023"`, `"packages_checked":2`, `"affected_packages":1`, `"upgrade_command":"dnf upgrade --security"`, `ALAS2023-2025-100`, `CVE-2099-0001`, `"fix_available":1`, `"fix_unconfirmed":0`} { // an ALAS names its fix (I-8)
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %s in %s", want, s)
 		}
