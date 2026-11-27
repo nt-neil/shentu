@@ -77,6 +77,19 @@ Chinese for the zh-TW pages; keep the two in step.
   images", and the daily report lists it under what this release does not check yet. The store is
   read only when the host read is this machine itself: a replay says the images were not checked.
   A `.pth` in an image is never taken as a tool's own.
+- site_profile on Linux and macOS says two more risks. `sudo:nopasswd` (a warning): sudoers lets
+  every command run as root with no password (`NOPASSWD: ALL`, or `Defaults !authenticate`), in
+  any sudoers file, or for a group or ALL. The one exception is the cloud image's default user:
+  such a rule for one user by name in the file cloud-init writes (`90-cloud-init-users`, or its
+  "Created by cloud-init" header) is `sudo:nopasswd:cloud-init` (info, in the report only), whose
+  text says it is safe only while that user logs in with a key alone. A NOPASSWD rule for some
+  commands only is `sudo:nopasswd:some` (info). The rules are read through
+  every `#include`/`@include` and `includedir` as sudo reads them (names with a dot or ending in
+  `~` skipped). A file not read, or sudoers from sss or ldap, is said as `unchecked:sudoers`, never
+  taken for no such rule. `reboot:pending` (a warning): an update waits for a reboot, its old kernel
+  or libraries still running. On Debian and Ubuntu it is `/run/reboot-required` (with the packages
+  it names); elsewhere a kernel in `/boot` newer than the running one. A running kernel not in
+  `/boot` (a container) is not compared.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
