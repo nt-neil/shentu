@@ -18,6 +18,7 @@ func TestWordPressChecks(t *testing.T) {
 	}{
 		{"taxonomy_exists() guards the echo", "<?php\n$t = $_GET['t'];\nif (taxonomy_exists($t)) {\n  echo $t;\n}\n", "xss", 4, false},
 		{"post_type_exists() false ends the request", "<?php\n$pt = $_GET['pt'];\nif (!post_type_exists($pt)) {\n  wp_die();\n}\necho $pt;\n", "xss", 6, false},
+		{"taxonomy_exists() of sanitize_key() says nothing of the raw value", "<?php\n$t = $_GET['t'];\nif (taxonomy_exists(sanitize_key($t))) {\n  echo $t;\n}\n", "xss", 4, true},
 		{"taxonomy_exists() kept in a variable and logged", "<?php\n$t = $_GET['t'];\n$ok = taxonomy_exists($t);\nerror_log((string) $ok);\necho $t;\n", "xss", 5, true},
 		{"taxonomy_exists() guards another statement", "<?php\n$t = $_GET['t'];\nif (taxonomy_exists($t)) {\n  do_action('x');\n}\necho $t;\n", "xss", 6, true},
 		{"is_serialized_string() guards maybe_unserialize()", "<?php\n$v = $_POST['v'];\nif (is_serialized_string($v)) {\n  $x = maybe_unserialize($v);\n}\n", "deserialization", 4, false},

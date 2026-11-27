@@ -2382,8 +2382,16 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	// WordPress taxonomy_exists($x) and post_type_exists($x): $x is the name of
 	// a taxonomy or post type the code registered, a fixed list as in_array's.
 	if a.php && n > 2 && atom[0].Kind == Ident && registryChecks[strings.ToLower(atom[0].Text)] && atom[1].op("(") && closeOf(atom, 1) == n-1 {
+		// only the value itself, no call around it: taxonomy_exists(sanitize_key($t))
+		// says nothing of $t
 		if args := splitTop(atom[2:n-1], isComma); len(args) >= 1 {
-			return a.keysOf(args[0])
+			arg := stripParens(args[0])
+			if slices.ContainsFunc(arg, func(t Token) bool { return t.op("(") }) {
+				return nil
+			}
+			if key, _, ok := a.pathKey(arg); ok {
+				return []keyRef{{key: key}}
+			}
 		}
 		return nil
 	}
