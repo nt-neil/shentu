@@ -127,8 +127,6 @@ type fileIndex struct {
 	Laravel   bool              `json:"lv,omitempty"` // PHP: names Illuminate (any case, any use form: use Illuminate\{...}, \Illuminate\...)
 	Routes    []routeRef        `json:"rt,omitempty"` // registrations naming a handler, maybe in another file (routes.go)
 	Sinks     []string          `json:"s,omitempty"`  // rules some sink of which the file may hold (sinkNames): one no file holds finds nothing across files
-	Srcs      []string          `json:"sr,omitempty"` // rules with sources some source of which the file may hold (sourceNames)
-	SrcFns    []string          `json:"sf,omitempty"` // functions and methods whose body holds a source of one of Srcs and returns a value
 }
 
 type classIndex struct {
@@ -456,17 +454,11 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 		if sinkNames(r, names, src) {
 			fi.Sinks = append(fi.Sinks, r.rule.ID)
 		}
-		if (len(r.sources) > 0 || len(r.textSources) > 0) && sourceNames(r, names, src) {
-			fi.Srcs = append(fi.Srcs, r.rule.ID)
-		}
 	}
 	tree := parse(lang, toks, b)
 	classes := map[string]*classIndex{}
 	var order []string
 	funcs := collectFuncs(tree, lang)
-	if len(fi.Srcs) > 0 {
-		fi.SrcFns = srcFuncs(e, lang, funcs, fi.Srcs)
-	}
 	for _, key := range slices.Sorted(maps.Keys(funcs)) { // in key order: a class declared twice takes its parent from the same declaration every time
 		name := key[strings.LastIndex(key, ":")+1:]
 		infos := funcs[key]
@@ -793,69 +785,6 @@ func indexJS(t []Token, fi *fileIndex) {
 // ---- resolution ----
 
 // summary returns the summary of the function a call reaches in another file.
-// srcFuncs lists the functions and methods of a file that return a source of
-// one of the rules, written in the return statement: a request helper
-// (return $_REQUEST[$k], return get_data($_REQUEST, $k)). One that returns a
-// variable it set from a source before, or a function merely declared in a
-// file with sources, is not one: WordPress names $_GET in many functions that
-// return something else, and following them all cost three times the time.
-func srcFuncs(e *Engine, lang string, funcs map[string][]*fnInfo, ids []string) []string {
-	var rs []*crule
-	for _, r := range e.byLang[lang] {
-		if slices.Contains(ids, r.rule.ID) {
-			rs = append(rs, r)
-		}
-	}
-	var out []string
-	for _, key := range slices.Sorted(maps.Keys(funcs)) {
-		name := key[strings.LastIndex(key, ":")+1:]
-		for _, x := range funcs[key] {
-			if x.f.name == "" {
-				continue
-			}
-			names := map[string]bool{} // the names of its return statements
-			walkToks(x.f.body, 0, func(t []Token) {
-				if len(t) > 1 && t[0].word("return") && !t[1].op(";") {
-					nameSet(t, names)
-				}
-			})
-			if len(names) == 0 {
-				continue
-			}
-			for _, r := range rs {
-				if anyName(r.sources, nil, names, func(*pat) bool { return false }) {
-					out = append(out, name)
-					break
-				}
-			}
-		}
-	}
-	return slices.Compact(out)
-}
-
-// callsSource reports whether a file naming names may call a function or
-// method whose own body holds a source of the rule and returns a value
-// (fileIndex.SrcFns, in a file listing the rule in Srcs): a
-// plugin's own helper returning $_REQUEST[$k] gives input to a file that names
-// no source itself (ig_es_get_request_data('db')), which then passes it to
-// another file's sink.
-func (p *Project) callsSource(lang, id string, names map[string]bool) bool {
-	decl := p.declared[lang]
-	for name := range names {
-		if lang == "php" {
-			name = strings.ToLower(name)
-		}
-		for _, f := range decl[name] {
-			if fi := p.files[f]; fi != nil && slices.Contains(fi.Srcs, id) && slices.ContainsFunc(fi.SrcFns, func(n string) bool {
-				return n == name || lang == "php" && strings.EqualFold(n, name)
-			}) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func (p *Project) summary(a *analysis, c callee) *summary {
 	f, name := p.resolve(a, c)
 	if f == "" {

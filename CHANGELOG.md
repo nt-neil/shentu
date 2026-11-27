@@ -81,12 +81,9 @@ Chinese for the zh-TW pages; keep the two in step.
   (`php-sqli-prepare-identifier`): `prepare()` quotes the value as a string, which does not protect
   an identifier. Before, `prepare()` counted as escaping every value. A `%s` between quotes, standing
   alone, after `ORDER BY` or in `LIMIT`, `%d` and `%i` are not reported.
-- PHP rules, across files: request input returned by a plugin's own helper declared in another file
-  (`$id = get_request_data('id')`, the helper reading `$_REQUEST`) and passed on to a function of a
-  third file is followed into that function's sink. Before, a file naming neither a source nor a sink
-  of the rule was skipped for it. Input put in `array(...)` and passed to another function keeps its
-  input as `[...]` did (`edit_status(array($_REQUEST['id']))`); before, it was lost.
-
+- PHP rules: input put in `array(...)` and passed to another function keeps its input, as `[...]`
+  did (`edit_status(array($_REQUEST['id']))`); before, `array(...)` read as a call the engine does
+  not know, so the input did not cross into that function's sinks.
 ### Known issues
 
 - After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:
