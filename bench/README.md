@@ -8,8 +8,9 @@ false-positive rate on fixed releases, and how many findings and how much time
 each release took. `baseline.md` (cves), `baseline-holdout.md` and
 `baseline-cves-ts.md` are the runs to compare later ones with: integ e0d8f79d
 on 2026-11-28, on the product scan path (the default since then; each report's
-header names it). The first run (2026-11-09, 59 cases) used the project path and
-is in the history of `baseline.md`; compare a project-path run only with another.
+header names it). The first run (2026-11-09, 59 cases) scanned file by file (as
+`-scanpath per-file` now) and is in the history of `baseline.md`; compare it only
+with a `-scanpath per-file` run.
 
 The tool runs on a developer machine only. It is not built into the released
 binary (`.goreleaser.yaml` builds the root package alone).
