@@ -32,7 +32,9 @@
   - an engine change so a `json_decode()` result keeps its taint across a call:
     out of scope for a rule change; scheduled separately in the engine lane.
 - Known limits:
-  - `$this->db->quote($d['w'])` is still reported: `quote(` is no sanitizer here;
+  - a value escaped with `->escape()` inside quotes is still reported (phpMyFAQ
+    `User.php:398`, `:473`; a known issue in the CHANGELOG), and so is
+    `$this->db->quote($d['w'])`: neither `escape(` nor `quote(` is a sanitizer here;
   - `->query(` also takes search clients' `->query([...])` (Elasticsearch,
     Algolia). Both were there before; the body now reaches them too.
 - Expected effect on this case: +0, because of the engine gap. The source works

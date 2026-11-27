@@ -176,11 +176,14 @@ Chinese for the zh-TW pages; keep the two in step.
 - `js-file-upload-client-name-write` reads no allowlist as a check: an upload written under the
   client's name after its extension or MIME type was checked against a list (express-cart 1.1.7) is
   still reported.
-- PSR-7 query parameters handed to a route generator (`$router->urlFor('list', [], $request->getQueryParams())`)
-  are reported, though it builds a path on the site.
+- Input handed to a route generator that builds a path on the site is still reported in a redirect
+  (PSR-7's `urlFor()`, Flarum's `$url->to(...)->route()`, Tornado's `reverse_url()`).
 - `fgetcsv()`: a row assigned in a `while` condition (`while (($row = fgetcsv($h)) !== false)`) is not
   followed into the loop, so that usual way of reading a CSV file is missed. A CSV file the
   application ships itself is reported as well.
+- A value escaped with a database library's `->escape()` and written inside quotes is still reported
+  (`php-sqli-string-concat`): the rule does not read `->escape(` as a check, as some libraries'
+  escape adds no quotes and a numeric position is left open. A Symfony body now reaches it too.
 - A Symfony body decoded with `json_decode()` and passed to another function loses its input there,
   so a field decoded in a controller and written into SQL in another class is missed.
 - After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:

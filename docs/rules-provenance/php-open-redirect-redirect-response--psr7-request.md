@@ -28,9 +28,9 @@
   - `->getCookieParams(`, `->getUploadedFiles(`: no case needed them yet.
   - `->getAttribute(`: set by routing or middleware, not always client input.
 - Known limits:
-  - the query parameters handed to a route generator
-    (`$this->router->urlFor('list', [], $request->getQueryParams())`) are reported,
-    though it builds a path on the site;
+  - input handed to a route generator that builds a path on the site is still
+    reported (PSR-7's `urlFor()`, Flarum's `$url->to(...)->route()`, as at
+    `SavePasswordController.php:93`; a known issue in the CHANGELOG);
   - a host checked with `parse_url(..., PHP_URL_HOST)` is not read as a check.
 
 ## Probes

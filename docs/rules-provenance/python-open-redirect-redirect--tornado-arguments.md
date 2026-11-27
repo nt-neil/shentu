@@ -40,7 +40,10 @@
     (a base class), the product's per-file pass still reports the flow;
     cvebench scans with `Project.Scan`, which follows the call, and does not
     (see Measurement). Held out as `r277 tornado next-URL check in another file`;
-  - `urlparse(n).netloc` compared before the redirect is not read as a check.
+  - `urlparse(n).netloc` compared before the redirect is not read as a check;
+  - input handed to a route generator that builds a path on the site is still
+    reported (`self.reverse_url(...)`, as at taguette `views.py:472`; a known
+    issue in the CHANGELOG).
 
 ## Probes
 | fixture | base faac5b02 | new build | expected |

@@ -33,8 +33,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 - 轉址目標的檢查寫在另一個檔案時（例如 Tornado base class 的 `self.sanitize_next_url()`），仍然會回報：app_code_audit 先逐檔讀，跨檔追蹤看到檢查之後，那筆結果也不會拿掉。
 - `js-file-upload-client-name-write` 不會把 allowlist 當成檢查：檔名結尾或 MIME 類型已經對照清單檢查過，再用用戶端的名稱寫入時，仍然會回報（express-cart 1.1.7）。
-- PSR-7 的查詢參數交給路由產生器時（`$router->urlFor('list', [], $request->getQueryParams())`）會回報，但它產生的其實是站內的路徑。
+- 值交給路由產生器、產生站內路徑時（例如 PSR-7 的 `urlFor()`、Flarum 的 `$url->to(...)->route()`、Tornado 的 `reverse_url()`），轉址仍然會回報。
 - `fgetcsv()`：在 `while` 條件裡指派的列（`while (($row = fgetcsv($h)) !== false)`）不會被追進 `while` 的內容裡，所以這種最常見的 CSV 讀法會漏掉。應用程式自己附的 CSV 檔也會回報。
+- 用資料庫函式庫的 `->escape()` 處理過、放在引號裡的值，仍然會回報（`php-sqli-string-concat`）：有些函式庫的 escape 不會加引號，數字的位置也擋不住，所以規則不把 `->escape(` 當成檢查。現在 Symfony 的 body 也會流到這裡。
 - 用 `json_decode()` 解開的 Symfony body 傳給別的函式時，輸入會在那裡斷掉，所以在 controller 解開、在另一個類別寫進 SQL 的欄位會漏掉。
 - 對輸入 `extract()` 之後，它設定的變數讀屬性（`$cfg->path`）不算輸入，因為 request 資料只會設定字串和 array。`extract((array) json_decode($in))` 和 `extract(get_object_vars(json_decode($in)))` 可能設定物件，它的屬性是輸入，這兩種會漏報。
 - `reference` 規則有幾種寫法判斷不準：指令其實整行寫在程式裡，但拆成幾個中間沒有 `+` 的字串（`os.system('ls ' '-l')`，Python 會自動接成一個），或用 `' '.join()` 接起全是字面值的串列，仍然會報；屬性形式的物件（`h.env.from_string(s)`）只看名稱判斷，就算檔案裡寫了 `h.env = Engine()` 也一樣；`import os as o` 之後的 `o.system(cmd)`，以及換了名稱 import 的函式（`from hashlib import md5 as m` 之後的 `m(x)`），不會報。
