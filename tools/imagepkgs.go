@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // The Python packages in Docker images (plan cd58fb installed-pkgs, the
@@ -23,10 +25,14 @@ import (
 // PyPI, as a site-packages folder is.
 
 // dockerRoot is Docker's data root unless /etc/docker/daemon.json sets
-// "data-root"; dockerDaemonJSON is that file (tests replace both).
+// "data-root"; dockerDaemonJSON is that file; containerdRoot is
+// containerd's, where Docker keeps its images when daemon.json turns on
+// the containerd image store (the default of new Docker releases). Tests
+// replace them all.
 var (
 	dockerRoot       = "/var/lib/docker"
 	dockerDaemonJSON = "/etc/docker/daemon.json"
+	containerdRoot   = "/var/lib/containerd"
 	imageEuid        = os.Geteuid
 )
 
@@ -51,28 +57,48 @@ type imageScan struct {
 }
 
 // dockerDataRoot is where Docker keeps its data: daemon.json's data-root
-// when set (an absolute path), else dockerRoot.
-func dockerDataRoot() (string, error) {
-	b, ok := readHead(dockerDaemonJSON, 1<<20)
+// when set (an absolute path), else dockerRoot; snapshotter is whether
+// daemon.json turns on the containerd image store.
+func dockerDataRoot(src hostenv.Source) (root string, snapshotter bool, err error) {
+	b, ok := readHead(src, dockerDaemonJSON, 1<<20)
 	if !ok {
 		if _, err := os.Lstat(dockerDaemonJSON); err == nil {
-			return "", fmt.Errorf("%s 讀不到", dockerDaemonJSON)
+			return "", false, fmt.Errorf("%s 讀不到", dockerDaemonJSON)
 		}
-		return dockerRoot, nil
+		return dockerRoot, false, nil
 	}
 	var c struct {
-		DataRoot string `json:"data-root"`
+		DataRoot string          `json:"data-root"`
+		Features map[string]bool `json:"features"`
 	}
 	if json.Unmarshal(b, &c) != nil {
-		return "", fmt.Errorf("%s 不是 JSON", dockerDaemonJSON)
+		return "", false, fmt.Errorf("%s 不是 JSON", dockerDaemonJSON)
 	}
+	snapshotter = c.Features["containerd-snapshotter"]
 	if c.DataRoot == "" {
-		return dockerRoot, nil
+		return dockerRoot, snapshotter, nil
 	}
 	if !filepath.IsAbs(c.DataRoot) {
-		return "", fmt.Errorf("%s 的 data-root 不是絕對路徑", dockerDaemonJSON)
+		return "", snapshotter, fmt.Errorf("%s 的 data-root 不是絕對路徑", dockerDaemonJSON)
 	}
-	return filepath.Clean(c.DataRoot), nil
+	return filepath.Clean(c.DataRoot), snapshotter, nil
+}
+
+// containerdStore is the partial line for containerd's image store: there
+// (its content folder is, or daemon.json turns it on for Docker), its
+// images are not read by this release; "" when it is not there.
+func containerdStore(snapshotter bool) string {
+	content := filepath.Join(containerdRoot, "io.containerd.content.v1.content")
+	_, err := os.Lstat(content)
+	switch {
+	case snapshotter:
+		return "Docker 映像在 containerd 存放區（" + dockerDaemonJSON + " 開了 containerd-snapshotter），這版沒有檢查"
+	case err == nil:
+		return "Docker 映像在 containerd 存放區（" + content + "），這版沒有檢查"
+	case !errors.Is(err, fs.ErrNotExist):
+		return "containerd 存放區 " + content + " 讀不到（" + errText(err) + "），裡面若有 Docker 映像，這版沒有檢查"
+	}
+	return ""
 }
 
 // realDir: p is a folder itself, not a symlink to one.
@@ -90,18 +116,33 @@ func realDir(p string) error {
 	return nil
 }
 
-// scanImages reads the tagged images of Docker's overlay2 image store.
-func scanImages() imageScan {
+// scanImages reads the tagged images of Docker's overlay2 image store. The
+// store is read from this machine's disk (overlayfs' marks are a device
+// and an xattr), so only when the host read is this machine itself.
+func scanImages(src hostenv.Source) imageScan {
 	var s imageScan
-	root, err := dockerDataRoot()
+	if l, ok := src.(*hostenv.Live); !ok || len(l.Remap) > 0 {
+		s.partial = append(s.partial, "Docker 映像沒有檢查：這次讀的不是這台機器本身（replay 或另一台主機的讀取），映像庫只從這台機器的磁碟讀")
+		return s
+	}
+	root, snapshotter, err := dockerDataRoot(src)
 	if err != nil {
 		s.partial = append(s.partial, "Docker 映像庫沒有檢查："+err.Error())
 		return s
 	}
+	ctrd := containerdStore(snapshotter)
+	if ctrd != "" {
+		s.partial = append(s.partial, ctrd)
+	}
+	none := func(note string) imageScan { // nothing in overlay2: said apart only when containerd's store is not there
+		if ctrd == "" {
+			s.none = note
+		}
+		return s
+	}
 	switch _, err := os.Lstat(root); {
 	case errors.Is(err, fs.ErrNotExist):
-		s.none = "這台沒有 Docker 映像庫（" + root + " 不存在）"
-		return s
+		return none("這台沒有 Docker 映像庫（" + root + " 不存在）")
 	case err != nil:
 		s.partial = append(s.partial, "Docker 映像庫 "+root+" 存在但讀不到（"+errText(err)+"），裡面的映像沒有檢查")
 		return s
@@ -113,14 +154,13 @@ func scanImages() imageScan {
 	store := filepath.Join(root, "image", "overlay2")
 	for _, d := range []string{root, store} {
 		if err := realDir(d); errors.Is(err, fs.ErrNotExist) && d == store {
-			s.none = "這台的 Docker 映像庫沒有 overlay2 的映像（" + store + " 不存在）"
-			return s
+			return none("這台的 Docker 映像庫沒有 overlay2 的映像（" + store + " 不存在）")
 		} else if err != nil {
 			s.partial = append(s.partial, "Docker 映像庫 "+d+" 存在但讀不到（"+errText(err)+"），裡面的映像沒有檢查")
 			return s
 		}
 	}
-	tags, err := imageTags(store)
+	tags, err := imageTags(src, store)
 	if err != nil {
 		s.partial = append(s.partial, "Docker 映像庫的 repositories.json 存在但讀不到（"+err.Error()+"），裡面的映像沒有檢查")
 		return s
@@ -141,7 +181,7 @@ func scanImages() imageScan {
 	for _, id := range ids {
 		sort.Strings(byID[id])
 		name := "docker-image:" + byID[id][0]
-		pkgs, pth, notes := readImage(root, store, id, name)
+		pkgs, pth, notes := readImage(src, root, store, id, name)
 		s.images++
 		s.pth = append(s.pth, pth...)
 		s.partial = append(s.partial, notes...)
@@ -154,9 +194,9 @@ func scanImages() imageScan {
 
 // imageTags is repositories.json's tags (repo:tag → image hex), the
 // digests (repo@sha256:...) left out; none when the file is not there.
-func imageTags(store string) (map[string]string, error) {
+func imageTags(src hostenv.Source, store string) (map[string]string, error) {
 	p := filepath.Join(store, "repositories.json")
-	b, ok := readHead(p, 16<<20)
+	b, ok := readHead(src, p, 16<<20)
 	if !ok {
 		if _, err := os.Lstat(p); errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
@@ -186,8 +226,8 @@ func imageTags(store string) (map[string]string, error) {
 // rootfs.diff_ids, chained (chain ID n is sha256 of chain n-1, a space and
 // diff ID n) to layerdb's cache-id, which names the overlay2 folder.
 // Every id is 64 hex digits before it is put in a path.
-func imageLayers(root, store, id string) ([]string, error) {
-	b, ok := readHead(filepath.Join(store, "imagedb", "content", "sha256", id), 4<<20)
+func imageLayers(src hostenv.Source, root, store, id string) ([]string, error) {
+	b, ok := readHead(src, filepath.Join(store, "imagedb", "content", "sha256", id), 4<<20)
 	if !ok {
 		return nil, errors.New("設定檔讀不到")
 	}
@@ -219,7 +259,7 @@ func imageLayers(root, store, id string) ([]string, error) {
 		if err := realDir(ldir); err != nil {
 			return nil, fmt.Errorf("layerdb 的一層（%s）", errText(err))
 		}
-		cb, ok := readHead(filepath.Join(ldir, "cache-id"), 256)
+		cb, ok := readHead(src, filepath.Join(ldir, "cache-id"), 256)
 		cache := strings.TrimSpace(string(cb))
 		if !ok || !hex64.MatchString(cache) {
 			return nil, errors.New("cache-id 不是 64 個十六進位字元")
@@ -316,8 +356,8 @@ func mergeLayers(dirs []string) (map[string]layerEntry, error) {
 var errWalkCap = errors.New("walk cap")
 
 // readImage reads one image's site-packages from its merged tree.
-func readImage(root, store, id, name string) (pkgs []pkg, pth []PthFile, notes []string) {
-	dirs, err := imageLayers(root, store, id)
+func readImage(src hostenv.Source, root, store, id, name string) (pkgs []pkg, pth []PthFile, notes []string) {
+	dirs, err := imageLayers(src, root, store, id)
 	if err != nil {
 		return nil, nil, []string{name + " 沒有檢查：" + err.Error()}
 	}
@@ -363,13 +403,13 @@ func readImage(root, store, id, name string) (pkgs []pkg, pth []PthFile, notes [
 			if strings.HasPrefix(site, "usr/lib/") || strings.HasPrefix(site, "usr/lib64/") {
 				// the image's own package manager's (apt, dnf) unless pip wrote it
 				inst, ok := file(path.Join(p, "INSTALLER"))
-				b, rok := readHead(inst, 256)
+				b, rok := readHead(src, inst, 256)
 				if !e.dir || !ok || !rok || !pipInstallers[strings.TrimSpace(string(b))] {
 					continue
 				}
 			}
 			f, ok := file(meta)
-			b, rok := readHead(f, sitePkgHead)
+			b, rok := readHead(src, f, sitePkgHead)
 			nm, v := metaNameVersion(b)
 			if !ok || !rok || nm == "" || v == "" {
 				unread++
@@ -378,7 +418,7 @@ func readImage(root, store, id, name string) (pkgs []pkg, pth []PthFile, notes [
 			pkgs = append(pkgs, pkg{pep503(nm), v})
 		case strings.HasSuffix(n, ".pth") && !e.dir:
 			f, _ := file(p)
-			b, ok := readHead(f, sitePkgHead+1)
+			b, ok := readHead(src, f, sitePkgHead+1)
 			if !ok {
 				notes = append(notes, name+":/"+p+" 讀不到，沒有檢查它會不會執行程式")
 				continue

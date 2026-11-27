@@ -169,7 +169,7 @@ func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system boo
 	}
 	var img imageScan
 	if system { // the host's Docker images: the whole host's check, not a path asked about
-		img = scanImages()
+		img = scanImages(hostSource())
 		files = append(files, img.files...)
 		pth = append(pth, img.pth...)
 		partial = append(partial, img.partial...)

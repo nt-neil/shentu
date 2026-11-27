@@ -28,11 +28,11 @@ func hexOf(s string) string { sum := sha256.Sum256([]byte(s)); return hex.Encode
 func withDocker(t *testing.T) *fakeDocker {
 	t.Helper()
 	d := &fakeDocker{t: t, root: t.TempDir(), repos: map[string]map[string]string{}}
-	oldR, oldJ, oldE, oldW, oldO := dockerRoot, dockerDaemonJSON, imageEuid, overlayWhiteout, overlayOpaque
+	oldR, oldJ, oldC, oldE, oldW, oldO := dockerRoot, dockerDaemonJSON, containerdRoot, imageEuid, overlayWhiteout, overlayOpaque
 	t.Cleanup(func() {
-		dockerRoot, dockerDaemonJSON, imageEuid, overlayWhiteout, overlayOpaque = oldR, oldJ, oldE, oldW, oldO
+		dockerRoot, dockerDaemonJSON, containerdRoot, imageEuid, overlayWhiteout, overlayOpaque = oldR, oldJ, oldC, oldE, oldW, oldO
 	})
-	dockerRoot, dockerDaemonJSON = d.root, filepath.Join(d.root, "no-daemon.json")
+	dockerRoot, dockerDaemonJSON, containerdRoot = d.root, filepath.Join(d.root, "no-daemon.json"), filepath.Join(d.root, "no-containerd")
 	imageEuid = func() int { return 0 }
 	os.MkdirAll(filepath.Join(d.root, "image", "overlay2", "imagedb", "content", "sha256"), 0o700)
 	d.save()
@@ -298,5 +298,43 @@ func TestImagePackagesNotChecked(t *testing.T) {
 	f = &pypiFeeds{}
 	if out, _ := appVulnsIn(context.Background(), &http.Client{Transport: f}, []string{t.TempDir()}, false); out["docker_images"] != nil || len(f.queries) != 0 {
 		t.Errorf("a path asked about read the images: %v %q", out["docker_images"], f.queries)
+	}
+}
+
+// Docker's images in containerd's store (the default of new Docker
+// releases: /var/lib/docker/image/overlay2 is not there) are said as not
+// checked, never as no images; and a host read that is not this machine
+// itself (a replay) does not read this machine's store.
+func TestImagePackagesContainerdStore(t *testing.T) {
+	noSystemSitePackages(t)
+	partial := func(out map[string]any) string { s, _ := out["partial"].(string); return s }
+	feeds := &pypiFeeds{}
+
+	d := withDocker(t)
+	img := filepath.Join(d.root, "image") // Docker's root is there, no overlay2 image store
+	os.Rename(img, filepath.Join(t.TempDir(), "image"))
+	os.MkdirAll(filepath.Join(containerdRoot, "io.containerd.content.v1.content", "blobs", "sha256"), 0o700)
+	out, _ := imageResults(t, feeds)
+	if p := partial(out); !strings.Contains(p, "Docker 映像在 containerd 存放區") || !strings.Contains(p, "這版沒有檢查") || out["docker_images_note"] != nil || out["docker_images"] != 0 {
+		t.Errorf("containerd content store: partial %q, note %v, images %v", p, out["docker_images_note"], out["docker_images"])
+	}
+
+	d = withDocker(t)
+	d.image([]map[string]string{{sp312 + "a-1.0.dist-info/METADATA": meta("a", "1.0")}}, "a:1")
+	dockerDaemonJSON = filepath.Join(t.TempDir(), "daemon.json")
+	os.WriteFile(dockerDaemonJSON, []byte(`{"features": {"containerd-snapshotter": true}}`), 0o600)
+	f := &pypiFeeds{}
+	out, _ = imageResults(t, f)
+	if p := partial(out); !strings.Contains(p, "開了 containerd-snapshotter") || strings.Join(f.queries, " ") != "a@1.0" {
+		t.Errorf("snapshotter on: partial %q, queries %q (overlay2's still read)", p, f.queries)
+	}
+
+	d = withDocker(t)
+	d.image([]map[string]string{{sp312 + "a-1.0.dist-info/METADATA": meta("a", "1.0")}}, "a:1")
+	withHost(t, memHost{})
+	f = &pypiFeeds{}
+	out, _ = imageResults(t, f)
+	if p := partial(out); !strings.Contains(p, "這次讀的不是這台機器本身") || len(f.queries) != 0 {
+		t.Errorf("replay read this machine's images: partial %q, queries %q", p, f.queries)
 	}
 }
