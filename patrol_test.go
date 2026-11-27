@@ -63,6 +63,29 @@ func TestMostSevere(t *testing.T) {
 	}
 }
 
+// A part this release does not check yet (Apache on Windows) is listed
+// under its own heading, never under the permission one: Shentu running
+// elevated would not check it either.
+func TestNotYetSection(t *testing.T) {
+	risks := []tools.Risk{
+		{Key: "unchecked:notyet:apache:windows", Severity: "info", Summary: "Apache on Windows (C:\\Apache24) is not checked yet"},
+		{Key: "firewall:none", Severity: "info", Summary: "no host firewall detected"},
+	}
+	if s := uncheckedSection(risks, false); strings.Contains(s, "Apache") {
+		t.Errorf("under the permission heading: %q", s)
+	}
+	for _, zh := range []bool{false, true} {
+		s := notYetSection(risks, zh)
+		if !strings.Contains(s, "Apache on Windows") || strings.Contains(s, "firewall") || strings.Contains(s, "permission") || strings.Contains(s, "權限") ||
+			!strings.Contains(s, map[bool]string{false: "Not checked by this release yet", true: "這一版還沒有檢查的元件"}[zh]) {
+			t.Errorf("zh %v: %q", zh, s)
+		}
+	}
+	if notYetSection(risks[1:], false) != "" {
+		t.Error("a section with nothing not checked yet")
+	}
+}
+
 // A check that could not tell (sshd_config unreadable when not run as root)
 // is listed at the end of every report, apart from the findings, and is not
 // a finding itself (pushed or held back by the cooldown).
@@ -225,5 +248,29 @@ func TestUncheckedVulnsErrorLines(t *testing.T) {
 	s = uncheckedVulns("application dependencies", map[string]any{"files": files[12:]}, nil, false)
 	if strings.Count(s, "- not checked (") != 1 {
 		t.Errorf("errors equal once cut not merged:\n%s", s)
+	}
+}
+
+// N-244-1 (b): the images' lines are each their own, whole, however many
+// site-packages notes come before them; containerd's is said under what
+// this release does not check yet (the survey's), not cut here.
+func TestUncheckedVulnsImageLines(t *testing.T) {
+	site := "/usr/lib/python3/dist-packages 有 3 個套件的 METADATA 讀不到或沒有名稱、版本，沒有檢查"
+	ctrd := "containerd 存放區裡的映像（/var/lib/containerd/io.containerd.content.v1.content），這版沒有檢查"
+	cap := "Docker 映像超過 50 個，其餘 4 個沒有檢查"
+	for _, n := range []int{1, 2} {
+		var parts []string
+		for i := 0; i < n; i++ {
+			parts = append(parts, site)
+		}
+		r := map[string]any{"partial": strings.Join(append(parts, ctrd, cap), "；"), "docker_images_containerd": ctrd, "docker_images_partial": []string{cap}}
+		s := uncheckedVulns(dt(true, "vuln_app"), r, nil, true)
+		if !strings.Contains(s, fmt.Sprintf(dt(true, "vuln_partly"), cap)) || !strings.Contains(s, "dist-packages") || strings.Contains(s, "containerd") {
+			t.Errorf("%d site-packages notes: %q", n, s)
+		}
+	}
+	risks := []tools.Risk{{Key: "unchecked:notyet:containerd", Severity: "info", Summary: ctrd}}
+	if s := notYetSection(risks, true); !strings.Contains(s, ctrd) {
+		t.Errorf("containerd under not checked yet: %q", s)
 	}
 }

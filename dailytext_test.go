@@ -37,7 +37,7 @@ func TestDailyTextVerbs(t *testing.T) {
 var reportWords = map[string]bool{
 	"Agent": true, "AI": true, "token": true, "tokens": true, "KiB": true, "L1": true, "L2": true, "L3": true, "IP": true,
 	"SSH": true, "DNS": true, "CISA": true, "KEV": true, "OSV": true, "root": true, "LocalSystem": true, "Linux": true,
-	"WordPress": true, "Python": true, "Telegram": true, "Slack": true, "Discord": true, "webhook": true, "bot": true,
+	"WordPress": true, "Python": true, "Docker": true, "Telegram": true, "Slack": true, "Discord": true, "webhook": true, "bot": true,
 	"sshd": true, "PAM": true, "UID": true, "pid": true, "rootkit": true, "webshell": true,
 }
 
@@ -152,7 +152,7 @@ func TestDailyReportChinese(t *testing.T) {
 	parts = append(parts, dispatchSection(nil, 0, errors.New("讀取錯誤"), true), autoArchiveLine(&Config{StateDir: filepath.Join(state, "missing", "x")}, now, true))
 
 	risks := []tools.Risk{{Key: "unchecked:shadow", Summary: "/etc/shadow is not readable"}}
-	parts = append(parts, uncheckedSection(risks, true), notCheckedSection([]string{"C:\\inetpub ACL"}, true), uncheckedConfigs([]string{"/etc/nginx/nginx.conf"}, true), referenceSection(3, true))
+	parts = append(parts, uncheckedSection(risks, true), notYetSection([]tools.Risk{{Key: "unchecked:notyet:apache:windows", Summary: "Apache on Windows is not checked yet"}}, true), notCheckedSection([]string{"C:\\inetpub ACL"}, true), uncheckedConfigs([]string{"/etc/nginx/nginx.conf"}, true), referenceSection(3, true))
 	var files []tools.AppResult
 	for i := range uncheckedFiles + 2 {
 		files = append(files, tools.AppResult{Path: "/srv/app" + string(rune('a'+i)) + "/package-lock.json", Error: "osv down"})

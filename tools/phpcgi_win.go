@@ -142,6 +142,18 @@ var errNotLocal = errors.New("not a local absolute path, not read")
 // SYSTEM, Administrators and TrustedInstaller owns or may write it.
 var phpWinFixedConfs = []string{`C:\xampp\apache\conf\httpd.conf`, `C:\Apache24\conf\httpd.conf`}
 
+// winServiceExe is the program of a service's command line (BinaryPath):
+// the quoted part, or up to the first ".exe".
+func winServiceExe(b string) string {
+	b = strings.TrimSpace(b)
+	if strings.HasPrefix(b, `"`) {
+		b, _, _ = strings.Cut(b[1:], `"`)
+	} else if i := strings.Index(strings.ToLower(b), ".exe"); i >= 0 {
+		b = b[:i+4]
+	}
+	return b
+}
+
 // winApacheConfs are the httpd.conf files of Apache on this host: next to
 // the httpd.exe of a service (registered by an administrator; a process's
 // path is anyone's choice), and phpWinFixedConfs kept to administrators.
@@ -154,12 +166,7 @@ func winApacheConfs() (confs, unread []string) {
 		confs = append(confs, c)
 	}
 	for _, b := range bins {
-		b = strings.TrimSpace(b)
-		if strings.HasPrefix(b, `"`) {
-			b, _, _ = strings.Cut(b[1:], `"`)
-		} else if i := strings.Index(strings.ToLower(b), ".exe"); i >= 0 {
-			b = b[:i+4]
-		}
+		b = winServiceExe(b)
 		if strings.EqualFold(winBase(b), "httpd.exe") {
 			if c := winDir(winDir(b)) + `\conf\httpd.conf`; phpLocalWinPath(c) {
 				confs = append(confs, c)

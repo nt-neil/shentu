@@ -7,10 +7,11 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"regexp"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -57,6 +58,14 @@ func Unchecked(r Risk) bool {
 	return uncheckedRisks[r.Key] || strings.HasPrefix(r.Key, uncheckedPrefix)
 }
 
+// notYetPrefix marks an unchecked risk for a part this release does not
+// check yet (not a permission missing): reports list it under its own
+// heading.
+const notYetPrefix = uncheckedPrefix + "notyet:"
+
+// NotYet reports whether r is a part this release does not check yet.
+func NotYet(r Risk) bool { return strings.HasPrefix(r.Key, notYetPrefix) }
+
 // SiteProfile is the survey result. It is stored by patrol as the baseline.
 type SiteProfile struct {
 	Time          time.Time         `json:"time"`
@@ -91,11 +100,22 @@ var roles = map[string]string{
 var riskyIfPublic = map[string]bool{"mysqld": true, "mariadbd": true, "postgres": true, "mongod": true,
 	"redis-server": true, "memcached": true, "rpcbind": true, "smbd": true}
 
+// apacheWindowsUnchecked says what Windows does not check yet: an Apache
+// there (C:\Apache24, XAMPP) is not evaluated for CVE-2026-119618, so it is
+// said whenever Apache shows on the host (winApacheSeen) rather than
+// skipped quietly.
+var apacheWindowsUnchecked = Risk{notYetPrefix + "apache:windows", "info",
+	"Apache on Windows (C:\\Apache24, XAMPP and the like) is not checked yet: if it runs here, CVE-2026-119618 (HTTP/2) is not evaluated; check its version and whether it serves HTTP/2 by hand"}
+
 // Survey builds the profile. It only reads; nothing is changed.
 func Survey(ctx context.Context, env *Env) SiteProfile {
-	if runtime.GOOS == "windows" {
-		p := surveyFromFacts(windowsFacts(ctx), env)
+	if onWindows() {
+		f := windowsFacts(ctx)
+		p := surveyFromFacts(f, env)
 		p.Risks = append(p.Risks, phpRisks(ctx)...)
+		if winApacheSeen(f) {
+			p.Risks = append(p.Risks, apacheWindowsUnchecked)
+		}
 		return p
 	}
 	p := SiteProfile{Time: time.Now().UTC(), Firewall: firewall(ctx)}
@@ -166,6 +186,7 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 		p.Risks = append(p.Risks, Risk{"firewall:none", "info", "no host firewall detected (nftables, ufw, firewalld); fine only if a cloud firewall covers this server"})
 	}
 	p.Risks = append(p.Risks, phpRisks(ctx)...)
+	p.Risks = append(p.Risks, ContainerdNotYet(hostSource())...)
 
 	// Through the host source like every other read (S-173r3-1: os.Stat read
 	// the machine running the survey, not the host it surveys, in a replay).
@@ -332,7 +353,7 @@ func Drift(old, now SiteProfile) []Risk {
 	}
 	for _, f := range diff(now.CronFiles, old.CronFiles) {
 		what := "new cron file"
-		if runtime.GOOS == "windows" {
+		if onWindows() {
 			what = "new autostart entry (run key, service, scheduled task, startup folder or WMI subscription)"
 		}
 		out = append(out, Risk{"drift:cron:" + f, "warning", what + " since the last survey: " + f})
@@ -352,4 +373,32 @@ func diff(now, old []string) []string {
 		}
 	}
 	return out
+}
+
+// winApacheSeen: Apache shows on this Windows host: an httpd.exe process or
+// service, C:\Apache24\conf\httpd.conf, or C:\xampp\apache. A path whose
+// being there could not be told counts as seen.
+func winApacheSeen(f *hostenv.Facts) bool {
+	if f != nil {
+		for _, p := range f.Processes.Value {
+			if strings.EqualFold(p.Name, "httpd.exe") || strings.EqualFold(winBase(p.Exe), "httpd.exe") {
+				return true
+			}
+		}
+	}
+	for _, b := range phpWinServiceBins() {
+		if strings.EqualFold(winBase(winServiceExe(b)), "httpd.exe") {
+			return true
+		}
+	}
+	for _, p := range []string{`C:\Apache24\conf\httpd.conf`, `C:\xampp\apache`} {
+		r, err := phpWinLocal(p)
+		if err == nil {
+			_, err = hostenv.Lstat(hostSource(), r)
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return true
+		}
+	}
+	return false
 }

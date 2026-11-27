@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -49,7 +48,7 @@ type Port struct {
 // ListeningPorts lists TCP and UDP listening sockets from hostenv's
 // listeners fact, each with its owning process and executable.
 func ListeningPorts() ([]Port, error) {
-	if runtime.GOOS == "windows" {
+	if onWindows() {
 		return portsFromFacts(windowsFacts(context.Background()))
 	}
 	if onMac() {
@@ -144,7 +143,7 @@ var processesTool = Tool{
 		if err := decode(args, &a); err != nil {
 			return nil, err
 		}
-		if runtime.GOOS == "windows" {
+		if onWindows() {
 			return winProcesses(a.All)
 		}
 		if onMac() {
@@ -330,7 +329,7 @@ var accountsAudit = Tool{
 	Description: "Accounts and persistence that matter for intrusion: extra UID 0 accounts, accounts with a login shell, sudo rules, authorized_keys files (key count and last change), one SSH key planted in several accounts (by fingerprint), libraries in /etc/ld.so.preload, and PAM modules that no package installed.",
 	Params:      schema(noParams),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
-		if runtime.GOOS == "windows" {
+		if onWindows() {
 			return winAccountsAudit()
 		}
 		return AccountsAudit(), nil

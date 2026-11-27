@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -291,7 +290,7 @@ var logSearch = Tool{
 		if err := decode(args, &a); err != nil {
 			return nil, err
 		}
-		if runtime.GOOS == "windows" {
+		if onWindows() {
 			return winLogSearch(a.Path, a.Pattern, a.Limit)
 		}
 		if !allowedLog(a.Path, env.LogPaths) {

@@ -185,7 +185,7 @@ func dnsHint(err error, zh bool) string {
 func uncheckedSection(risks []tools.Risk, zh bool) string {
 	var b strings.Builder
 	for _, r := range risks {
-		if tools.Unchecked(r) {
+		if tools.Unchecked(r) && !tools.NotYet(r) {
 			fmt.Fprintf(&b, "- %q\n", mask(r.Summary))
 		}
 	}
@@ -197,6 +197,22 @@ func uncheckedSection(risks []tools.Risk, zh bool) string {
 		as = dt(zh, "perm_win")
 	}
 	return fmt.Sprintf(dt(zh, "perm_head"), as) + b.String()
+}
+
+// notYetSection lists the parts this release does not check yet (Apache on
+// Windows): apart from the permission heading, whose cause is not theirs.
+// "" when none.
+func notYetSection(risks []tools.Risk, zh bool) string {
+	var b strings.Builder
+	for _, r := range risks {
+		if tools.NotYet(r) {
+			fmt.Fprintf(&b, "- %q\n", mask(r.Summary))
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return dt(zh, "notyet_head") + b.String()
 }
 
 // referenceSection is the daily report's reference block: one line counting
@@ -235,7 +251,23 @@ func uncheckedVulns(what string, r map[string]any, err error, zh bool) string {
 	}
 	var lines []string
 	if p, ok := r["partial"]; ok {
-		lines = append(lines, fmt.Sprintf(dt(zh, "vuln_partly"), cutLine(mask(fmt.Sprint(p)))))
+		// The images' lines are each their own, never cut away behind the
+		// site-packages' (N-244-1); containerd's store is under what this
+		// release does not check yet (the survey's).
+		rest := fmt.Sprint(p)
+		imgs, _ := r["docker_images_partial"].([]string)
+		tail := imgs
+		if c, _ := r["docker_images_containerd"].(string); c != "" {
+			tail = append([]string{c}, imgs...)
+		}
+		if len(tail) > 0 {
+			rest = strings.TrimSuffix(strings.TrimSuffix(rest, strings.Join(tail, "；")), "；")
+		}
+		for _, l := range append([]string{rest}, imgs...) {
+			if l != "" {
+				lines = append(lines, fmt.Sprintf(dt(zh, "vuln_partly"), cutLine(mask(l))))
+			}
+		}
 	}
 	// With no vulnerability found there is nothing to look up in KEV.
 	if n, _ := r["total_vulns"].(int); n > 0 {
@@ -493,8 +525,11 @@ func appVulnFindings(r map[string]any) []finding {
 	apps, _ := r["files"].([]tools.AppResult)
 	for _, f := range apps {
 		text := "f_kev_app"
-		if f.Kind == "site-packages" {
+		switch f.Kind {
+		case "site-packages":
 			text = "f_kev_site"
+		case "image":
+			text = "f_kev_image"
 		}
 		for _, e := range f.Exploited {
 			out = append(out, newFinding("kev:"+f.Path+":"+e.Package+":"+e.CVE, "critical", e, text, f.Path, e.Package, e.Version, e.CVE, e.Name))
@@ -551,7 +586,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	}()
 	zh := isZh(cfg)
 	all, sshUnchecked := checks(ctx, cfg, env, st, daily)
-	unchecked := uncheckedSection(st.Profile.Risks, zh) + sshUnchecked // listed in every report, never pushed
+	unchecked := uncheckedSection(st.Profile.Risks, zh) + notYetSection(st.Profile.Risks, zh) + sshUnchecked // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
 		r, osSurface, err := tools.PackageVulnsSurface(ctx, env.HTTP)

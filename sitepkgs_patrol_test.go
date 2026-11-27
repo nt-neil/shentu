@@ -80,3 +80,14 @@ func TestPatrolSitePackagesFindings(t *testing.T) {
 		t.Errorf("daily line %q", l)
 	}
 }
+
+// A Docker image's package being exploited is said as the image's, to be
+// rebuilt.
+func TestPatrolImageFinding(t *testing.T) {
+	r := map[string]any{"files": []tools.AppResult{{Path: "docker-image:app:1", Ecosystem: "PyPI", Kind: "image",
+		Exploited: []tools.Exploit{{Package: "litellm", Version: "1.30.0", ID: "GHSA-test-lite", CVE: "CVE-2026-40217", Name: "Test Bug"}}}}}
+	f := appVulnFindings(r)
+	if len(f) != 1 || f[0].Severity != "critical" || !strings.Contains(f[0].Summary, "Docker image docker-image:app:1 has litellm 1.30.0 installed") || !strings.Contains(f[0].zh, "請用修正過的版本重建映像") {
+		t.Errorf("%+v", f)
+	}
+}
