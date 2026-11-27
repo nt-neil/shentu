@@ -5,11 +5,23 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.5.8 (unreleased)
 
+- 新增 `reference` 等級，給只看呼叫寫法、不看輸入的規則用（只有 `sources = []` 的規則可以用）。app_code_audit 和聊天會把這類發現排在其他發現之後，另外標示出來；每日報告只用一行寫出筆數。這類發現不會主動送出通知，也不交給攻擊偵測。`info` 和 `alert` 兩個等級不變。
 - 用 `apt-mark hold` 鎖住的 Debian 或 Ubuntu 套件（dpkg 狀態 `hi`），以及標成要移除、但還裝著的套件（`ri`、`pi`），現在和已安裝的套件一樣會被檢查。以前套件清單只收 dpkg 的 `ii`，所以鎖住的套件不會被檢查，也不會被列出來（v0.5.7 的已知問題）。已經放到磁碟上、但沒有完整安裝的套件，會讓套件清單標成部分（partial），並在那裡寫出名稱和狀態（最多 20 個，其餘只寫數量）。檔案都已解開的套件（unpacked、half-configured、triggers awaited、triggers pending）會照 dpkg 記錄的版本檢查。half-installed 或狀態讀不懂的套件不檢查，會連同狀態列在 `packages_not_checked`，排在只剩設定檔的套件（config-files，只會被列出來）前面。最多列 20 個，其餘的數量寫在 `packages_not_checked_more`。工具說明也寫了這兩個欄位。
 - block_ip 讀伺服器的 DNS 伺服器和預設閘道（`/etc/resolv.conf`、systemd-resolved 的那一份、`/proc/net/route`、`/proc/net/ipv6_route`）時，和它檢查的 SSH 連線一樣改經主機來源讀取：replay 或其他主機的盤點，不會拿跑檢查的這台機器來回答。這幾個檔案有在、但讀不到時，現在會拒絕封鎖（`state_error`）；以前讀不到也照樣往下做，把清單當成空的，所以閘道或 DNS 伺服器可能被封鎖。檔案不存在（沒有 systemd-resolved、沒有 IPv6）仍然只是沒有這一項。
 - app_code_audit、app_vulns（lock 檔和 site-packages）以及 WordPress 外掛清單，現在讀的是主機來源裡的檔案，和一開始用到的 web root 一樣：replay 或其他主機的盤點，不會拿跑檢查的這台機器來回答。symlink 仍然不跟隨，檔案只在還是掃描時看到的那一個時才讀，上限也都相同。web root 或 app 路徑有在、但讀不到時（沒有權限，或 replay 裡沒有它），現在會列在稽核的 `not_checked`；以前會當成空的資料夾稽核過去。用這一版之前錄的 fixture 做 replay 時，這些路徑都會說讀不到，不會說成不存在。
+- package_vulns 會讀完 OSV 回答的每一頁：OSV 一次查詢最多給 1000 筆公告，並寫明下一頁；以前只讀第一頁，所以 kernel 的清單停在 1000 筆（在 Ubuntu 24.04 上，比另一套掃描工具少了 383 個 CVE）。一個套件超過 10 頁時，其餘的會寫在 `partial`，不會默默截斷。
+- Ubuntu 上的 package_vulns：一則 USN 會包括它修正的每一個版本，它的 alias 會列出只有其他版本才有的 CVE（USN-7980-1 列了 CVE-2025-11187，OSV 只把它列在 25.10 和 26.04，不在 24.04）。現在一則 USN 只算 OSV 對這個套件、在主機這個版本上也列出的 CVE，所以其他版本的 CVE 不會再在這台主機上標成正在被利用（KEV），也不會算進弱點面；第三方 PHP 或 nginx 和 php.net、nginx.org 的公告比對時，也不會被當成 OSV 已經列出的 CVE。一則 USN 所屬的套件如果沒有任何以 CVE 命名的公告可以判斷版本，這則 USN 會算進 `kev_unchecked` 並寫出名稱，不會沒有說明就不算。
 - Windows：Shentu 自己不跟隨 link 開啟的檔案（派遣紀錄、AI 預算預留檔、自動事件和稽核的鎖），現在都用同一個 handle 檢查和使用，這個 handle 開啟時不跟隨 symlink 或 junction。以前是先看檔案，再用名稱開啟，然後用一種在 Windows 上分不出來的方式比對兩者：中間被換成 link 的檔案，會經由那個 link 被開啟。去重的檔案（Windows Server 的 Data Deduplication）照常開啟；其他種類的 reparse point 會寫出原因，不會開啟。
 - 網站首頁：捲動時才出現的區塊（統計、開放原始碼、最新版本和河道），從中段進入頁面時（例如從連到頁內位置的連結、回到上一頁，或直接跳到中段）不再一直空白。區塊只要有任何一部分看得到就會出現；頁面一打開就看得到的區塊，以及從頁內位置打開的頁面上的每個區塊，都會立刻出現。
+- PHP 規則會追蹤參數不是寫在程式裡的 array 的 `extract()`。`extract($args)`、`extract($_POST)`，或 `extract(wp_parse_args($atts, [...]))`（`$atts` 的每個 key 都會保留）之後，函式裡的每個變數都可能是那份輸入，直到再被指派為止：包括之前定義過的（樣板載入函式的 `$template_name` 會被 `extract($args)` 改寫），以及從沒指派過的（`extract($opts)` 之後的 `$team_id`）。以前一個變數都不會設定，所以 shortcode 的屬性經過這種寫法進到 `include` 或 `call_user_func()` 時不會回報（CVE-2023-6996）。`extract(shortcode_atts($defaults, $atts))` 只會設定 `$defaults` 的 key，也不會改寫 `$defaults` 本身；`EXTR_SKIP` 和 `EXTR_PREFIX_*` 不會改寫任何變數；`extract()` 設定的值，讀它的屬性（`global $wpdb` 之後的 `$wpdb->prefix`）不算輸入，讀它的索引仍然算。flag 照 PHP 的讀法：`EXTR_SKIP` 和 `EXTR_PREFIX_SAME` 不會改寫任何變數，`EXTR_IF_EXISTS` 會改寫但不建立變數，`EXTR_PREFIX_ALL` 和 `EXTR_PREFIX_IF_EXISTS` 只設定名稱以 `prefix_` 起始的變數（prefix 不是寫在程式裡時，任何這種名稱都算）。`extract()` 在 closure 外面新建的變數，closure 只透過它的 `use (...)` 看得到，它的參數是呼叫端給的值。
+- PHP 規則：`preg_match($p, $s, $m)`、`preg_match_all()`、`parse_str($q, $out)` 或 `exec($c, $output)` 之後，傳進去被寫入的變數是這個呼叫設定的值，之前 `extract()` 設在那裡的值就不算了；它是否帶有 subject 的輸入，仍然不追蹤；但被寫入的變數就是 subject 本身時（`preg_match($p, $m, $m)`、`parse_str($q, $q)`），它保留原本的值。`catch (E $e)` 的變數是例外物件，不是這個名稱之前的值。
+- PHP 規則：WordPress 的 `$wpdb` 存在屬性裡（`$this->wpdb = $wpdb`、`$this->db = &$wpdb`、`self::$mysqli =& $wpdb`），同一個檔案透過它查詢時（`$this->wpdb->get_results(...)`），現在就當成 `$wpdb`，所以把 request 輸入接進這種查詢會回報；以前只有 `$wpdb` 本身算 sink。這個 class（或它 use 的、同一個檔案裡的 trait）要看得到這個指派：只是屬性叫 `wpdb` 或 `db`、在別的檔案（例如上層類別的建構式）設定的，或是同一個檔案裡另一個 class 的同名屬性，都不算 `$wpdb`。
+- PHP 規則：request 輸入透過 `$wpdb->prepare()` 傳給寫在反引號裡的 `%s`（這時值是欄位或資料表名稱，有編號的 `%2$s` 也一樣）時，現在會回報（`php-sqli-prepare-identifier`）：`prepare()` 把值當字串加上引號，擋不住欄位或資料表名稱。以前 `prepare()` 一律當成每個值都已處理。放在引號裡、單獨出現、在 `ORDER BY` 後面或 `LIMIT` 裡的 `%s`，以及 `%d` 和 `%i`，都不會回報。
+
+### 已知問題
+
+- 對輸入 `extract()` 之後，它設定的變數讀屬性（`$cfg->path`）不算輸入，因為 request 資料只會設定字串和 array。`extract((array) json_decode($in))` 和 `extract(get_object_vars(json_decode($in)))` 可能設定物件，它的屬性是輸入，這兩種會漏報。
+- `reference` 規則有幾種寫法判斷不準：指令其實整行寫在程式裡，但拆成幾個中間沒有 `+` 的字串（`os.system('ls ' '-l')`，Python 會自動接成一個），或用 `' '.join()` 接起全是字面值的串列，仍然會報；屬性形式的物件（`h.env.from_string(s)`）只看名稱判斷，就算檔案裡寫了 `h.env = Engine()` 也一樣；`import os as o` 之後的 `o.system(cmd)`，以及換了名稱 import 的函式（`from hashlib import md5 as m` 之後的 `m(x)`），不會報。
 
 ## v0.5.7 — 2026-11-26
 

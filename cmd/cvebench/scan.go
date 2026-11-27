@@ -121,6 +121,7 @@ type ruleResult struct {
 	Fixed     bool // reported in the fixed release, at the fix
 	VulnSink  bool // reported on a sink line of the case in the vulnerable release (with sink lines only)
 	FixedSink bool // reported on that sink's line in the fixed release
+	Reference bool // a reference-tier rule: counted in the with-reference columns only
 }
 
 type caseResult struct {
@@ -137,6 +138,12 @@ type caseResult struct {
 	FixedFPSink bool
 	InFixFiles  int // findings of the case's class anywhere in the fix files (vulnerable release)
 	Err         string
+
+	// With reference: as Caught and FixedFP, a reference-tier rule (about how a
+	// call is made, not about input) also counting; the main verdict and the
+	// with-sink-lines columns leave those rules out.
+	CaughtRef  bool
+	FixedFPRef bool
 
 	vulnDir, fixedDir string
 }
@@ -166,7 +173,7 @@ func judge(r *caseResult, rs []rules.Rule) {
 				r.InFixFiles++
 			}
 		}
-		rr := ruleResult{Rule: rule.ID}
+		rr := ruleResult{Rule: rule.ID, Reference: rule.Tier == "reference"}
 		for _, ff := range r.FixFiles {
 			rr.Vuln = rr.Vuln || near(r.Vuln.Findings, rule.ID, ff.Path, ff.Vulnerable)
 			rr.Fixed = rr.Fixed || near(r.FixedScan.Findings, rule.ID, ff.Path, ff.Fixed)
@@ -176,11 +183,16 @@ func judge(r *caseResult, rs []rules.Rule) {
 			rr.VulnSink = rr.VulnSink || vs
 			rr.FixedSink = rr.FixedSink || vs && sl.Fixed > 0 && onLine(r.FixedScan.Findings, rule.ID, sl.Path, sl.Fixed)
 		}
+		r.CaughtRef = r.CaughtRef || rr.Vuln
+		r.FixedFPRef = r.FixedFPRef || rr.Vuln && rr.Fixed
+		r.Rules = append(r.Rules, rr)
+		if rr.Reference {
+			continue
+		}
 		r.Caught = r.Caught || rr.Vuln
 		r.FixedFP = r.FixedFP || rr.Vuln && rr.Fixed
 		r.CaughtSink = r.CaughtSink || rr.Vuln || rr.VulnSink
 		r.FixedFPSink = r.FixedFPSink || rr.Vuln && rr.Fixed || rr.VulnSink && rr.FixedSink
-		r.Rules = append(r.Rules, rr)
 	}
 }
 

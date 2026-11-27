@@ -34,7 +34,9 @@ var appCodeAudit = Tool{
 		"(.env, .git, SQL dumps, archives, phpinfo), debug mode left on (Django, Laravel, Flask, PHP display_errors), webshells and " +
 		"PHP files in upload folders, keys or passwords written into the code (reported by file, line and type; the value is never shown), " +
 		"and injection flaws in PHP, Python and JavaScript found by Shentu's rules (rule, CWE, file and line; no code is shown). " +
-		"Each finding has a fix. It reads files only and sends nothing anywhere.",
+		"Each finding has a fix. An injection finding of tier \"reference\" is about how a call is made, not about input reaching it " +
+		"(a weak hash, a template rendered without a sandbox): list such findings after the others, marked as reference. " +
+		"It reads files only and sends nothing anywhere.",
 	Params: schema(`{"type":"object","properties":{
 		"path":{"type":"string","description":"only audit under this directory (must be inside the app paths)"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
@@ -69,7 +71,7 @@ type CodeFinding struct {
 	Fix       string           `json:"fix"`
 	Rule      string           `json:"rule,omitempty"`      // injection: the rule id
 	CWE       string           `json:"cwe,omitempty"`       // injection: the weakness
-	Tier      string           `json:"tier,omitempty"`      // injection: "info" is not pushed by the patrol report, "alert" is
+	Tier      string           `json:"tier,omitempty"`      // injection: "info" is not pushed by the patrol report, "alert" is; "reference": listed last, counted apart
 	Files     []UnfinishedFile `json:"files,omitempty"`     // the files the summary of unfinished files is about (at most 10)
 	TestPath  bool             `json:"test_path,omitempty"` // injection: the file is under tests/, test/, examples/ or __tests__/
 	Generated bool             `json:"generated,omitempty"` // injection: the file is minified or bundled JavaScript
@@ -114,6 +116,12 @@ type CodeAudit struct {
 	Injection          int `json:"injection_findings"`
 	InjectionTestPaths int `json:"injection_findings_in_test_paths"`
 	InjectionGenerated int `json:"injection_findings_in_generated_code"` // minified or bundled JavaScript
+	// Reference-tier findings, counted here only (at most auditMaxPerFile of a
+	// rule in one file): about how a call is made, not about input.
+	Reference int `json:"reference_findings"`
+	// Reference-tier findings under test and example folders, counted apart
+	// as the injection findings there are.
+	ReferenceTestPaths int `json:"reference_findings_in_test_paths"`
 	// The memory the audit kept to: its heap budget and Go's memory limit
 	// while it ran (MiB).
 	MemoryBudgetMB int `json:"memory_budget_mb"`
@@ -601,11 +609,15 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	// At most auditMaxPerFile findings of one rule or check in one file and
 	// auditMaxFindings in all are listed; the injection counts take them all.
 	perFile, left := map[string]int{}, 0
-	var ranks [6]int // listed findings by listRank
+	var ranks [9]int // listed findings by listRank
 	worst := 0       // the lowest rank listed
 	add := func(f CodeFinding) {
 		if f.Kind == "injection" {
 			switch {
+			case f.Tier == "reference" && f.TestPath:
+				res.ReferenceTestPaths++
+			case f.Tier == "reference":
+				res.Reference++
 			case f.TestPath:
 				res.InjectionTestPaths++
 			case f.Generated:
@@ -614,18 +626,24 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				res.Injection++
 			}
 		}
+		ref := f.Kind == "injection" && f.Tier == "reference"
 		k := f.Kind + "\x00" + f.Rule + "\x00" + f.Path
 		if perFile[k] >= auditMaxPerFile {
-			left++
+			if !ref { // a reference finding left out is counted, and needs no note that would be pushed
+				left++
+			}
 			return
 		}
 		if len(res.Findings) >= auditMaxFindings {
 			// Full: a finding of a higher rank takes the place of one of the
 			// lowest listed, so alerts are never left out for info-tier
-			// findings, nor critical ones for warnings.
+			// findings, info-tier ones for reference ones, nor critical ones
+			// for warnings.
 			r := listRank(f)
 			if r >= worst {
-				left++
+				if !ref {
+					left++
+				}
 				return
 			}
 			for i := len(res.Findings) - 1; i >= 0; i-- {
@@ -633,10 +651,12 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 					perFile[g.Kind+"\x00"+g.Rule+"\x00"+g.Path]--
 					res.Findings = slices.Delete(res.Findings, i, i+1)
 					ranks[worst]--
+					if !(g.Kind == "injection" && g.Tier == "reference") {
+						left++
+					}
 					break
 				}
 			}
-			left++
 			for worst > 0 && ranks[worst] == 0 {
 				worst--
 			}
@@ -649,9 +669,11 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	// Findings the cap per rule and file left out before they were listed:
 	// counted, never kept (one file can hold hundreds of thousands).
 	over := map[string]int{}     // file → the most any pass left out
+	overRef := map[string]int{}  // ... of reference-tier rules
 	overGen := map[string]bool{} // the file is minified or bundled JavaScript
-	addOver := func(p string, n int, gen bool) {
+	addOver := func(p string, n, ref int, gen bool) {
 		over[p] = max(over[p], n)
+		overRef[p] = max(overRef[p], ref)
 		overGen[p] = overGen[p] || gen
 	}
 	countOver := func(p string, n int) {
@@ -879,7 +901,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		// Files are scanned on several cores; results are taken in file order.
 		type scanned struct {
 			found               []engine.Finding // at most auditMaxPerFile of a rule
-			over                int              // those left out
+			over, ref           int              // those left out (ref: of reference-tier rules)
 			err                 error
 			late, unread, timed bool
 			ran                 bool // taken by a worker before the audit's time ran out
@@ -916,7 +938,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 					lang := engine.LangOf(p)
 					var found []engine.Finding
 					found, out[i].timed, out[i].err = injectionScan(eng, lang, p, b)
-					out[i].found, out[i].over = capFound(found)
+					out[i].found, out[i].over, out[i].ref = capFound(found)
 					out[i].gen = generated(lang, b)
 				}
 			}()
@@ -934,13 +956,13 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			default:
 				k := r.kept
 				if k == nil {
-					k = &passResult{Found: r.found, Over: r.over, Reason: unfinishedReason(r.err), Cause: engine.CutOf(r.err).String(), Gen: r.gen}
+					k = &passResult{Found: r.found, Over: r.over, Ref: r.ref, Reason: unfinishedReason(r.err), Cause: engine.CutOf(r.err).String(), Gen: r.gen}
 					if !r.timed && k.Reason != "panic" {
 						st.entry(p, hash[p]).Own = k
 					}
 				}
 				addNew(k.Found, k.Gen)
-				addOver(p, k.Over, k.Gen)
+				addOver(p, k.Over, k.Ref, k.Gen)
 				if k.Reason != "" { // "calls": its own calls were cut short
 					partial = append(partial, UnfinishedFile{p, k.Reason, k.Cause})
 				}
@@ -993,9 +1015,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 							skip[r] = true
 						}
 						res, err := injectionCalls(pr, p, b, skip)
-						found, n := capFound(append(slices.Clone(part.Found), res.Found...))
-						n += part.Over
-						addOver(p, n, gen)
+						found, n, nr := capFound(append(slices.Clone(part.Found), res.Found...))
+						n, nr = n+part.Over, nr+part.Ref
+						addOver(p, n, nr, gen)
 						switch {
 						case errors.Is(err, errPanic):
 							addNew(found, gen)
@@ -1011,7 +1033,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 							// next audit, and this one goes on with the rest.
 							addNew(found, gen)
 							fs := st.entry(p, hash[p])
-							next := &partResult{Rules: append(slices.Clone(part.Rules), res.Done...), Found: found, Over: n,
+							next := &partResult{Rules: append(slices.Clone(part.Rules), res.Done...), Found: found, Over: n, Ref: nr,
 								Cut: part.Cut || res.Cut, Tries: maps.Clone(part.Tries)}
 							if res.At != "" {
 								if next.Tries == nil {
@@ -1026,7 +1048,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 							cut = !res.FileTime
 							continue
 						}
-						k = &passResult{Found: found, Over: n, Reason: unfinishedReason(err), Cause: engine.CutOf(err).String(), Gen: gen}
+						k = &passResult{Found: found, Over: n, Ref: nr, Reason: unfinishedReason(err), Cause: engine.CutOf(err).String(), Gen: gen}
 						if k.Reason == "" && (part.Cut || res.Cut || len(slow) > 0) {
 							k.Reason = "calls"
 						}
@@ -1043,7 +1065,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 					continue
 				}
 				addNew(k.Found, k.Gen)
-				addOver(p, k.Over, k.Gen)
+				addOver(p, k.Over, k.Ref, k.Gen)
 				covered++
 				if k.Reason != "calls" {
 					done++ // limits of the file itself were reported by the first pass
@@ -1077,6 +1099,13 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		for p, n := range over {
 			countOver(p, n)
 		}
+		for p, n := range overRef { // counted, not listed, and no note: reference findings are not pushed
+			if testPath(p) {
+				res.ReferenceTestPaths += n
+			} else {
+				res.Reference += n
+			}
+		}
 	}
 
 	if len(partial) > 0 {
@@ -1098,6 +1127,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	}
 	sort.SliceStable(res.Findings, func(i, j int) bool {
 		a, b := res.Findings[i], res.Findings[j]
+		if ra, rb := a.Tier == "reference", b.Tier == "reference"; ra != rb {
+			return rb // reference findings last
+		}
 		if ra, rb := severityRank(a.Severity), severityRank(b.Severity); ra != rb {
 			return ra < rb
 		}
@@ -1112,29 +1144,38 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 }
 
 // capFound keeps at most auditMaxPerFile findings of one rule in one file, the
-// first ones; over is how many it left out.
-func capFound(found []engine.Finding) (kept []engine.Finding, over int) {
+// first ones; over is how many it left out, ref how many of reference-tier
+// rules (not in over).
+func capFound(found []engine.Finding) (kept []engine.Finding, over, ref int) {
 	n := map[string]int{}
 	for _, f := range found {
 		k := f.RuleID + "\x00" + f.Path
 		if n[k] >= auditMaxPerFile {
-			over++
+			if f.Tier == "reference" {
+				ref++
+			} else {
+				over++
+			}
 			continue
 		}
 		n[k]++
 		kept = append(kept, f)
 	}
-	if over == 0 {
-		return found, 0
+	if over+ref == 0 {
+		return found, 0, 0
 	}
-	return kept, over
+	return kept, over, ref
 }
 
 // listRank orders findings for the list's cap: alerts before info-tier
-// injection findings (and those in test or generated code), then by severity.
+// injection findings (and those in test or generated code), those before
+// reference-tier ones, then by severity.
 func listRank(f CodeFinding) int {
 	r := severityRank(f.Severity)
-	if f.Kind == "injection" && (f.Tier != "alert" || f.TestPath || f.Generated) {
+	switch {
+	case f.Kind == "injection" && f.Tier == "reference":
+		r += 6
+	case f.Kind == "injection" && (f.Tier != "alert" || f.TestPath || f.Generated):
 		r += 3
 	}
 	return r

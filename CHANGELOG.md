@@ -8,6 +8,10 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.8 (unreleased)
 
+- A new rule tier, `reference`, for a rule about how a call is made rather than about input reaching
+  it (only a rule with `sources = []` may have it). app_code_audit and chat list its findings after
+  the others, marked as reference; the daily report gives them one line with their count. They are
+  never pushed and never given to attack detection. The `info` and `alert` tiers are unchanged.
 - A Debian or Ubuntu package held with `apt-mark hold` (dpkg state `hi`), or marked for removal but
   still installed (`ri`, `pi`), is checked as an installed one is. The package list went by dpkg's
   `ii` only, so a held package was neither checked nor said (the v0.5.7 known issue). A package dpkg
@@ -31,6 +35,17 @@ Chinese for the zh-TW pages; keep the two in step.
   there but not read (no permission, or a replay that lacks it) is now listed in the audit's
   `not_checked`; before, it was audited as an empty folder. A replay of a fixture recorded before
   this version says every such path not read, never "not there".
+- package_vulns reads every page of OSV's answer: OSV gives at most 1000 advisories a query and
+  names the next page; only the first was read, so the kernel's list stopped at 1000 (on Ubuntu
+  24.04, 383 CVEs fewer than another scanner found). Past 10 pages a package's rest is said in
+  `partial`, never cut quietly.
+- package_vulns on Ubuntu: a USN covers every release it fixed, and its aliases name CVEs some other
+  release has only (USN-7980-1 names CVE-2025-11187, which OSV has for 25.10 and 26.04, not 24.04).
+  Of a USN only the CVEs OSV also lists for that package on the host's release count now, so a CVE
+  of another release is no longer marked actively exploited (KEV) on this host, nor counted on the
+  surface, nor taken for a CVE OSV already reports when a third-party PHP or nginx is compared with
+  upstream. A USN whose package has no CVE-named advisory to tell its CVEs' release by is counted in
+  `kev_unchecked` and named, never dropped quietly.
 - Windows: Shentu's own files opened without following a link (the dispatch log, the AI budget
   reservations, the auto-incident and audit locks) are checked and used through one handle, opened
   not following a symlink or junction. Before, the file was looked at, then opened by its name, and
@@ -42,6 +57,49 @@ Chinese for the zh-TW pages; keep the two in step.
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
   window; sections in the window when the page loads, and every section on a page opened at an
   anchor, show at once.
+- PHP rules follow `extract()` of an array not written out. After `extract($args)`,
+  `extract($_POST)` or `extract(wp_parse_args($atts, [...]))` (which keeps every key of `$atts`),
+  each variable of the function may hold that input until it is assigned again: one defined before
+  (a template loader's `$template_name`, overwritten by `extract($args)`) and one never assigned
+  (`$team_id` after `extract($opts)`). Before, no variable was set, so a shortcode's attributes
+  passed this way reached `include` or `call_user_func()` unreported (CVE-2023-6996).
+  `extract(shortcode_atts($defaults, $atts))` sets the keys of `$defaults` only, and never
+  `$defaults` itself; `EXTR_SKIP` and the `EXTR_PREFIX_*` flags overwrite nothing; a property of a
+  value `extract()` set (`$wpdb->prefix` after `global $wpdb`) holds no input, an index of it does.
+  The flags count as PHP reads them: `EXTR_SKIP` and `EXTR_PREFIX_SAME` overwrite nothing,
+  `EXTR_IF_EXISTS` overwrites but creates nothing, `EXTR_PREFIX_ALL` and `EXTR_PREFIX_IF_EXISTS` set
+  only `prefix_` names (any such name when the prefix is not written out). A variable `extract()`
+  creates around a closure is seen in it only through its `use (...)`, and its parameters are the
+  caller's values.
+- PHP rules: after `preg_match($p, $s, $m)`, `preg_match_all()`, `parse_str($q, $out)` or
+  `exec($c, $output)`, the variable written by reference is the call's, so a value `extract()` set
+  there before is gone; whether it holds the subject's input is still not followed, but a variable
+  that is the subject itself (`preg_match($p, $m, $m)`, `parse_str($q, $q)`) keeps what it held.
+  A `catch (E $e)` variable is the exception, not what the name held before.
+- PHP rules: WordPress's `$wpdb` kept in a property (`$this->wpdb = $wpdb`, `$this->db = &$wpdb`,
+  `self::$mysqli =& $wpdb`) is `$wpdb` wherever the same file queries through it
+  (`$this->wpdb->get_results(...)`), so request input concatenated into such a query is reported;
+  before, only `$wpdb` itself was a sink. The class (or a trait of the file it uses) must show the
+  assignment: a property named `wpdb` or `db` alone, one set in another file (a parent class), or
+  one another class of the file gives `$wpdb` is not read as `$wpdb`.
+- PHP rules: request input passed to `$wpdb->prepare()` for a `%s` placeholder written inside
+  backticks, where the value is a column or table name (also a numbered `%2$s`), is reported
+  (`php-sqli-prepare-identifier`): `prepare()` quotes the value as a string, which does not protect
+  an identifier. Before, `prepare()` counted as escaping every value. A `%s` between quotes, standing
+  alone, after `ORDER BY` or in `LIMIT`, `%d` and `%i` are not reported.
+
+### Known issues
+
+- After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:
+  `extract()` of request data sets strings and arrays. `extract((array) json_decode($in))` and
+  `extract(get_object_vars(json_decode($in)))` can set objects whose properties are input, and these
+  are missed.
+- A `reference` rule misreads a few forms. A command written out in full is still reported when it
+  is split into adjacent string literals (`os.system('ls ' '-l')`, which Python joins into one) or
+  joined from a list of literals (`' '.join(['ls', '-l'])`). An attribute receiver
+  (`h.env.from_string(s)`) is known by its name only, even where the file assigns it
+  (`h.env = Engine()`). `o.system(cmd)` after `import os as o`, and a function imported under
+  another name (`m(x)` after `from hashlib import md5 as m`), are not reported.
 
 ## v0.5.7 — 2026-11-26
 

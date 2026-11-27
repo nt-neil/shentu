@@ -730,6 +730,7 @@ func TestHeldOut(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: %v", c.name, err)
 		}
+		fs = taintOnly(fs)
 		ok := (len(fs) > 0) == c.vulnerable
 		switch {
 		case ok:

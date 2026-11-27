@@ -14,6 +14,9 @@ func TestSurfaceInputs(t *testing.T) {
 	code := SurfaceCode([]CodeFinding{
 		{Kind: "injection", Rule: "js-cmdi", CWE: "CWE-78", Severity: "critical", Path: "a.js", Line: 3, Routes: []engine.RouteRef{r}, RoutesTruncated: true},
 		{Kind: "webshell", Path: "b.php"},
+		// a reference finding is about how a call is made (a weak hash), not an
+		// input reaching it: it is no surface an attack could use
+		{Kind: "injection", Tier: "reference", Rule: "python-weak-crypto-md5", CWE: "CWE-328", Severity: "medium", Path: "c.py", Line: 4},
 	})
 	if len(code) != 1 || code[0].Rule != "js-cmdi" || len(code[0].Routes) != 1 || !code[0].RoutesTruncated {
 		t.Errorf("code sinks %+v", code)

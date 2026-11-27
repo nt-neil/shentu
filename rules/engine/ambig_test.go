@@ -158,7 +158,7 @@ func TestAmbiguousCalls(t *testing.T) {
 				t.Logf("%s: ErrCalls %v", c.name, CutOf(err2))
 			}
 			var got []string
-			for _, f := range auditPath(t, e, pr, c.scan, src) {
+			for _, f := range taintOnly(auditPath(t, e, pr, c.scan, src)) {
 				p := f.Path
 				if p == "" {
 					p = c.scan

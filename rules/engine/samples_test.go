@@ -46,6 +46,9 @@ func TestSamples(t *testing.T) {
 					}
 				case "safe":
 					safe++
+					if r.Tier != "reference" {
+						fs = taintOnly(fs) // another rule's note on how a call is made is not this sample's flow
+					}
 					if len(fs) == 0 {
 						safeOK++
 					}
@@ -63,4 +66,17 @@ func TestSamples(t *testing.T) {
 // __SECRET__, so no value that looks like a credential is kept in the rule files.
 func sampleCode(code string) string {
 	return strings.ReplaceAll(code, "__SECRET__", strings.Join([]string{"not", "a", "real", "value"}, "-"))
+}
+
+// taintOnly drops findings of reference rules, which report how a call is
+// made whatever reaches it: the tests of input reaching a sink leave them out,
+// as the patrol and attack detection do.
+func taintOnly(fs []Finding) []Finding {
+	var out []Finding
+	for _, f := range fs {
+		if f.Tier != "reference" {
+			out = append(out, f)
+		}
+	}
+	return out
 }

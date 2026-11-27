@@ -21,11 +21,12 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 	b.WriteString("- findings and time: every report of every rule on the whole release, and the time to scan it.\n")
 	b.WriteString("- known gaps: cases the rules cannot catch yet (known_gap says why), run and listed apart, out of the rates.\n")
 	b.WriteString("- with sink lines: as caught and fixed FP, a finding of the class on the very line of the call the fix protects also counting (a case's [[sinks]], one per case, with the upstream fix as its basis). A cross-file flow is reported at the callee's sink, outside the fix files. Shown next to the main verdict, which does not count them. \"shared helper\": other flows reach that line too.\n")
+	b.WriteString("- with reference: as caught and fixed FP, a reference-tier rule (about how a call is made, not about input reaching it) also counting. The main verdict and the with-sink-lines columns leave those rules out; a reference rule's own rows say \"caught (reference)\".\n")
 	b.WriteString("- unfinished files: files a limit cut short, or too big to read; calls cut: files checked to the end whose calls were not all followed (cross-file findings may be missing). Cuts by cause count both.\n\n")
 
 	b.WriteString("## Summary\n\n")
-	b.WriteString("| group | cases | caught | catch rate | fixed FP | fixed FP rate | findings per release (vulnerable / fixed) | scan time per release | caught with sink lines | fixed FP with sink lines |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("| group | cases | caught | catch rate | fixed FP | fixed FP rate | findings per release (vulnerable / fixed) | scan time per release | caught with sink lines | fixed FP with sink lines | caught with reference | fixed FP with reference |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	groups := []struct {
 		name string
 		in   func(caseResult) bool
@@ -47,7 +48,7 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 		}{key, func(r caseResult) bool { return r.Class == key }})
 	}
 	for _, g := range groups {
-		var n, caught, fp, vf, ff, cs, fs int
+		var n, caught, fp, vf, ff, cs, fs, cr, fr int
 		var t time.Duration
 		for _, r := range results {
 			if r.Err != "" || r.KnownGap != "" || !g.in(r) {
@@ -66,6 +67,12 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 			if r.FixedFPSink {
 				fs++
 			}
+			if r.CaughtRef {
+				cr++
+			}
+			if r.FixedFPRef {
+				fr++
+			}
 			vf += len(r.Vuln.Findings)
 			ff += len(r.FixedScan.Findings)
 			t += r.Vuln.Time + r.FixedScan.Time
@@ -73,8 +80,8 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 		if n == 0 {
 			continue
 		}
-		fmt.Fprintf(&b, "| %s | %d | %d | %s | %d | %s | %.1f / %.1f | %.1fs | %d (%s) | %d (%s) |\n", g.name, n, caught, pct(caught, n), fp, pct(fp, caught),
-			float64(vf)/float64(n), float64(ff)/float64(n), t.Seconds()/float64(2*n), cs, pct(cs, n), fs, pct(fs, cs))
+		fmt.Fprintf(&b, "| %s | %d | %d | %s | %d | %s | %.1f / %.1f | %.1fs | %d (%s) | %d (%s) | %d (%s) | %d (%s) |\n", g.name, n, caught, pct(caught, n), fp, pct(fp, caught),
+			float64(vf)/float64(n), float64(ff)/float64(n), t.Seconds()/float64(2*n), cs, pct(cs, n), fs, pct(fs, cs), cr, pct(cr, n), fr, pct(fr, cr))
 	}
 
 	var gaps []caseResult
@@ -128,7 +135,7 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 		}
 		for _, rr := range r.Rules {
 			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %d | %d / %d | %d / %d | %.1fs / %.1fs | %d / %d | %s / %s | %s |\n",
-				r.ID, pkg, rel, r.Class, group, rr.Rule, mark(rr.Vuln, "caught"), mark(rr.Fixed, "still reports"), r.InFixFiles,
+				r.ID, pkg, rel, r.Class, group, rr.Rule, mark(rr.Vuln, caughtWord(rr)), mark(rr.Fixed, "still reports"), r.InFixFiles,
 				len(r.Vuln.Findings), len(r.FixedScan.Findings), r.Vuln.Unfinished, r.FixedScan.Unfinished,
 				r.Vuln.Time.Seconds(), r.FixedScan.Time.Seconds(), r.Vuln.CallsCut, r.FixedScan.CallsCut,
 				cutCell(r.Vuln.Cuts), cutCell(r.FixedScan.Cuts), sinkCell(r, rr))
@@ -185,6 +192,14 @@ func cutCell(m map[string]int) string {
 		keys[i] = fmt.Sprintf("%s:%d", k, m[k])
 	}
 	return strings.Join(keys, " ")
+}
+
+// caughtWord is a rule's "caught", marked when the main verdict leaves the rule out.
+func caughtWord(rr ruleResult) string {
+	if rr.Reference {
+		return "caught (reference)"
+	}
+	return "caught"
 }
 
 func mark(ok bool, s string) string {

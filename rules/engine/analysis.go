@@ -35,6 +35,7 @@ type entry struct {
 	emb   bool // the input is embedded in a larger string ("WHERE id = " . $id), not passed as is
 	weak  bool // all the input came through the result of a call the analysis does not know (get_post($id))
 	keys  bool // an array tainted only by what was written under literal keys ($q['a'] = $in): another literal key it does not hold reads clean (get)
+	ext   bool // tainted only by extract() of input, which sets strings and arrays: a property of it ($wpdb->prefix) holds no input (postfix)
 }
 
 type state map[string]entry
@@ -92,12 +93,16 @@ func mergeInto(x, y state) state {
 		if e, ok := s.get(k); ok {
 			return e
 		}
+		if x, ok := extractEntry(s, k); ok {
+			return x // a variable extract() of input may have set on that path (context.go)
+		}
 		return entry{taint: src, src: src, raw: src}
 	}
 	both := func(a, b entry) entry {
 		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san, pre: a.pre && b.pre,
 			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak),
-			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys)} // tainted only under literal keys on every path that taints it
+			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys), // tainted only under literal keys on every path that taints it
+			ext:  (a.taint || b.taint) && (!a.taint || a.ext) && (!b.taint || b.ext)}
 	}
 	type add struct {
 		k string
@@ -180,10 +185,12 @@ type analysis struct {
 	cparents map[string]string
 	cproj    *Project // the project, for those classes' parents in other files, also in the pass that follows no calls
 
-	lits   map[string][]Token // values written in the code, kept for argument conditions (context.go)
-	locals map[string]bool    // names of the file's own functions and methods (context.go)
-	defs   map[string]string  // PHP: define('NAME', 'text') in this file (context.go)
-	fname  string             // name of the function being analysed
+	lits    map[string][]Token // values written in the code, kept for argument conditions (context.go)
+	atsDefs map[string][]Token // $r = shortcode_atts(<array>, ...): the array, for extract($r) (context.go)
+	arrs    map[string][]Token // x = <value with no input> in the function being analysed, for litArray (context.go)
+	locals  map[string]bool    // names of the file's own functions and methods (context.go)
+	defs    map[string]string  // PHP: define('NAME', 'text') in this file (context.go)
+	fname   string             // name of the function being analysed
 
 	file  string            // the file analysed, for findings and for calls into other files
 	proj  *Project          // the project the file belongs to, or nil (project.go)
@@ -303,11 +310,14 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.markAssign(st, s.toks)
 		a.extractStmt(st, s.toks)
 		a.unsetStmt(st, s.toks)
+		a.outParamStmt(st, s.toks)
 		a.recordLit(st, s.toks)
+		a.atsAssign(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
 		a.sinks(st, s.toks)
 		a.condAssign(st, s.toks)
+		a.outParamStmt(st, s.toks)
 		t1, _ := a.refine(st, s.toks, true)
 		a.nonceCond(t1, s.toks, true)
 		// request aliases (reqalias.go): each branch starts from what held
@@ -395,6 +405,28 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 	return st, noExit
 }
 
+// closureScope: a PHP closure has a scope of its own, which sees only the
+// variables of its use (...): what extract() of input may have set around it
+// reaches the closure through those, and its own parameters and other names
+// are not the input (the markers are dropped).
+func closureScope(x state, f *fn) {
+	for _, u := range f.uses {
+		if u.Kind != Var {
+			continue
+		}
+		if _, ok := x[u.Text]; !ok {
+			if e, ok := extractEntry(x, u.Text); ok {
+				x[u.Text] = e
+			}
+		}
+	}
+	for k := range x {
+		if strings.HasPrefix(k, extractKey) {
+			delete(x, k)
+		}
+	}
+}
+
 // try: the body may stop at any statement, so a handler starts from what the
 // state was before or after it; the code after continues from every path that
 // did not exit.
@@ -411,8 +443,12 @@ func (a *analysis) try(s *stmt, st state) (state, uint8) {
 	} else {
 		exit = min(exit, e1)
 	}
-	for _, h := range s.handlers {
-		sh, eh := a.block(h, from.clone())
+	for i, h := range s.handlers {
+		in := from.clone()
+		if i < len(s.catchVars) && s.catchVars[i] != "" {
+			a.setTarget(in, []Token{{Kind: Var, Text: s.catchVars[i]}}, val{}, "=", false) // the exception object the catch binds
+		}
+		sh, eh := a.block(h, in)
 		if eh == noExit {
 			outs = append(outs, sh)
 		} else {
@@ -489,6 +525,9 @@ func (a *analysis) function(f *fn, st state) {
 	x := state{}
 	if !f.fresh {
 		x = st.clone()
+		if a.php && !f.arrow {
+			closureScope(x, f)
+		}
 	}
 	for _, p := range f.params {
 		if p.Kind == Var || p.Kind == Ident {
@@ -505,7 +544,20 @@ func (a *analysis) function(f *fn, st state) {
 		}
 	}
 	a.seed = nil
+	if a.php && !f.fresh {
+		for _, p := range fnParamNames(f) {
+			if _, ok := x[p]; !ok && p != "" {
+				x[p] = entry{} // a parameter is the caller's value, not what extract() set around the closure
+			}
+		}
+	}
 	curParams, curMoved := a.curParams, a.curMoved
+	arrs, atsDefs := a.arrs, a.atsDefs // what a function assigns is its own: another function's $defaults says nothing here
+	a.arrs, a.atsDefs = nil, nil       // a PHP named function sees nothing of the code around it
+	if !f.fresh {
+		a.arrs, a.atsDefs = maps.Clone(arrs), maps.Clone(atsDefs) // a closure or arrow function sees the enclosing scope's
+	}
+	defer func() { a.arrs, a.atsDefs = arrs, atsDefs }()
 	a.curParams = fnParamNames(f)
 	a.curMoved = paramsMoved(f.body, a.curParams)
 	defer func() { a.curParams, a.curMoved = curParams, curMoved }()
@@ -1486,6 +1538,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 	}
 	srcEnd := -1
 	byKeys, litIdx := false, false // the value so far is an array tainted only under literal keys; the last access is a literal index
+	ext := false                   // the value so far is tainted only by extract(): a string or an array
 	source := func(pos int) {
 		if a.noSrc {
 			return
@@ -1504,8 +1557,12 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			if e, ok := st[key]; ok {
 				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak}
 				byKeys = e.keys && e.taint
+				ext = e.ext && e.taint
 			} else if byKeys && litIdx {
 				v, byKeys = val{}, false // a literal key an array tainted only under other literal keys does not hold
+			} else if x, ok := extractEntry(st, key); ok && a.php && pos == baseEnd {
+				v = val{taint: x.taint, raw: x.raw, emb: x.emb, weak: x.weak} // a variable extract() of input may have defined (context.go)
+				ext = true
 			}
 		}
 	}
@@ -1527,6 +1584,9 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		}
 		switch {
 		case memberOp(a.php, tk) && j+1 < len(t) && (t[j+1].Kind == Ident || t[j+1].Kind == Var):
+			if ext {
+				v, ext = val{}, false // a property or method of a string or an array extract() set: no value from the input
+			}
 			// flask.request.form, self.request.GET: a source can start at a member.
 			source(j + 1)
 			if key != "" {
@@ -2615,7 +2675,19 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
 		return false
 	}
+	if cond != nil && cond.notLiteral && a.literalArg(st, cond, region, open) {
+		return false // os.system("make clean"): a command written out in full
+	}
 	if a.noSources() {
+		if s.member && len(a.r.sanitizers) > 0 && a.expr(st, t[a.chainStart(t, i):i], false).san {
+			return false // SandboxedEnvironment().from_string(x): an object a sanitizer made
+		}
+		if s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, cond.recvNames, t[a.chainStart(t, i):i]) {
+			return false // Engine().from_string(x): a Django template, not Jinja
+		}
+		if !s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, nil, t[i:open]) {
+			return false // md5(x) of a function the file does not import from hashlib
+		}
 		a.span = spanText(t, i, end, open)
 		a.report(t[i].Line)
 		return true
@@ -2635,12 +2707,18 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		if cond != nil && len(cond.receiver) > 0 && !a.recvIs(cond.receiver, recv) {
 			return false // finders.find(path) is not a MongoDB collection
 		}
+		if cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, cond.recvNames, recv) {
+			return false // Engine().from_string(x): a Django template, not Jinja
+		}
 		if cond != nil && len(cond.notReceiver) > 0 && a.recvSurely(cond.notReceiver, recv) {
 			return false // (new WP_Query)->query($args): a query built from an arguments array, not SQL
 		}
 		if cond != nil && len(cond.unlessImports) > 0 && a.importsLeaveOut(cond, recv) {
 			return false // a TypeORM repository on an SQL database: where becomes bound parameters
 		}
+	}
+	if !s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, nil, t[i:open]) {
+		return false // md5(x) of a function the file does not import from hashlib
 	}
 	whole := cond != nil && cond.whole
 	emb := false
@@ -2679,6 +2757,15 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		tainted = hit(a.expr(st, recv, false))
 	case open >= 0:
 		args := splitTop(region, isComma)
+		if cond != nil && cond.identPh {
+			for _, k := range a.identArgs(st, args) {
+				if reaches(args[k]) {
+					tainted = true
+					break
+				}
+			}
+			break
+		}
 		if cond != nil && (cond.arg != nil || cond.name != "") {
 			if arg, ok := a.condArg(args, cond); ok {
 				tainted = reaches(arg)
