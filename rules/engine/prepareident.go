@@ -169,20 +169,7 @@ func (a *analysis) unescapeStr(b []byte, s string, flags uint16) []byte {
 		case 'u':
 			if i+2 < len(s) && s[i+2] == '{' {
 				if end := strings.IndexByte(s[i+3:], '}'); end >= 0 {
-					cp, ok := 0, end > 0
-					for _, h := range []byte(s[i+3 : i+3+end]) {
-						if !isHexDigit(h) || cp > 0x10ffff {
-							ok = false
-							break
-						}
-						cp = cp*16 + hexVal(h)
-					}
-					if ok && cp < 0x80 {
-						b = append(b, byte(cp)) // \u{60} is a backtick
-					} else {
-						b = append(b, 0) // past ASCII: no quote of SQL's
-					}
-					i += 3 + end
+					b, i = append(b, 0), i+3+end // a code point: no quote of SQL's
 					continue
 				}
 			}
