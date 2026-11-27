@@ -30,30 +30,31 @@ func sudoRisks(s hostenv.SudoNoPass) []Risk {
 	}
 	var out []Risk
 	if len(warn) > 0 {
-		out = append(out, Risk{"sudo:nopasswd", "warning", "sudo runs every command with no password: " + ruleList(warn) +
-			"; whoever gets into one of these accounts has the run-as account's power at once: require the password, or limit NOPASSWD to the commands needed"})
+		out = append(out, Risk{"sudo:nopasswd", "warning", "sudo runs every command with no password asked, by these rules: " + ruleList(warn) +
+			"; whoever gets into one of these accounts has the run-as account's power at once: require the password, or limit the no-password rules to the commands needed"})
 	}
 	if len(cloud) > 0 {
-		out = append(out, Risk{"sudo:nopasswd:cloud-init", "info", "sudo runs every command with no password for cloud-init's default user, as the cloud image sets it up: " + ruleList(cloud) +
+		out = append(out, Risk{"sudo:nopasswd:cloud-init", "info", "sudo runs every command with no password asked for cloud-init's default user, as the cloud image sets it up, by these rules: " + ruleList(cloud) +
 			"; safe only while that user can log in with a key alone, never a password"})
 	}
 	if len(some) > 0 {
-		out = append(out, Risk{"sudo:nopasswd:some", "info", "sudo runs some commands with no password: " + ruleList(some)})
+		out = append(out, Risk{"sudo:nopasswd:some", "info", "sudo runs some commands with no password asked, by these rules: " + ruleList(some)})
 	}
 	if len(s.Unread) > 0 {
 		why := ""
 		if slices.ContainsFunc(s.Unread, func(u string) bool { return strings.HasSuffix(u, "(permission denied)") }) {
 			why = "; run Shentu as root, as sudo reads them"
 		}
-		out = append(out, Risk{uncheckedPrefix + "sudoers", "info", "cannot tell in full whether sudo runs commands with no password: " +
+		out = append(out, Risk{uncheckedPrefix + "sudoers", "info", "cannot tell in full whether sudo runs commands with no password asked: " +
 			Cut(strings.Join(s.Unread, ", "), 300) + " not read" + why})
 	}
 	return out
 }
 
-// sudoRuleText is a rule as read, then what it runs and as whom, as it
-// says (S-274-3): "every command" or the commands; root when no run-as
-// list is given, any user for ALL.
+// sudoRuleText is a rule's file and whom it is for, then what it runs and
+// as whom, as it says (S-274-3): "every command" or the commands; root when
+// no run-as list is given, any user for ALL. Built from the parsed fields,
+// never the line (S-274-10).
 func sudoRuleText(r hostenv.SudoRule) string {
 	what := "every command"
 	if !r.All {
@@ -73,7 +74,24 @@ func sudoRuleText(r hostenv.SudoRule) string {
 	if len(as) == 0 {
 		as = []string{"root"} // Defaults: sudo's default run-as
 	}
-	return Cut(r.String(), 160) + " (" + what + ", as " + strings.Join(slices.Compact(as), ", ") + ")"
+	return r.File + ": " + Cut(sudoWho(r), 80) + " (" + what + ", as " + strings.Join(slices.Compact(as), ", ") + ")"
+}
+
+// sudoWho is whom a rule is for, from its parsed fields, not its line: a
+// pushed text goes through the secret masking, which takes a line's
+// "NOPASSWD: <command>" for a password (S-274-10).
+func sudoWho(r hostenv.SudoRule) string {
+	switch {
+	case !r.Defaults:
+		return r.Who
+	case r.Who != "":
+		return "Defaults !authenticate for " + r.Who
+	case len(r.Runas) > 0:
+		return "Defaults !authenticate for whoever runs as " + strings.Join(r.Runas, ", ")
+	case r.Cmds != nil:
+		return "Defaults !authenticate for these commands"
+	}
+	return "Defaults !authenticate for everyone"
 }
 
 // ruleList is the first three rules, each cut, and how many more.

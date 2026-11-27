@@ -3,7 +3,6 @@ package hostenv
 import (
 	"errors"
 	"io/fs"
-	"path/filepath"
 )
 
 // WalkFunc is called by Walk for each path: st is its Lstat (a link is
@@ -50,8 +49,9 @@ func walk(lstat func(Source, string) (FileStat, error), src Source, p string, st
 			return err
 		}
 	}
+	join := PathFor(src).Join // the host's spelling, not the machine's (S-272-2)
 	for _, n := range names {
-		c := filepath.Join(p, n)
+		c := join(p, n)
 		cst, cerr := lstat(src, c)
 		if err := walk(lstat, src, c, cst, cerr, fn); err != nil {
 			if !errors.Is(err, fs.SkipDir) {

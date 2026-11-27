@@ -101,7 +101,7 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 			if real == root {
 				return p
 			}
-			return filepath.Clean(root) + strings.TrimPrefix(p, real) // no "//" from a trailing slash
+			return hostenv.PathFor(src).Clean(root) + strings.TrimPrefix(p, real) // no "//" from a trailing slash; the host's spelling
 		}
 		hostenv.WalkNoID(src, real, func(p string, st hostenv.FileStat, err error) error { // no file opened per entry (S-276-1)
 			if err != nil {
@@ -378,10 +378,11 @@ func macUnprivate(p string) string {
 }
 
 func allowedLog(p string, patterns []string) bool {
-	p = filepath.Clean(p)
+	ops := hostenv.PathFor(hostSource()) // the host's paths: a Linux host's read on Windows keeps "/" (S-272-2)
+	p = ops.Clean(p)
 	for _, pat := range patterns {
 		for _, cand := range []string{pat, pat + ".1", pat + ".*.gz"} {
-			if ok, _ := filepath.Match(cand, p); ok {
+			if ok, _ := ops.Match(cand, p); ok {
 				return true
 			}
 		}

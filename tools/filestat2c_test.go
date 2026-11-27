@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -83,12 +82,6 @@ func (h statHost) Stat(p string) (hostenv.FileStat, error) { return h.Lstat(p) }
 // accounts, its webshell found in what the host source gives; what could
 // not be read is said.
 func TestFileChangesHostSource(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		// A Linux host read on a Windows machine: hostenv.Walk and the log
-		// allowlist join and match with filepath (\ there), S-272-2's
-		// class (plan PR-3); the Windows host read is not what this tests.
-		t.Skip("a Linux host read's paths, joined by filepath on Windows (PR-3)")
-	}
 	now := time.Now()
 	old := now.Add(-72 * time.Hour)
 	recent := now.Add(-10 * time.Minute)
@@ -130,12 +123,6 @@ func TestFileChangesHostSource(t *testing.T) {
 // PR-2c: log_search's hard-link check reads the host's link count; one
 // not known (an older fixture) is not judged.
 func TestLogSearchHardLinkHostSource(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		// A Linux host read on a Windows machine: hostenv.Walk and the log
-		// allowlist join and match with filepath (\ there), S-272-2's
-		// class (plan PR-3); the Windows host read is not what this tests.
-		t.Skip("a Linux host read's paths, joined by filepath on Windows (PR-3)")
-	}
 	two, one := uint64(2), uint64(1)
 	for name, c := range map[string]struct {
 		nlink  *uint64
@@ -190,9 +177,6 @@ func (c countNoID) LstatNoID(p string) (hostenv.FileStat, error) {
 // S-276-1: file_changes walks with LstatNoID: no file opened per entry for
 // an ID it does not use.
 func TestFileChangesWalksWithoutIDs(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a Linux host read's paths, joined by filepath on Windows (PR-3)")
-	}
 	var lstat, noID int
 	withHost(t, countNoID{statHost{files: map[string]string{"/srv/w/a.txt": "x", "/srv/w/b/c.txt": "y"}}, &lstat, &noID})
 	if _, err := FileChanges(context.Background(), []string{"/srv/w"}, time.Now().Add(-time.Hour)); err != nil {
