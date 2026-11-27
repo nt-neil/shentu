@@ -34,8 +34,8 @@ func TestMaskCommandArgs(t *testing.T) {
 		// a , ; or \ in a value is masked with it; a quoted value is masked to
 		// its closing quote whatever follows; a JSON string that ends right
 		// after -p keeps its line's shape (no secret there)
-		"mysql -pab,cd\\,ef" + s + " shop":            "mysql -p[REDACTED] shop",
-		"mysql -p\"" + s + " x\"; echo done":          "mysql -p[REDACTED]; echo done",
+		"mysql -pab,cd;e|f&g\\,h" + s + " shop":       "mysql -p[REDACTED] shop",
+		"mysql -p\"" + s + " x\"; echo done":          "mysql -p[REDACTED] echo done",
 		`{"msg":"mysql -p","ip":"192.0.2.9"}`:         `{"msg":"mysql -p","ip":"192.0.2.9"}`,
 		`{"msg":"tool --password ","ip":"192.0.2.9"}`: `{"msg":"tool --password ","ip":"192.0.2.9"}`,
 		"tool --password a\\,b" + s + " next":         "tool --password [REDACTED] next",

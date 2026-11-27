@@ -30,16 +30,18 @@ var maskRules = []struct {
 	// with =, or an empty user). A ; | & later on the line does not end the
 	// command (it may be quoted). A value is one shell word: \x, quoted
 	// segments ("a b" or 'a b', at its start or after other characters) and
-	// anything but a space, a quote or the shell's ; | & (they end the word:
-	// what follows is the next command), so a , or \ in it is masked too. A
+	// anything but a space or a quote, so a , ; | & or \ in it is masked
+	// too (argv as ps shows it: a ; there is the password's, not the
+	// shell's; a quoted value's ; after it goes with it, too much rather
+	// than too little). A
 	// "..." holding only JSON punctuation (, : { } [ ] and spaces) ends the
 	// word instead: it is a JSON string's end and the next one's start
 	// ({"msg":"mysql -pab","ip":...}), and the line keeps its shape for the
 	// parsers after.
-	{regexp.MustCompile(`(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin)\b[^\n]*?\s-p)(?:\\.|[^\s"'\\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')+`), "${1}[REDACTED]"},
-	{regexp.MustCompile(`(--pass(?:word|wd)\s+)(?:\\.|[^-\s"'\\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')(?:\\.|[^\s"'\\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')*`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin)\b[^\n]*?\s-p)(?:\\.|[^\s"'\\]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')+`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(--pass(?:word|wd)\s+)(?:\\.|[^-\s"'\\]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')(?:\\.|[^\s"'\\]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')*`), "${1}[REDACTED]"},
 	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])(?:"[^\s:"]*:|'[^\s:']*:))[^"'\n]*`), "${1}[REDACTED]"},
-	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])[^\s:"'\\]*:)(?:\\.|[^\s"'\\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')+`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])[^\s:"'\\]*:)(?:\\.|[^\s"'\\]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')+`), "${1}[REDACTED]"},
 }
 
 // mask removes secrets. sudoers' NOPASSWD: and PASSWD: tags in sudoers
