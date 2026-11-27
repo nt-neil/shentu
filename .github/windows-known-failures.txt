@@ -5,8 +5,3 @@
 #   P = product wrong on a live Windows host - fixed before I-8
 #   T = the test builds a Unix-only scenario; Shentu on Windows is right - fixed after I-8
 # A name leaves this list in the PR that fixes it.
-TestPHPReview200ConfReadCaps        T  writes a file named C:\Apache24\conf\httpd.conf
-TestApacheH2Risk                    T  POSIX Glob over Windows temp paths, uid, symlinks, Chmod(0)
-TestLoginIndexAnswers               T  mode 0600 (Windows reports 0666); journald-only index
-TestSitePackagesSystem              T  Windows temp globs as Debian's /usr/lib layout
-TestSitePackagesShadowFoldersAbove  T  same

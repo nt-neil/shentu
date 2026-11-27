@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -21,6 +22,9 @@ func TestApacheH2Affected(t *testing.T) {
 }
 
 func TestApacheH2Risk(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Debian's Apache layout: a symlinked module, its owner's uid and a mode-0 file are Unix's (Windows' Apache is apacheWindowsUnchecked)")
+	}
 	etc, _ := filepath.EvalSymlinks(t.TempDir())
 	root, owner := webConfRoot, webConfOwner
 	ver := apacheVersion

@@ -434,7 +434,7 @@ func TestSitePackagesSystem(t *testing.T) {
 	dist(t, local, "bylocal-1.0", "bylocal", "1.0", "")
 	t.Cleanup(SetSitePackagesForTest([]string{filepath.Join(sys, "usr", "lib", "python3*", "dist-packages"), filepath.Join(sys, "usr", "local", "lib", "python3*", "dist-packages")}))
 	oldP := osManagedPrefixes
-	osManagedPrefixes = []string{filepath.Join(sys, "usr", "lib") + "/"}
+	osManagedPrefixes = []string{filepath.Join(sys, "usr", "lib") + string(filepath.Separator)}
 	t.Cleanup(func() { osManagedPrefixes = oldP })
 	f := &pypiFeeds{}
 	if _, err := AppVulns(context.Background(), &http.Client{Transport: f}, nil); err != nil {
@@ -575,7 +575,7 @@ func TestSitePackagesShadowFoldersAbove(t *testing.T) {
 	t.Cleanup(SetSitePackagesForTest([]string{managed, local}))
 	oldP, oldRoot := osManagedPrefixes, rootOnly
 	t.Cleanup(func() { osManagedPrefixes, rootOnly = oldP, oldRoot })
-	osManagedPrefixes = []string{filepath.Join(sys, "usr", "lib") + "/"}
+	osManagedPrefixes = []string{filepath.Join(sys, "usr", "lib") + string(filepath.Separator)}
 	known := func() string {
 		out, _ := AppVulns(context.Background(), &http.Client{Transport: &pypiFeeds{}}, nil)
 		pth, _ := out["pth"].([]PthFile)
