@@ -104,7 +104,7 @@ func TestSudoRebootRisks(t *testing.T) {
 		rules = append(rules, hostenv.SudoRule{File: f, Line: "1", Cmds: []string{"/x"}})
 	}
 	r := sudoRisks(hostenv.SudoNoPass{Rules: rules, Unread: []string{"/etc/sudoers.d (permission denied)"}})
-	if len(r) != 2 || r[0].Key != "sudo:nopasswd:some" || r[0].Severity != "info" || !strings.Contains(r[0].Summary, "a:  (only /x, as root); b:  (only /x, as root); c:  (only /x, as root) (and 1 more)") ||
+	if len(r) != 2 || r[0].Key != "sudo:nopasswd:some" || r[0].Severity != "info" || !strings.Contains(r[0].Summary, "a: (someone) (only /x, as root); b: (someone) (only /x, as root); c: (someone) (only /x, as root) (and 1 more)") ||
 		!Unchecked(r[1]) || NotYet(r[1]) || !strings.Contains(r[1].Summary, "run Shentu as root") {
 		t.Errorf("%+v", r)
 	}
@@ -135,5 +135,33 @@ func TestSudoPushedTextNotMasked(t *testing.T) {
 		if !strings.Contains(all, w) {
 			t.Errorf("missing %q in %q", w, all)
 		}
+	}
+}
+
+// A secret in a sudo command's arguments or in a run-as list never
+// reaches site_profile (it goes to the model whole), nor does a long
+// run-as list run on (S-280-3).
+func TestSudoRiskTextMasksSecrets(t *testing.T) {
+	pw := strings.Join([]string{"hunter", "2", "Sekr", "1t"}, "")
+	tok := strings.Join([]string{"tok", "en", "Value", "77"}, "")
+	key := "-----BEGIN RSA PRIVATE " + "KEY-----\nMIIB" + strings.Repeat("x", 40) + "\n-----END RSA PRIVATE " + "KEY-----"
+	h := dirHost{scriptHost{memHost: memHost{
+		"/etc/sudoers": "bob ALL=(root) NOPASSWD: /usr/bin/mysql --password=" + pw + ", /usr/bin/curl -H token=" + tok + "\n" +
+			"Runas_Alias DB = " + strings.Repeat("dbuser,", 30) + "dbuser\nann ALL=(" + strings.Repeat("svc", 40) + ") NOPASSWD: /bin/ls\n",
+		"/etc/sudoers.d/k": "carl ALL=(root) NOPASSWD: /usr/bin/printf " + strings.ReplaceAll(key, "\n", " ") + "\n",
+	}}}
+	withHost(t, h)
+	var all []string
+	for _, r := range sudoRisks(hostenv.SudoNopasswd(h)) {
+		all = append(all, r.Summary)
+	}
+	s := strings.Join(all, "\n")
+	for _, secret := range []string{pw, tok, "MIIB" + strings.Repeat("x", 40)} {
+		if strings.Contains(s, secret) {
+			t.Errorf("secret %q in %q", secret, s)
+		}
+	}
+	if strings.Contains(s, strings.Repeat("svc", 40)) {
+		t.Errorf("run-as list not cut: %q", s)
 	}
 }

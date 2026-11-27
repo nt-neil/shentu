@@ -46,7 +46,7 @@ func sudoRisks(s hostenv.SudoNoPass) []Risk {
 			why = "; run Shentu as root, as sudo reads them"
 		}
 		out = append(out, Risk{uncheckedPrefix + "sudoers", "info", "cannot tell in full whether sudo runs commands with no password asked: " +
-			Cut(strings.Join(s.Unread, ", "), 300) + " not read" + why})
+			Cut(hostenv.MaskSecrets(strings.Join(s.Unread, ", ")), 300) + " not read" + why}) // an include's line read as is: masked
 	}
 	return out
 }
@@ -58,7 +58,9 @@ func sudoRisks(s hostenv.SudoNoPass) []Risk {
 func sudoRuleText(r hostenv.SudoRule) string {
 	what := "every command"
 	if !r.All {
-		what = "only " + Cut(strings.Join(r.Cmds, ", "), 120)
+		// a command's arguments can hold a secret (mysql --password=...):
+		// masked here, as site_profile goes to the model whole
+		what = "only " + Cut(hostenv.MaskSecrets(strings.Join(r.Cmds, ", ")), 120)
 	}
 	var as []string
 	for _, a := range r.Runas {
@@ -74,7 +76,7 @@ func sudoRuleText(r hostenv.SudoRule) string {
 	if len(as) == 0 {
 		as = []string{"root"} // Defaults: sudo's default run-as
 	}
-	return r.File + ": " + Cut(sudoWho(r), 80) + " (" + what + ", as " + strings.Join(slices.Compact(as), ", ") + ")"
+	return r.File + ": " + Cut(sudoWho(r), 80) + " (" + what + ", as " + Cut(hostenv.MaskSecrets(strings.Join(slices.Compact(as), ", ")), 80) + ")"
 }
 
 // sudoWho is whom a rule is for, from its parsed fields, not its line: a
@@ -82,6 +84,8 @@ func sudoRuleText(r hostenv.SudoRule) string {
 // "NOPASSWD: <command>" for a password (S-274-10).
 func sudoWho(r hostenv.SudoRule) string {
 	switch {
+	case !r.Defaults && r.Who == "":
+		return "(someone)" // a rule always has a user list; not one told (S-280-4)
 	case !r.Defaults:
 		return r.Who
 	case r.Who != "":
