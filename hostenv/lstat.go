@@ -23,18 +23,43 @@ func Lstat(src Source, path string) (FileStat, error) {
 }
 
 func (l *Live) Lstat(path string) (FileStat, error) {
-	st, err := os.Lstat(l.path(path))
-	if err != nil {
-		return FileStat{}, err
-	}
+	fst, st, err := l.lstat(path)
 	// A regular file's ID, as Stat gives it: ReadFileIfSame compares the
 	// file read with the one a walk saw. Only a regular file is read, and a
 	// walk lstats every entry: on Windows the ID costs an open.
-	fst := withStatExtra(FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st)}, st)
-	if st.Mode().IsRegular() {
+	if err == nil && st.Mode().IsRegular() {
 		fst.ID = pathFileID(l.path(path), st)
 	}
-	return fst, nil
+	return fst, err
+}
+
+// LstatNoID is Lstat without the file ID: no file is opened (on Windows
+// the ID costs one). For a walk that reads no file it saw by its ID
+// (file_changes, S-276-1).
+func (l *Live) LstatNoID(path string) (FileStat, error) {
+	fst, _, err := l.lstat(path)
+	return fst, err
+}
+
+func (l *Live) lstat(path string) (FileStat, os.FileInfo, error) {
+	st, err := os.Lstat(l.path(path))
+	if err != nil {
+		return FileStat{}, nil, err
+	}
+	return withStatExtra(FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st)}, st), st, nil
+}
+
+// lstatNoIDer is implemented by Sources whose Lstat can skip the file ID.
+type lstatNoIDer interface {
+	LstatNoID(path string) (FileStat, error)
+}
+
+// lstatNoID is LstatNoID where the source has it, else Lstat.
+func lstatNoID(src Source, path string) (FileStat, error) {
+	if s, ok := src.(lstatNoIDer); ok {
+		return s.LstatNoID(path)
+	}
+	return Lstat(src, path)
 }
 
 // ACLReader is implemented by Sources that can tell whether a path carries

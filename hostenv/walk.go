@@ -18,15 +18,26 @@ type WalkFunc func(path string, st FileStat, err error) error
 // running the check. Links are not followed. A Source without Lstat gives
 // ErrNoStat for every path; a fixture without the path, ErrNotRecorded.
 func Walk(src Source, root string, fn WalkFunc) error {
-	st, err := Lstat(src, root)
-	err = walk(src, root, st, err, fn)
+	return walkWith(Lstat, src, root, fn)
+}
+
+// WalkNoID is Walk with no file ID in the stats (FileStat.ID ""): no file
+// is opened (on Windows Lstat opens every regular file for it), for a walk
+// that reads no file by the ID it saw (file_changes, S-276-1).
+func WalkNoID(src Source, root string, fn WalkFunc) error {
+	return walkWith(lstatNoID, src, root, fn)
+}
+
+func walkWith(lstat func(Source, string) (FileStat, error), src Source, root string, fn WalkFunc) error {
+	st, err := lstat(src, root)
+	err = walk(lstat, src, root, st, err, fn)
 	if errors.Is(err, fs.SkipDir) || errors.Is(err, fs.SkipAll) {
 		return nil
 	}
 	return err
 }
 
-func walk(src Source, p string, st FileStat, serr error, fn WalkFunc) error {
+func walk(lstat func(Source, string) (FileStat, error), src Source, p string, st FileStat, serr error, fn WalkFunc) error {
 	if err := fn(p, st, serr); err != nil {
 		return err
 	}
@@ -41,8 +52,8 @@ func walk(src Source, p string, st FileStat, serr error, fn WalkFunc) error {
 	}
 	for _, n := range names {
 		c := filepath.Join(p, n)
-		cst, cerr := Lstat(src, c)
-		if err := walk(src, c, cst, cerr, fn); err != nil {
+		cst, cerr := lstat(src, c)
+		if err := walk(lstat, src, c, cst, cerr, fn); err != nil {
 			if !errors.Is(err, fs.SkipDir) {
 				return err
 			}

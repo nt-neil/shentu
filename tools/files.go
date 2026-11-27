@@ -103,7 +103,7 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 			}
 			return filepath.Clean(root) + strings.TrimPrefix(p, real) // no "//" from a trailing slash
 		}
-		hostenv.Walk(src, real, func(p string, st hostenv.FileStat, err error) error {
+		hostenv.WalkNoID(src, real, func(p string, st hostenv.FileStat, err error) error { // no file opened per entry (S-276-1)
 			if err != nil {
 				// Not read is not unchanged (M0: much of macOS's tree is
 				// closed to a user; a replay without the path): said, up
@@ -182,8 +182,14 @@ func watchRoot(src hostenv.Source, root string) (string, error) {
 	if onThisMachine(src) {
 		return filepath.EvalSymlinks(root)
 	}
-	if _, err := hostenv.Lstat(src, root); err != nil {
+	st, err := hostenv.Lstat(src, root)
+	if err != nil {
 		return "", err
+	}
+	if st.Mode&fs.ModeSymlink != 0 || st.Mode&fs.ModeIrregular != 0 {
+		// a link or junction a recording cannot resolve: said unread,
+		// never an empty, unchanged-looking list (S-276-2)
+		return "", fmt.Errorf("%s is a link or junction, not followed in a recording", root)
 	}
 	return root, nil
 }

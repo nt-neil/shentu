@@ -151,3 +151,54 @@ func TestLogSearchHardLinkHostSource(t *testing.T) {
 		}
 	}
 }
+
+// winStatHost is statHost as a Windows host read (a recording).
+type winStatHost struct{ statHost }
+
+func (winStatHost) Info() hostenv.SourceInfo {
+	return hostenv.SourceInfo{GOOS: "windows", GOARCH: "amd64"}
+}
+
+// S-276-2: a Windows recording's watched root that is a link or junction
+// is said unread, never an empty list.
+func TestFileChangesWindowsRecordingLinkRoot(t *testing.T) {
+	const root = `C:\inetpub\wwwroot`
+	for name, mode := range map[string]fs.FileMode{"symlink": fs.ModeSymlink | 0o777, "junction": fs.ModeIrregular} {
+		withHost(t, winStatHost{statHost{files: map[string]string{}, stat: map[string]hostenv.FileStat{root: {Mode: mode, UID: -1}}}})
+		out, err := FileChanges(context.Background(), []string{root}, time.Now().Add(-time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u, _ := out["unread"].([]string); len(u) != 1 || u[0] != root {
+			t.Errorf("%s: unread %v, missing %v", name, out["unread"], out["missing"])
+		}
+	}
+}
+
+// countNoID counts which Lstat a walk asks for.
+type countNoID struct {
+	statHost
+	lstat, noID *int
+}
+
+func (c countNoID) Lstat(p string) (hostenv.FileStat, error) { *c.lstat++; return c.statHost.Lstat(p) }
+func (c countNoID) LstatNoID(p string) (hostenv.FileStat, error) {
+	*c.noID++
+	return c.statHost.Lstat(p)
+}
+
+// S-276-1: file_changes walks with LstatNoID: no file opened per entry for
+// an ID it does not use.
+func TestFileChangesWalksWithoutIDs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a Linux host read's paths, joined by filepath on Windows (PR-3)")
+	}
+	var lstat, noID int
+	withHost(t, countNoID{statHost{files: map[string]string{"/srv/w/a.txt": "x", "/srv/w/b/c.txt": "y"}}, &lstat, &noID})
+	if _, err := FileChanges(context.Background(), []string{"/srv/w"}, time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if noID < 4 || lstat != 0 {
+		t.Errorf("LstatNoID %d, Lstat %d: want every entry by LstatNoID", noID, lstat)
+	}
+}
