@@ -34,8 +34,26 @@ type Case struct {
 	// source they read, say). Such a case is run and reported on its own, out
 	// of the catch and fixed FP rates, so it does not dilute them.
 	KnownGap string `toml:"known_gap"`
+	// Sinks: the call the fix protects, where it is not in the fix files' changed
+	// lines (the engine reports a cross-file flow at the callee's sink, in another
+	// file or far from the change). A finding of the class on that very line counts
+	// as caught in the "with sink lines" columns only, never in the main verdict.
+	// Each [[sinks]] is preceded by a "# basis:" comment saying which upstream fix
+	// protects that call and why it is the one; a shared one starts it with
+	// "shared helper: ", and only a shared one does.
+	Sinks []SinkLine `toml:"sinks"`
 
 	file string
+}
+
+// SinkLine is one call the fix protects, by its line in each release.
+type SinkLine struct {
+	Path       string `toml:"path"`
+	Vulnerable int    `toml:"vulnerable"` // its line in the vulnerable release
+	Fixed      int    `toml:"fixed"`      // the same call in the fixed release; 0 when the fix removed it
+	// Shared: a helper or wrapper other flows reach too, so a finding there may
+	// come from another flow; marked in the report and in the basis.
+	Shared bool `toml:"shared"`
 }
 
 // FixFile is a file the fix commit or changeset changed, with the line ranges
@@ -146,6 +164,61 @@ func (c Case) check() error {
 			}
 		}
 	}
+	return c.checkSinks()
+}
+
+// checkSinks: each sink line is a clean relative path of the case's language
+// with a line in the vulnerable release, listed once, and has its basis written
+// in a "# basis:" comment right above its [[sinks]] header.
+func (c Case) checkSinks() error {
+	if len(c.Sinks) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, sl := range c.Sinks {
+		p := sl.Path
+		if p == "" || path.Clean(p) != p || path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") || strings.Contains(p, "\\") {
+			return fmt.Errorf("sink %q must be a clean relative path", p)
+		}
+		if l := engine.LangOf(p); l != c.Lang && !(c.Lang == "ts" && l == "tsx") {
+			return fmt.Errorf("sink %s is not a %s file", p, c.Lang)
+		}
+		if sl.Vulnerable < 1 || sl.Fixed < 0 {
+			return fmt.Errorf("sink %s: needs its line in the vulnerable release (and 0 or a line in the fixed one)", p)
+		}
+		k := fmt.Sprintf("%s:%d", p, sl.Vulnerable)
+		if seen[k] {
+			return fmt.Errorf("sink %s is listed twice", k)
+		}
+		seen[k] = true
+	}
+	if len(c.Sinks) > 1 {
+		return fmt.Errorf("one sink per case: the call the fix protects")
+	}
+	if c.file == "" {
+		return nil
+	}
+	b, err := os.ReadFile(c.file)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(b), "\n")
+	n := 0
+	for i, l := range lines {
+		if strings.TrimSpace(l) != "[[sinks]]" {
+			continue
+		}
+		n++
+		if i == 0 || !strings.HasPrefix(strings.TrimSpace(lines[i-1]), "# basis: ") || len(strings.TrimSpace(lines[i-1])) < len("# basis: ")+20 {
+			return fmt.Errorf("[[sinks]] at line %d needs a \"# basis: ...\" comment right above it (the upstream fix and why it protects this call)", i+1)
+		}
+		if shared := strings.HasPrefix(strings.TrimSpace(lines[i-1]), "# basis: shared helper: "); shared != c.Sinks[n-1].Shared {
+			return fmt.Errorf("[[sinks]] at line %d: shared = true and a basis starting \"shared helper: \" go together", i+1)
+		}
+	}
+	if n != len(c.Sinks) {
+		return fmt.Errorf("sinks must be written as [[sinks]] tables, one per call")
+	}
 	return nil
 }
 
@@ -179,6 +252,23 @@ func checkNote(s string) error {
 // range lies inside it, so a wrong path or a range from another release shows
 // up as an error instead of a silent miss.
 func checkFixFiles(c Case, vulnDir, fixedDir string) error {
+	for _, sl := range c.Sinks {
+		for _, side := range []struct {
+			name, dir string
+			line      int
+		}{{"vulnerable", vulnDir, sl.Vulnerable}, {"fixed", fixedDir, sl.Fixed}} {
+			if side.line == 0 {
+				continue
+			}
+			n, err := countLines(filepath.Join(side.dir, filepath.FromSlash(sl.Path)))
+			if err != nil {
+				return fmt.Errorf("sink %s in the %s release: %v", sl.Path, side.name, err)
+			}
+			if side.line > n {
+				return fmt.Errorf("sink %s: %s line %d is past its %d lines", sl.Path, side.name, side.line, n)
+			}
+		}
+	}
 	for _, ff := range c.FixFiles {
 		for _, side := range []struct {
 			name, dir string

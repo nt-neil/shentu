@@ -59,7 +59,7 @@ func r20run(t *testing.T, cases []r20case) {
 			fs, err := e.Scan(c.lang, "t."+c.lang, []byte(c.src))
 			got := false
 			var ids []string
-			for _, f := range fs {
+			for _, f := range taintOnly(fs) {
 				ids = append(ids, f.RuleID)
 				if strings.HasPrefix(f.RuleID, c.prefix) {
 					got = true
@@ -239,7 +239,10 @@ func TestR20Controls(t *testing.T) {
 		{"K12 js script raw", "js", "js-xss", "app.get('/x', (req, res) => {\n  res.send('<script>var a = ' + req.query.a + ';</script>');\n});\n", true},
 		{"K13 php p raw", "php", "php-xss", "<?php\necho '<p>' . $_GET['q'] . '</p>';\n", true},
 		{"K14 sqli keys raw", "php", "php-sqli", "<?php\n$f = $_POST['fields'];\nforeach ($f as $col => $v) { mysqli_query($db, \"UPDATE t SET $col = 1\"); }\n", true},
-		{"K15 esc_html in script (quoted)", "php", "php-xss", "<script>var q = '<?php echo esc_html($_GET['q']); ?>';</script>\n", true},
+		// K15 changed in v0.5.7 (js-string-escape): a <script> body decodes no
+		// entity, so with both quotes and < encoded the value stays in the
+		// string the line closes; jsstr_test.go keeps the cases that still report.
+		{"K15 esc_html in script, a string the line closes (no finding since v0.5.7)", "php", "php-xss", "<script>var q = '<?php echo esc_html($_GET['q']); ?>';</script>\n", false},
 		{"K16 include fixed remote host (base semantics)", "php", "php-path-traversal", "<?php\ninclude 'http://cdn.example.com' . $_GET['f'];\n", true},
 	})
 }

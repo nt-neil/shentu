@@ -57,3 +57,7 @@ analysis.stmt	a.pcallSeeds(st, s.toks, s.funcs)	1	554d92029ac6			SAFE	Each funct
 sortedKeys2	x	1	3c74d98f564d			SORTED	Key union; slices.Sort(out) before it is returned.
 sortedKeys2	y	1	57d9041aeea7			SORTED	Key union; slices.Sort(out) before it is returned.
 analysis.summarize	r.pcall	1	22973f2486ed			SAFE	Grows s.pcallSrc[n] / s.pcall[n] to length k+1 and sets true / ORs bit at [n][k] for each key: the final lengths are the max and setting true and OR are commutative; no budget is charged in the loop.
+analysis.setRealOf	st	1	e1ab6416fc0a			SAFE	Charge len(st) once before the loop, then delete the real-path keys the assignment invalidates; each key is judged on its own text, so the deleted set does not depend on order.
+analysis.realOrigins	st	1	233a98f875b1			SORTED	Charge len(st) once before the loops; the origins found are sorted by key before they are appended.
+analysis.extractAny	st	1	c875cc4e15c1		value join	SAFE	Each variable key of st (but the kept defaults variable) is rewritten from its own entry joined with the extracted value; the value, the flag and the kept name are fixed before the loop, no key is added or deleted, no budget. The call not followed is the local closure join, which only reads its argument.
+closureScope	x	1	44f530e57de7			SAFE	Deletes every extractKey marker of x; which keys are deleted does not depend on the order, and the use (...) variables were set from the markers before the loop. No budget, no call.

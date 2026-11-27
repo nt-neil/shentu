@@ -8,9 +8,9 @@ import (
 )
 
 func TestLinuxOnlyToolsErrorOnWindows(t *testing.T) {
-	old := unsupportedHere
-	unsupportedHere = true
-	t.Cleanup(func() { unsupportedHere = old })
+	old := HostGOOS
+	HostGOOS = "windows"
+	t.Cleanup(func() { HostGOOS = old })
 	names := map[string]bool{}
 	refused := 0
 	for _, tl := range All() {
@@ -41,9 +41,9 @@ func TestLinuxOnlyToolsErrorOnWindows(t *testing.T) {
 
 // Default deny: a tool added without a Windows version is refused there.
 func TestNewToolDeniedOnWindows(t *testing.T) {
-	old := unsupportedHere
-	unsupportedHere = true
-	t.Cleanup(func() { unsupportedHere = old })
+	old := HostGOOS
+	HostGOOS = "windows"
+	t.Cleanup(func() { HostGOOS = old })
 	ts := guardWindows([]Tool{{Name: "brand_new_linux_tool", Run: func(context.Context, *Env, json.RawMessage) (any, error) { return "linux data", nil }}})
 	if _, err := ts[0].Run(context.Background(), &Env{}, nil); err == nil {
 		t.Error("a tool not on the Windows list must refuse there")

@@ -163,21 +163,63 @@ func (e ProcNetEntry) IsListening(proto string) bool {
 // DpkgQueryFormat is the -f argument the Linux collector passes to dpkg-query.
 const DpkgQueryFormat = "${Package}\t${source:Package}\t${Version}\t${Architecture}\t${db:Status-Abbrev}\n"
 
+// dpkgStates are dpkg's package states other than installed and
+// not-installed, by their letter in db:Status-Abbrev (the second).
+var dpkgStates = map[byte]string{'c': "config-files", 'H': "half-installed", 'U': "unpacked",
+	'F': "half-configured", 'W': "triggers-awaited", 't': "triggers-pending"}
+
 // ParseDpkgQuery reads DpkgQueryFormat output, keeping installed packages.
 func ParseDpkgQuery(b []byte) []Package {
-	var out []Package
+	pkgs, _, _ := ParseDpkgQueryStates(b)
+	return pkgs
+}
+
+// ParseDpkgQueryStates reads DpkgQueryFormat output. A package whose state
+// is installed is kept, whatever dpkg is asked to do with it next (install,
+// hold, deinstall, purge: ii, hi, ri, pi): it is on the disk. So is one
+// whose files are all unpacked but not yet configured in full (unpacked,
+// half-configured, triggers awaited or pending): the version dpkg records is
+// the one on the disk; it is in half too, as "name version (state)". One
+// half-installed, or in a state not read, has no version known to be on the
+// disk: it is in other (not checked) and in half. One with only its
+// configuration left is in other only. Not-installed ones (purged, only
+// known) have nothing on the disk and are dropped.
+func ParseDpkgQueryStates(b []byte) (pkgs []Package, other, half []string) {
 	for _, l := range strings.Split(string(b), "\n") {
 		f := strings.Split(l, "\t")
-		if len(f) < 5 || f[0] == "" || !strings.HasPrefix(f[4], "ii") {
+		if len(f) < 5 || f[0] == "" {
+			continue
+		}
+		st, name := f[4], f[0]+" "+f[2]
+		switch {
+		case len(st) >= 2 && st[1] == 'i':
+		case len(st) >= 2 && st[1] == 'n':
+			continue
+		case len(st) >= 2 && st[1] == 'c':
+			other = append(other, name+" ("+dpkgStates['c']+")")
+			continue
+		case len(st) >= 2 && st[1] == 'H':
+			other = append(other, name+" ("+dpkgStates['H']+")")
+			half = append(half, name+" ("+dpkgStates['H']+", not checked)")
+			continue
+		case len(st) >= 2 && dpkgStates[st[1]] != "":
+			half = append(half, name+" ("+dpkgStates[st[1]]+")")
+		default:
+			state := "state not read"
+			if t := strings.TrimSpace(st); t != "" {
+				state = "state " + t + " not read"
+			}
+			other = append(other, name+" ("+state+")")
+			half = append(half, name+" ("+state+", not checked)")
 			continue
 		}
 		p := Package{Name: f[0], Version: f[2], Arch: f[3]}
 		if f[1] != "" && f[1] != f[0] {
 			p.Source = f[1]
 		}
-		out = append(out, p)
+		pkgs = append(pkgs, p)
 	}
-	return out
+	return pkgs, other, half
 }
 
 // RpmQueryFormat is the --qf argument the Linux collector passes to rpm -qa.

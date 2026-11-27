@@ -25,6 +25,7 @@ var dailyText = map[string][2]string{ // English, Chinese
 	"perm_root":  {"as root", "用 root "},
 	"perm_win":   {"elevated, as the Shentu service does (LocalSystem)", "用系統管理員身分（和神荼服務一樣用 LocalSystem）"},
 	"audit_head": {"\n\nNot checked by the code audit:\n", "\n\n程式碼稽核沒檢查到的部分：\n"},
+	"ref_line":   {"\n\nReference: %d finding(s) about how a call is made, not about input reaching it; not pushed, not given to attack detection. Ask in chat for the code audit to see them.\n", "\n\n參考：%d 條只看呼叫寫法、不看輸入的發現；不推播，也不交給攻擊偵測。要看內容，請在聊天裡要程式碼稽核。\n"},
 	"conf_head":  {"\n\nWeb server configuration not read (its web roots are missing from the code audit):\n", "\n\n讀不到的網頁伺服器設定（它的網站根目錄不在程式碼稽核裡）：\n"},
 
 	"vuln_os":           {"installed packages", "已安裝的套件"},

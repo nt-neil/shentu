@@ -1,0 +1,243 @@
+package engine
+
+import (
+	"slices"
+	"strconv"
+	"strings"
+)
+
+// WordPress plugins often keep the global $wpdb in a property and query
+// through it: $this->wpdb = $wpdb (or =& $wpdb, = &$wpdb) in a constructor,
+// then $this->wpdb->get_results($sql); self::$mysqli =& $wpdb, then
+// self::$mysqli->get_results($sql). wpdbProps rewrites such a property, where
+// it is used as an object (followed by ->), to $wpdb, so the rules' $wpdb
+// sinks and sanitizers ($wpdb->prepare) match it.
+//
+// Only a property every assignment gives $wpdb is rewritten, and the file must
+// show it: a name (db, wpdb) alone says nothing, and a property set in another
+// file (a parent class's constructor) is not seen. A property is the class's
+// (or trait's) it is written in: another class of the file with a property of
+// that name neither makes it $wpdb nor keeps it from being one. A class also
+// has the properties of the traits of the file it uses. self:: and static::
+// name one property. A destructuring ([$this->db] = ..., list($this->db) =
+// ...), a reference (&$this->db) or a foreach target (as $this->db) counts as
+// giving it something else. ClassName::$db, parent::$db and $GLOBALS['wpdb']
+// are not read.
+func wpdbProps(toks []Token) []Token {
+	if !slices.ContainsFunc(toks, func(t Token) bool { return t.Kind == Var && t.Text == "$wpdb" }) {
+		return toks
+	}
+	cl := closers(toks) // every bracket's match, once: the passes below stay linear on any file
+	scope, traits, uses := phpClassScopes(toks, cl)
+	only := map[string]bool{}         // scope + property → every assignment gives it $wpdb
+	assigned := map[string][]string{} // property → the scopes assigning it
+	set := func(sc, prop string, ok bool) {
+		key := sc + "\x00" + prop
+		if prev, seen := only[key]; seen {
+			ok = ok && prev
+		} else {
+			assigned[prop] = append(assigned[prop], sc)
+		}
+		only[key] = ok
+	}
+	for i := range toks {
+		prop, n := wpdbPropAt(toks, i)
+		if n == 0 || i+n >= len(toks) {
+			continue
+		}
+		if indirectWrite(toks, cl, i) {
+			set(scope[i], prop, false)
+			continue
+		}
+		op := toks[i+n]
+		if op.Kind != Op || !phpAssignOps[op.Text] {
+			continue
+		}
+		k := i + n + 1
+		if op.Text == "=" && k < len(toks) && toks[k].op("&") {
+			k++ // = &$wpdb
+		}
+		set(scope[i], prop, op.Text == "=" && k < len(toks) && toks[k].Kind == Var && toks[k].Text == "$wpdb" &&
+			(k+1 == len(toks) || toks[k+1].op(";")))
+	}
+	// is reports whether the property is $wpdb in the scope: assigned there or
+	// in the traits it uses, and only ever $wpdb.
+	// Each scope and property is worked out once, going through the class's
+	// traits or the scopes assigning the property, whichever are fewer: a
+	// use is then a map lookup, and a class of many traits is still read.
+	memo := map[string]bool{}
+	is := func(sc, prop string) bool {
+		key := sc + "\x00" + prop
+		if v, ok := memo[key]; ok {
+			return v
+		}
+		ok, any := true, false
+		take := func(s string) {
+			if v, seen := only[s+"\x00"+prop]; seen {
+				ok, any = ok && v, true
+			}
+		}
+		take(sc)
+		if ts := traits[sc]; len(ts) <= len(assigned[prop]) {
+			for _, t := range ts {
+				take(t)
+			}
+		} else {
+			for _, s := range assigned[prop] {
+				if s != sc && uses[sc+"\x00"+s] {
+					take(s)
+				}
+			}
+		}
+		memo[key] = ok && any
+		return ok && any
+	}
+	var out []Token
+	for i := 0; i < len(toks); i++ {
+		if prop, n := wpdbPropAt(toks, i); n > 0 && i+n < len(toks) && toks[i+n].op("->") && is(scope[i], prop) {
+			if out == nil {
+				out = append(make([]Token, 0, len(toks)), toks[:i]...)
+			}
+			out = append(out, Token{Kind: Var, Text: "$wpdb", Line: toks[i].Line})
+			i += n - 1
+			continue
+		}
+		if out != nil {
+			out = append(out, toks[i])
+		}
+	}
+	if out == nil {
+		return toks
+	}
+	return out
+}
+
+// wpdbPropAt reads a property at toks[i]: $this->name (not a method call) or
+// self::$name, static::$name. It returns the property and its length in
+// tokens, 0 for none.
+func wpdbPropAt(toks []Token, i int) (string, int) {
+	if i+2 >= len(toks) || i > 0 && (toks[i-1].op("->") || toks[i-1].op("::") || toks[i-1].op("?->")) {
+		return "", 0
+	}
+	switch {
+	case toks[i].Kind == Var && toks[i].Text == "$this" && toks[i+1].op("->") && toks[i+2].Kind == Ident:
+		if i+3 < len(toks) && toks[i+3].op("(") {
+			return "", 0 // $this->name(): a method
+		}
+		return "this:" + toks[i+2].Text, 3
+	case toks[i].Kind == Ident && (strings.EqualFold(toks[i].Text, "self") || strings.EqualFold(toks[i].Text, "static")) &&
+		toks[i+1].op("::") && toks[i+2].Kind == Var:
+		return "static:" + toks[i+2].Text, 3
+	}
+	return "", 0
+}
+
+// indirectWrite reports whether the property at toks[i:i+n] is written some
+// other way than by an assignment operator after it: taken by reference
+// (&$this->db), a foreach target (as $this->db) or a destructured item
+// ([$this->db] = ..., list($a, $this->db) = ...).
+func indirectWrite(toks []Token, cl []int, i int) bool {
+	if i == 0 {
+		return false
+	}
+	prev := toks[i-1]
+	if prev.op("&") || prev.word("as") {
+		return true
+	}
+	if !prev.op("[") && !prev.op(",") && !prev.op("(") && !prev.op("=>") {
+		return false
+	}
+	depth := 0
+	for j := i - 1; j >= 0 && i-j < 256; j-- {
+		switch {
+		case isClose(toks[j]):
+			depth++
+		case isOpen(toks[j]) && depth > 0:
+			depth--
+		case isOpen(toks[j]):
+			if toks[j].op("[") && j > 0 && (toks[j-1].Kind == Var || toks[j-1].Kind == Ident || toks[j-1].op("]") || toks[j-1].op(")") || toks[j-1].op("}")) {
+				return false // $rows[$this->db]: an index, read
+			}
+			c := cl[j]
+			assigned := c+1 < len(toks) && toks[c+1].op("=")
+			return assigned && (toks[j].op("[") || toks[j].op("(") && j > 0 && toks[j-1].word("list"))
+		}
+	}
+	return false
+}
+
+// phpClassScopes names, for each token, the class, trait, interface or enum
+// it is written in ("" outside any; an anonymous class by its position), and
+// gives each scope the traits of the file it uses (use T1, T2; in its body).
+func phpClassScopes(toks []Token, cl []int) (scope []string, traits map[string][]string, uses map[string]bool) {
+	match := func(j int) int { return min(cl[j], len(toks)-1) }
+	scope = make([]string, len(toks))
+	traits = map[string][]string{}
+	uses = map[string]bool{} // scope + trait: the scope uses the trait
+	var fill func(from, to int, name string, depth int)
+	fill = func(from, to int, name string, depth int) {
+		for i := from; i < to && i < len(toks); i++ {
+			scope[i] = name
+			tk := toks[i]
+			if !(tk.word("class") || tk.word("trait") || tk.word("interface") || tk.word("enum")) || i > 0 && toks[i-1].op("::") {
+				continue
+			}
+			inner := ""
+			switch {
+			case i+1 < len(toks) && toks[i+1].Kind == Ident && !(i > 0 && toks[i-1].word("new")):
+				inner = toks[i+1].Text
+			case tk.word("class") && i > 0 && toks[i-1].word("new"):
+				inner = "new@" + strconv.Itoa(i)
+			default:
+				continue
+			}
+			open := i + 1
+			for open < len(toks) && open-i < 256 && !toks[open].op("{") && !toks[open].op(";") {
+				open++ // a class header is short: extends and implements lists
+			}
+			if open >= len(toks) || !toks[open].op("{") {
+				continue
+			}
+			end := match(open)
+			for j := i; j < open; j++ {
+				scope[j] = name
+			}
+			// use T1, \N\T2; at the top of the body
+			for j := open + 1; j < end; j++ {
+				if toks[j].op("{") {
+					j = match(j)
+					continue
+				}
+				if toks[j].word("use") && j+1 < end && !toks[j+1].op("(") {
+					last := ""
+					for k := j + 1; k < end && !toks[k].op(";") && !toks[k].op("{"); k++ {
+						if toks[k].Kind == Ident {
+							last = toks[k].Text
+						}
+						if toks[k+1].op(",") || toks[k+1].op(";") || toks[k+1].op("{") {
+							if k := inner + "\x00" + last; last != "" && !uses[k] {
+								uses[k] = true
+								traits[inner] = append(traits[inner], last)
+							}
+							last = ""
+						}
+					}
+				}
+			}
+			if depth < maxNest {
+				fill(open, end+1, inner, depth+1)
+			} else {
+				for j := open; j <= end; j++ {
+					scope[j] = inner // nested too deep to look into: one scope
+				}
+			}
+			i = end
+		}
+	}
+	fill(0, len(toks), "", 0)
+	return scope, traits, uses
+}
+
+// phpAssignOps are the operators assigning to what is on their left.
+var phpAssignOps = map[string]bool{"=": true, ".=": true, "+=": true, "-=": true, "*=": true, "/=": true, "%=": true,
+	"**=": true, "??=": true, "|=": true, "&=": true, "^=": true, "<<=": true, ">>=": true}

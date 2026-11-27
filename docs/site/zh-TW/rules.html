@@ -37,7 +37,7 @@
   <label>語言 <select id="fl"><option value="">全部</option><option value="php">PHP</option><option value="python">Python</option><option value="js">JavaScript / TypeScript</option></select></label>
   <label>類別 <select id="fc"><option value="">全部</option><option value="cmdi">命令注入</option><option value="code-eval">程式碼執行</option><option value="deserialization">不安全的反序列化</option><option value="file-upload">危險的檔案上傳</option><option value="hardcoded-secret">寫死的憑證</option><option value="ldapi">LDAP 注入</option><option value="nosqli">NoSQL 注入</option><option value="open-redirect">開放重新導向</option><option value="path-traversal">路徑穿越</option><option value="sqli">SQL 注入</option><option value="ssrf">伺服器端請求偽造（SSRF）</option><option value="weak-crypto">弱加密</option><option value="xss">跨站腳本（XSS）</option><option value="xxe">XML 外部實體（XXE）</option></select></label>
   <label>嚴重度 <select id="fs"><option value="">全部</option><option value="critical">極危</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label>
-  <p class="count" aria-live="polite"><strong id="shown">127</strong> / 127 條規則</p>
+  <p class="count" aria-live="polite"><strong id="shown">131</strong> / 131 條規則</p>
 </form>
 <section class="routes">
   <h2>路由模型</h2>
@@ -753,6 +753,27 @@ return Payment::query()-&gt;orderBy($sort, $dir)-&gt;paginate();</code></pre></d
     <p class="fix"><strong>修法</strong> Identifiers cannot be bound as parameters: map the requested sort key to a fixed allowlist of column names and force the direction to ASC or DESC.</p>
   </details>
   
+  <details class="rule" id="php-sqli-prepare-identifier" data-rule-id="php-sqli-prepare-identifier" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-prepare-identifier CWE-89 Request input passed to prepare() for a placeholder inside backticks, where it is a column or table name">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-prepare-identifier</code> <span class="cwe">CWE-89</span><span class="title">Request input passed to prepare() for a placeholder inside backticks, where it is a column or table name</span></span></summary>
+    <p class="meta">框架: wordpress</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">the numbered placeholders %2$s and %3$s sit inside backticks: the column comes from the REST request</p><pre><code>&lt;?php
+function track( $request ) {
+    global $wpdb;
+    $col = $request-&gt;get_params()[&#39;type&#39;];
+    $wpdb-&gt;query( $wpdb-&gt;prepare( &#39;UPDATE %1$s SET `%2$s` = `%3$s` &#43; 1 WHERE id = %4$d&#39;, $wpdb-&gt;prefix . &#39;stats&#39;, $col, $col, 1 ) );
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">%s standing alone, between quotes, after ORDER BY or in LIMIT is quoted as a string: no identifier</p><pre><code>&lt;?php
+global $wpdb;
+$a = $wpdb-&gt;get_results( $wpdb-&gt;prepare( &#34;SELECT * FROM t WHERE a = %s&#34;, $_GET[&#39;a&#39;] ) );
+$b = $wpdb-&gt;get_results( $wpdb-&gt;prepare( &#34;SELECT * FROM t WHERE b = &#39;%s&#39;&#34;, $_GET[&#39;b&#39;] ) );
+$c = $wpdb-&gt;get_results( $wpdb-&gt;prepare( &#34;SELECT * FROM t ORDER BY %s&#34;, $_GET[&#39;c&#39;] ) );
+$d = $wpdb-&gt;get_results( $wpdb-&gt;prepare( &#34;SELECT * FROM t LIMIT %d&#34;, $_GET[&#39;d&#39;] ) );
+$e = $wpdb-&gt;get_results( $wpdb-&gt;prepare( &#34;SELECT * FROM t LIMIT %s&#34;, $_GET[&#39;e&#39;] ) );</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Map the column or table name to a fixed allowlist, or use the %i placeholder (WordPress 6.2&#43;), which escapes an identifier; %s quotes a string.</p>
+  </details>
+  
   <details class="rule" id="php-sqli-prepare-query-text" data-rule-id="php-sqli-prepare-query-text" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-prepare-query-text CWE-89 Request input written into the query text of a prepared statement">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-prepare-query-text</code> <span class="cwe">CWE-89</span><span class="title">Request input written into the query text of a prepared statement</span></span></summary>
     <p class="meta">框架: wordpress, doctrine</p>
@@ -1177,6 +1198,18 @@ def checkout():
     <p class="fix"><strong>修法</strong> Call subprocess.run with a list of arguments and no shell; if a shell is unavoidable wrap each value in shlex.quote().</p>
   </details>
   
+  <details class="rule" id="python-cmdi-shell-built" data-rule-id="python-cmdi-shell-built" data-lang="python" data-class="cmdi" data-sev="medium" data-text="python-cmdi-shell-built CWE-78 A shell command line built from values the code does not write out">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-cmdi-shell-built</code> <span class="cwe">CWE-78</span><span class="title">A shell command line built from values the code does not write out</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>def build(path):
+    args = [&#34;make&#34;, &#34;-C&#34;, f&#34;--dir {path}&#34;]
+    os.system(&#34; &#34;.join(args))</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>os.system(&#34;make clean&#34;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Run the program with a list of arguments and no shell (subprocess.run([prog, arg])); if a shell is needed, wrap each value in shlex.quote().</p>
+  </details>
+  
 </section>
 
 <section class="group" data-lang="python" data-class="code-eval">
@@ -1220,6 +1253,24 @@ def filter_items():
     return {&#34;items&#34;: load(ids)}</code></pre></div>
     </div>
     <p class="fix"><strong>修法</strong> Parse data instead of evaluating it: json.loads or ast.literal_eval for literals, a small expression parser for formulas; SymPy parse_expr and sympify call eval internally.</p>
+  </details>
+  
+  <details class="rule" id="python-code-eval-jinja-unsandboxed" data-rule-id="python-code-eval-jinja-unsandboxed" data-lang="python" data-class="code-eval" data-sev="medium" data-text="python-code-eval-jinja-unsandboxed CWE-1336 Text the code does not write out compiled as a Jinja2 template outside a sandbox">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-code-eval-jinja-unsandboxed</code> <span class="cwe">CWE-1336</span><span class="title">Text the code does not write out compiled as a Jinja2 template outside a sandbox</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>from jinja2 import Environment
+
+env = Environment()
+
+def render_setting(value, **context):
+    return env.from_string(value).render(**context)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>env = SandboxedEnvironment()
+
+def render_setting(value, **context):
+    return env.from_string(value).render(**context)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Render fixed templates and pass values as variables; a template whose text may come from a user or a setting belongs in jinja2.sandbox.SandboxedEnvironment.</p>
   </details>
   
   <details class="rule" id="python-code-eval-numexpr" data-rule-id="python-code-eval-numexpr" data-lang="python" data-class="code-eval" data-sev="critical" data-text="python-code-eval-numexpr CWE-95 Request text evaluated by numexpr.evaluate, pandas.eval or DataFrame.query/eval">
@@ -1680,6 +1731,18 @@ token = cipher.encrypt(pad(data, 16))</code></pre></div>
 ct, tag = cipher.encrypt_and_digest(data)</code></pre></div>
     </div>
     <p class="fix"><strong>修法</strong> Use an authenticated mode such as AES-GCM (cryptography&#39;s AESGCM) or Fernet with a random nonce; DES, 3DES, RC4, Blowfish and ECB mode do not keep data secret.</p>
+  </details>
+  
+  <details class="rule" id="python-weak-crypto-md5-hash" data-rule-id="python-weak-crypto-md5-hash" data-lang="python" data-class="weak-crypto" data-sev="medium" data-text="python-weak-crypto-md5-hash CWE-328 Data hashed with MD5 or SHA-1, which no longer resist collisions">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-weak-crypto-md5-hash</code> <span class="cwe">CWE-328</span><span class="title">Data hashed with MD5 or SHA-1, which no longer resist collisions</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>def fingerprint(data):
+    return hashlib.md5(data.encode()).hexdigest()</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>def cache_key(path):
+    return hashlib.md5(path.encode(), usedforsecurity=False).hexdigest()</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Use SHA-256 or stronger (hashlib.sha256); for passwords use a password hash (argon2, bcrypt, hashlib.scrypt). A hash that is no security measure (a cache key, a file checksum) can say so: hashlib.md5(data, usedforsecurity=False).</p>
   </details>
   
   <details class="rule" id="python-weak-crypto-password-hash" data-rule-id="python-weak-crypto-password-hash" data-lang="python" data-class="weak-crypto" data-sev="high" data-text="python-weak-crypto-password-hash CWE-916 Password from the request hashed with a fast, unsalted hash">

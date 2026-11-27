@@ -19,6 +19,9 @@ func lexPHP(src string, b *budget, code bool) []Token {
 		s.phpHTML()
 	}
 	s.php(false)
+	if !code {
+		return wpdbProps(s.toks)
+	}
 	return s.toks
 }
 
@@ -58,6 +61,7 @@ func (s *scanner) php(stop bool) {
 		case !stop && s.has("?>"):
 			s.pos += 2
 			s.emit(Token{Kind: Op, Text: ";", Line: s.line})
+			s.strClosed()
 			s.htmlCtx = 0
 			s.phpHTML()
 		case c == '#' && s.peek(1) == '[':
@@ -144,7 +148,7 @@ func (s *scanner) phpSingle() {
 		}
 		s.advance(1)
 	}
-	t := Token{Kind: Str, Text: s.src[start:min(s.pos, len(s.src))], Line: line}
+	t := Token{Kind: Str, Flags: flagPHPSingle, Text: s.src[start:min(s.pos, len(s.src))], Line: line}
 	if s.pos < len(s.src) {
 		s.pos++
 	} else {
@@ -228,6 +232,8 @@ func (s *scanner) heredoc() bool {
 	t := Token{Kind: Str, Line: line, Text: strings.TrimSuffix(s.src[bodyStart:bodyEnd], "\r")}
 	if quote != '\'' {
 		t.Parts = s.phpParts(bodyStart, bodyEnd, 0)
+	} else {
+		t.Flags |= flagPHPNowdoc
 	}
 	s.advance(after - s.pos)
 	if open {

@@ -1,9 +1,11 @@
-# Windows Server build, tests and a live hostenv smoke run (Phase 2). Lives on the
-# hostenv-win branch only; main's ci.yml is untouched. Public repo: the runners are free.
+# Windows Server build, tests and a live hostenv smoke run (Phase 2): on pushes to
+# hostenv-win, on every PR into integ, and by hand. Public repo: the runners are free.
 name: windows
 on:
   push:
     branches: [hostenv-win]
+  pull_request:
+    branches: [integ] # every PR into integ is tested on Windows too
   workflow_dispatch:
 permissions:
   contents: read
@@ -48,12 +50,14 @@ jobs:
           # One command per line: under bash -e a failure inside an && list is not fatal.
           SHENTU_SNAPSHOT_WATCH=3m go test -v -count=1 -run 'TestSnapshotNoise' -timeout 10m ./hostenv/
           go test -v -run 'TestVtableSlotsMatchSDK|TestCollectLeavesHostUnchanged|TestFirewallPolicyLive' ./hostenv/
-          go test ./hostenv/ ./checks/ ./internal/msrc/
+          go test ./hostenv/ ./checks/ ./internal/msrc/ ./internal/osutil/
           SHENTU_SNAPSHOT_WATCH=2m go test -v -count=1 -run 'TestSnapshotNoise' -timeout 10m ./hostenv/ # after collections: delayed writes
-          go test -v -run 'TestSecureDir|TestSecureDirRefusesSquatted|TestTrustConfig|TestTrustConfigMissingAndLinks|TestSkillsNeedTrustedFolder|TestStateReadyRefusesForeignState|TestCheckTrustedACETypes|TestSetupNotOnWindows|TestSecureDirRepairOnlyAtInstall|TestStateDirParentsChecked|TestStateDirParentsForms' .
+          go test -v -run 'TestSecureDir|TestSecureDirRefusesSquatted|TestTrustConfig|TestTrustConfigMissingAndLinks|TestSkillsNeedTrustedFolder|TestStateReadyRefusesForeignState|TestCheckTrustedACETypes|TestSetupNotOnWindows|TestSecureDirRepairOnlyAtInstall|TestStateDirParentsChecked|TestStateDirParentsForms|TestAppendBadWindows' .
           # Telegram bot, offline: a fake Bot API and a fake model (httptest).
           go test -run 'Bot|TOTP|MarkdownToTelegram|Welcome|Schedule|NextDaily' .
-          go test ./tools/
+          # Known Windows failures, by exact name and class: .github/windows-known-failures.txt
+          skip=$(grep -v '^#' .github/windows-known-failures.txt | awk 'NF {print $1}' | paste -sd'|' -)
+          go test -skip "^(${skip})$" ./tools/
       - name: fuzz VARIANT / SAFEARRAY decoding
         if: ${{ !cancelled() }}
         run: |

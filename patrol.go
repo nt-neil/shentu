@@ -199,6 +199,16 @@ func uncheckedSection(risks []tools.Risk, zh bool) string {
 	return fmt.Sprintf(dt(zh, "perm_head"), as) + b.String()
 }
 
+// referenceSection is the daily report's reference block: one line counting
+// the code audit's reference-tier findings, never the findings themselves
+// (they say how a call is made, not that input reaches it). "" when none.
+func referenceSection(n int, zh bool) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf(dt(zh, "ref_line"), n)
+}
+
 // notCheckedSection lists what the code audit could not tell (a web
 // root's ACL on Windows), so it is not read as checked. "" when nothing.
 func notCheckedSection(items []string, zh bool) string {
@@ -354,7 +364,7 @@ func mostSevere(fs []finding, n int) []finding {
 }
 
 // codeAuditFindings turns the code audit into patrol findings. An injection
-// finding is pushed only when its rule's tier is "alert"; info-tier findings, and
+// finding is pushed only when its rule's tier is "alert"; info- and reference-tier findings, and
 // the note about files the rules could not finish, stay in the tool's output and
 // chat.
 func codeAuditFindings(audit tools.CodeAudit) []finding {
@@ -563,10 +573,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		}
 		unchecked += uncheckedVulns(dt(zh, "vuln_os"), r, err, zh)
 		if err == nil {
-			list, _ := r["actively_exploited"].([]tools.Exploit)
-			for _, e := range list {
-				all = append(all, newFinding("kev:"+e.Package+":"+e.CVE, "critical", e, "f_kev_os", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]))
-			}
+			all = append(all, osKEVFindings(r)...)
 		}
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
 		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
@@ -597,7 +604,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		web, unread := tools.WebRootsReport()
 		audit := tools.AppCodeAudit(ctx, env.AppPaths, web)
 		all = replaceOrAppend(all, codeAuditFindings(audit))
-		unchecked += uncheckedConfigs(unread, zh) + notCheckedSection(audit.NotChecked, zh)
+		unchecked += uncheckedConfigs(unread, zh) + notCheckedSection(audit.NotChecked, zh) + referenceSection(audit.Reference, zh)
 		// The vulnerability surface attack detection judges by, until
 		// tomorrow: saved before the report goes (a notify that fails, or
 		// none configured, does not lose it); a dry run makes none.
@@ -802,4 +809,20 @@ func fileChangesUnchecked(r map[string]any) string {
 		return ""
 	}
 	return fmt.Sprintf("\n\nNot checked: file changes under %d paths (%q).\n", len(unread), cutLine(mask(strings.Join(unread, ", "))))
+}
+
+// osKEVFindings are the critical findings of the OS packages' actively
+// exploited vulnerabilities (CISA KEV): OSV's and the third-party PHP and
+// nginx compared with their upstream alike.
+func osKEVFindings(r map[string]any) []finding {
+	var out []finding
+	list, _ := r["actively_exploited"].([]tools.Exploit)
+	for _, e := range list {
+		name := e.Package // one finding per source package and CVE; its binaries named
+		if len(e.Binaries) > 0 {
+			name += " (" + strings.Join(e.Binaries, ", ") + ")"
+		}
+		out = append(out, newFinding("kev:"+e.Package+":"+e.CVE, "critical", e, "f_kev_os", name, e.Version, e.CVE, e.Name, r["upgrade_command"]))
+	}
+	return out
 }

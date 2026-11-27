@@ -145,10 +145,27 @@
   requestAnimationFrame(draw);
 })();
 
-/* sections after the walk rise out of the light */
+/* sections after the walk rise out of the light. A section is seen once any part of its box is in
+   the window or above it. Its box, not what it draws: an IntersectionObserver takes the starting
+   clip-path into account and watches only the section's top edge, so a jump into the middle of a
+   tall section (a link, a restored scroll position) left it blank. Sections in the window when the
+   page loads, and every section on a page opened at (or moved to) a hash anchor, show at once. */
 (function () {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var els = [].slice.call(document.querySelectorAll('[data-reveal]'));
+  if (!els.length) return;
+  function check(all) {
+    els = els.filter(function (el) {
+      if (all || el.getBoundingClientRect().top < innerHeight) { el.classList.add('seen'); return false; }
+      return true;
+    });
+    if (!els.length) { removeEventListener('scroll', soon); removeEventListener('resize', soon); }
+  }
+  var queued = false;
+  function soon() { if (!queued) { queued = true; requestAnimationFrame(function () { queued = false; check(false); }); } }
+  check(!!location.hash);
   document.documentElement.classList.add('reveal');
-  var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('seen'); io.unobserve(e.target); } }); }, { rootMargin: '0px 0px -10% 0px' });
-  document.querySelectorAll('[data-reveal]').forEach(function (el) { io.observe(el); });
+  addEventListener('scroll', soon, { passive: true });
+  addEventListener('resize', soon);
+  addEventListener('hashchange', function () { check(true); });
 })();

@@ -8,6 +8,50 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.8 (unreleased)
 
+- A new rule tier, `reference`, for a rule about how a call is made rather than about input reaching
+  it (only a rule with `sources = []` may have it). app_code_audit and chat list its findings after
+  the others, marked as reference; the daily report gives them one line with their count. They are
+  never pushed and never given to attack detection. The `info` and `alert` tiers are unchanged.
+- A Debian or Ubuntu package held with `apt-mark hold` (dpkg state `hi`), or marked for removal but
+  still installed (`ri`, `pi`), is checked as an installed one is. The package list went by dpkg's
+  `ii` only, so a held package was neither checked nor said (the v0.5.7 known issue). A package dpkg
+  has on the disk but not installed in full marks the package list partial, named there with its
+  state (20 at most, the rest counted). One whose files are all unpacked (unpacked, half-configured,
+  triggers awaited, triggers pending) is checked at the version dpkg records. One half-installed, or
+  in a state not read, is not checked: it is listed in `packages_not_checked` with its state, before
+  the ones with only their configuration left (config-files), which are listed only. The first 20
+  are listed, the rest counted in `packages_not_checked_more`. The tool's description says both
+  fields.
+- block_ip reads the server's DNS servers and default gateways (`/etc/resolv.conf`, systemd-resolved's
+  copy, `/proc/net/route`, `/proc/net/ipv6_route`) through the host source, as the SSH sessions it
+  also checks: a replay or another host's survey is never answered by the machine running it. One of
+  them there but not read now refuses the block (`state_error`); before, the error was dropped and the
+  list taken for empty, so the gateway or DNS server could be blocked. A file absent (no
+  systemd-resolved, no IPv6) is still no entry.
+- app_code_audit, app_vulns (lock files and site-packages) and the WordPress plugin list walk the
+  host source, as the web roots they start from already came from it: a replay or another host's
+  survey is never answered by the machine running the check. Links are still not followed, a file
+  is read only if it is the one the walk saw, and the limits are the same. A web root or app path
+  there but not read (no permission, or a replay that lacks it) is now listed in the audit's
+  `not_checked`; before, it was audited as an empty folder. A replay of a fixture recorded before
+  this version says every such path not read, never "not there".
+- package_vulns reads every page of OSV's answer: OSV gives at most 1000 advisories a query and
+  names the next page; only the first was read, so the kernel's list stopped at 1000 (on Ubuntu
+  24.04, 383 CVEs fewer than another scanner found). Past 10 pages a package's rest is said in
+  `partial`, never cut quietly.
+- package_vulns on Ubuntu: a USN covers every release it fixed, and its aliases name CVEs some other
+  release has only (USN-7980-1 names CVE-2025-11187, which OSV has for 25.10 and 26.04, not 24.04).
+  Of a USN only the CVEs OSV also lists for that package on the host's release count now, so a CVE
+  of another release is no longer marked actively exploited (KEV) on this host, nor counted on the
+  surface, nor taken for a CVE OSV already reports when a third-party PHP or nginx is compared with
+  upstream. A USN whose package has no CVE-named advisory to tell its CVEs' release by is counted in
+  `kev_unchecked` and named, never dropped quietly.
+- Windows: Shentu's own files opened without following a link (the dispatch log, the AI budget
+  reservations, the auto-incident and audit locks) are checked and used through one handle, opened
+  not following a symlink or junction. Before, the file was looked at, then opened by its name, and
+  the two compared in a way that cannot tell on Windows: a file swapped for a link in between was
+  opened through the link. A deduplicated file (Windows Server Data Deduplication) is still opened;
+  another kind of reparse point is said, not opened.
 - `app_vulns` and the daily patrol check the Python packages in Docker images against OSV as PyPI,
   with the CISA KEV mark. They are read from Docker's overlay2 image store on disk; no container is
   started and the daemon is not asked. Each tagged image's layers are stacked as overlayfs stacks
@@ -15,10 +59,61 @@ Chinese for the zh-TW pages; keep the two in step.
   name in its own folder, and an opaque folder hides the lower layers' files in it. Until now a
   package inside an image was not checked at all. A store that is there but could not be read
   (not root, a file not read, past the bounds of 50 images, 200 layers or 200,000 files) is
-  reported as not checked; a host with no Docker store says so apart. A `.pth` in an image is
-  never taken as a tool's own.
+  reported as not checked; a host with no Docker store says so apart. Images in containerd's store
+  (new Docker releases keep them there by default: `/var/lib/containerd`, or `containerd-snapshotter`
+  turned on in `daemon.json`) are not read by this release, and `partial` says so rather than "no
+  images". The store is read only when the host read is this machine itself: a replay says the
+  images were not checked. A `.pth` in an image is never taken as a tool's own.
+- The site's home page: a section that rises into view (the tally, open source, the latest release
+  with the river) no longer stays blank when the page is reached in its middle, as from a link to
+  an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
+  window; sections in the window when the page loads, and every section on a page opened at an
+  anchor, show at once.
+- PHP rules follow `extract()` of an array not written out. After `extract($args)`,
+  `extract($_POST)` or `extract(wp_parse_args($atts, [...]))` (which keeps every key of `$atts`),
+  each variable of the function may hold that input until it is assigned again: one defined before
+  (a template loader's `$template_name`, overwritten by `extract($args)`) and one never assigned
+  (`$team_id` after `extract($opts)`). Before, no variable was set, so a shortcode's attributes
+  passed this way reached `include` or `call_user_func()` unreported (CVE-2023-6996).
+  `extract(shortcode_atts($defaults, $atts))` sets the keys of `$defaults` only, and never
+  `$defaults` itself; `EXTR_SKIP` and the `EXTR_PREFIX_*` flags overwrite nothing; a property of a
+  value `extract()` set (`$wpdb->prefix` after `global $wpdb`) holds no input, an index of it does.
+  The flags count as PHP reads them: `EXTR_SKIP` and `EXTR_PREFIX_SAME` overwrite nothing,
+  `EXTR_IF_EXISTS` overwrites but creates nothing, `EXTR_PREFIX_ALL` and `EXTR_PREFIX_IF_EXISTS` set
+  only `prefix_` names (any such name when the prefix is not written out). A variable `extract()`
+  creates around a closure is seen in it only through its `use (...)`, and its parameters are the
+  caller's values.
+- PHP rules: after `preg_match($p, $s, $m)`, `preg_match_all()`, `parse_str($q, $out)` or
+  `exec($c, $output)`, the variable written by reference is the call's, so a value `extract()` set
+  there before is gone; whether it holds the subject's input is still not followed, but a variable
+  that is the subject itself (`preg_match($p, $m, $m)`, `parse_str($q, $q)`) keeps what it held.
+  A `catch (E $e)` variable is the exception, not what the name held before.
+- PHP rules: WordPress's `$wpdb` kept in a property (`$this->wpdb = $wpdb`, `$this->db = &$wpdb`,
+  `self::$mysqli =& $wpdb`) is `$wpdb` wherever the same file queries through it
+  (`$this->wpdb->get_results(...)`), so request input concatenated into such a query is reported;
+  before, only `$wpdb` itself was a sink. The class (or a trait of the file it uses) must show the
+  assignment: a property named `wpdb` or `db` alone, one set in another file (a parent class), or
+  one another class of the file gives `$wpdb` is not read as `$wpdb`.
+- PHP rules: request input passed to `$wpdb->prepare()` for a `%s` placeholder written inside
+  backticks, where the value is a column or table name (also a numbered `%2$s`), is reported
+  (`php-sqli-prepare-identifier`): `prepare()` quotes the value as a string, which does not protect
+  an identifier. Before, `prepare()` counted as escaping every value. A `%s` between quotes, standing
+  alone, after `ORDER BY` or in `LIMIT`, `%d` and `%i` are not reported.
 
-## v0.5.7 (unreleased)
+### Known issues
+
+- After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:
+  `extract()` of request data sets strings and arrays. `extract((array) json_decode($in))` and
+  `extract(get_object_vars(json_decode($in)))` can set objects whose properties are input, and these
+  are missed.
+- A `reference` rule misreads a few forms. A command written out in full is still reported when it
+  is split into adjacent string literals (`os.system('ls ' '-l')`, which Python joins into one) or
+  joined from a list of literals (`' '.join(['ls', '-l'])`). An attribute receiver
+  (`h.env.from_string(s)`) is known by its name only, even where the file assigns it
+  (`h.env = Engine()`). `o.system(cmd)` after `import os as o`, and a function imported under
+  another name (`m(x)` after `from hashlib import md5 as m`), are not reported.
+
+## v0.5.7 — 2026-11-26
 
 - PHP rules read `filter_input()`. A value from `filter_input(INPUT_GET, ...)`, `INPUT_POST` or
   `INPUT_COOKIE`, and from an application's own method of that name (`->filterInput(`,
@@ -32,6 +127,17 @@ Chinese for the zh-TW pages; keep the two in step.
   `htmlspecialchars()` as a sanitizer; a URL filter does not clean.
 - macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening
   ports is marked partial and says how many, no longer complete as if every owner were known.
+- PHP rules know an application's own guard function. A function that returns true only after
+  a check of its path parameter (an allowlist, as Welcart's `usces_is_reserved_file()`, or
+  `realpath($p)` with `strpos($real, $base) === 0`) cleans the value it was given where its result
+  is true (`if (guard($f)) { ... }`, or after `if (!guard($f)) { die(); }`), also as a method of
+  another class. A guard that assigns its parameter, returns true before the check, or only checks
+  that the file exists does not. `strpos(` and `stripos(` compared `=== 0` or `!== 0` are a prefix
+  check in the path rules, of their first argument only (`strpos('/var/logs/', $real)` holds for
+  `/` and `/var`). Where `realpath($p)` found the file, `$p` is no longer a URL or a
+  `phar://` wrapper for the server-side request and phar rules; the path rules still report it. An
+  `in_array()` lookup of `basename($p)` or `intval($id)` no longer validates `$p` or `$id`:
+  `../../x/log.txt` and `1 OR 1` pass it.
 - `shentu patrol --dry-run` prints all its titles (each attack attempt, the summary past the
   round's limit, the attack detection notice) in the setting's language, as they are sent; they
   were always in English.
@@ -52,6 +158,14 @@ Chinese for the zh-TW pages; keep the two in step.
 - The patrol catches the login index up after its checks, its notice and the attack detection
   alerts, not before them: in a flood the catching up can take up to 15 minutes, and that round's
   notices no longer wait for it.
+- block_ip's login index tells journal entries of the same time apart by their numbers in the
+  journal (the cursor's `s=` and `i=`). After a vacuum that removed an entry with the same time as
+  the first one left, the index took the removed entry as still there. An address whose event was
+  removed was then seen as sshd's own, where the whole read sees nothing, and a forged event that
+  was removed still refused the block. When a number is not known (an index saved by an older
+  version, a cursor not of that form, a journal made anew), times decide on the strict side: an
+  entry that refuses the block counts as there at the first entry's own time, and an event that
+  lets it through does not.
 - The site's release river: a release's peek stays inside the river at every width (at 844px the
   pages scrolled sideways by 3px); the labels under the lamps (version, date, rule count) show only
   where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
@@ -79,6 +193,47 @@ Chinese for the zh-TW pages; keep the two in step.
   whoever wrote the file could have written the record too: setuptools', virtualenv's and editable
   install files there are listed in the daily report as not proven. The patrol pushes the others as
   warnings.
+- PHP XSS in a `<script>` body: a value escaped with `esc_attr()`, `esc_url()`, `esc_html()` or
+  `htmlspecialchars(..., ENT_QUOTES)` inside a quoted JS string
+  (`var tab = '<?php echo esc_attr($_GET['tab']); ?>';`) is no longer reported when the text after
+  the PHP block closes that string on the same line: a `<script>` body decodes no entity, so with
+  both quotes and `<` encoded the value stays inside the string. It is still reported in an `on*`
+  attribute (which decodes entities first), in a template literal, after a block that writes a
+  quote or a backslash, on a line ending in a `\` continuation, with `htmlspecialchars()` without
+  `ENT_QUOTES`, and with `sanitize_text_field()`.
+- PHP's server-side request rule takes a start that is a local path as fixed: a directory
+  constant then a literal with a path segment (`WP_CONTENT_DIR . '/uploads/' . $name`, also through
+  a variable that holds it, as in Welcart) or a drive (`'C:\\data\\' . $name`). The input then
+  cannot choose a scheme or a host, so `file_get_contents()` of it is no longer reported as a
+  server-side request; the path rules still report it. The constants are `__DIR__`,
+  `DIRECTORY_SEPARATOR` and the directory constants of WordPress, Drupal and Joomla (`ABSPATH`,
+  `WP_CONTENT_DIR`, `DRUPAL_ROOT`, `JPATH_ROOT` and others). Still reported: a plugin's own
+  constant, a constant defined from input (also one of these names, as in
+  `define('ABSPATH', $_GET['b'])`), a bare `/` or `/a` after the constant, `C:` alone, a `\\`
+  start, and an escape such as `\x3a` in the literal.
+- SQL injection and XSS rules take arithmetic as a number, which carries no quote or markup:
+  a page offset `(max($_GET['paged'], 1) - 1) * 20` in a `LIMIT` (as in Welcart), PHP's
+  `$_GET['n'] + 1`, JavaScript's `req.query.n - 1` and Python's `request.args['n'] - 1` are no
+  longer reported there. Arithmetic is `-`, `/`, `*`, `%` and `**`, with a `+` next to a number
+  in PHP; in Python it is `//`, `**`, and `-` or `/` next to a number. Still input: PHP `+` of two
+  arrays (their union), `|` of two strings, `.` next to `-`, JavaScript's binary `+`, Python's `*`
+  (which repeats a string), Python's `-` of two sets or two `Counter`s (their difference, as in
+  `set(request.args.getlist('id')) - {'0'}`), and a number in the path rules.
+- The package vulnerability check (`vulns`) compares third-party PHP and nginx packages (from
+  deb.sury.org, the ondrej PPA, Remi's repository or nginx.org) with php.net's and nginx.org's
+  releases of 2026-11-19, the tables of the PHP and nginx checks. OSV has only the distributions'
+  advisories, so these packages matched nothing there and were only listed in
+  `third_party_unchecked`. Now each CVE in a package's range is in the vulnerability surface
+  (ecosystem `upstream:php` or `upstream:nginx`, with the fixed version, KEV when CISA lists it)
+  and in `third_party_upstream`, and counts in `total_vulns` and `affected_packages`, once per source package and CVE with
+  OSV's; one that CISA lists is in `actively_exploited` too (one entry naming the binaries), so the daily patrol sends its critical KEV alert as for a
+  distribution's package. A CVE the package's changelog names (a backported fix) is listed as
+  backported and not reported. php-fpm also gets the FPM and status page CVEs, php-cgi the CGI
+  one; mod_php and the CLI get the engine's only. Each compared package says the tables' date
+  (`as_of`). A package whose version cannot be read, on a branch php.net no longer fixes, or newer
+  than the tables' newest release (such as PHP 8.3.38, 9.0 or nginx 1.32) stays in
+  `third_party_unchecked` with the reason in `why`. The OSV results of these packages are kept: a
+  build can also be older than the distribution's fix.
 
 ### Known issues
 
@@ -93,10 +248,9 @@ Chinese for the zh-TW pages; keep the two in step.
   program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
   lists the listening ports with lsof, which sees only its own user's processes, and marks the list
   partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
-- With calls followed further, WordPress reports the `Location:` header inside `wp_redirect()`
-  (`pluggable.php:1542`) for the `ref` that `wpmu_admin_do_redirect()` passes it, a flow already
-  reported where that function calls `wp_redirect()` (`ms-deprecated.php:289` and `:306`): the
-  same input is reported twice.
+- A Debian or Ubuntu package held with `apt-mark hold` (dpkg status `hi`) is not checked: the
+  package list keeps only `ii` packages, so `vulns`, the daily patrol and the vulnerability surface
+  do not see it, and it is not listed as not checked either. The next release fixes this.
 
 ## v0.5.6 — 2026-11-24
 

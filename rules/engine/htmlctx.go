@@ -20,7 +20,16 @@ const (
 	ctxJS                    // code inside <script>, not in a string
 	ctxJSStr                 // inside a JavaScript string literal (in <script> or a handler)
 	ctxJSAttr                // code in an on* handler or after javascript:, not in a string; also CSS (<style>, style=)
+	// ctxScriptStr is a ' or " string of a <script> body that the text after the
+	// value closes on its line (flagStrClosed), never stored in a token: the
+	// browser decodes no entity there, so an escaper that encodes both quotes
+	// and < (esc_attr, esc_html, esc_url) keeps the value in the string, as
+	// esc_js does. Rules name it as "js", as they name ctxJSStr.
+	ctxScriptStr
 )
+
+// quotesLT are the contexts an escaper must be safe in to encode ", ' and <.
+var quotesLT = ctxBits(ctxHTML, ctxAttr, ctxAttrSQ)
 
 // contextNames are the rule format's names for groups of contexts.
 var contextNames = map[string][]uint8{"html": {ctxHTML}, "attr": {ctxAttr, ctxAttrSQ, ctxAttrBare},
@@ -329,6 +338,40 @@ func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\
 func (s *scanner) inlineHTML(h string) {
 	s.hs.feed(h)
 	s.htmlCtx = s.hs.ctx() + 1
+	s.strEcho, s.strBad = s.strEcho[:0], false
+}
+
+// inScriptStr reports whether the page is in a ' or " string of a <script>
+// body, where the browser decodes no entity before the script runs.
+func (h *htmlScan) inScriptStr() bool {
+	return h.mode == hsRaw && h.raw == "script" && h.scriptJS && (h.jsq == '\'' || h.jsq == '"')
+}
+
+// strClosed, at the end of a block, marks its echo and print statements that
+// wrote into a quoted string of a <script> body when the text after the block
+// closes that string and writes nothing more on the line: an HTML-escaped value
+// there (no quote, no <) cannot end the string. A backslash at its end can
+// escape the closing quote, but the string then runs into the line's end, a
+// syntax error, unless another value follows on the line
+// ('<?= esc_attr($a) ?>' + '<?= esc_attr($b) ?>': $a = "\\" turns $b into code).
+func (s *scanner) strClosed() {
+	if len(s.strEcho) == 0 || s.strBad || !s.hs.inScriptStr() {
+		return
+	}
+	rest := s.src[s.pos:]
+	if rest == "" || rest[0] != s.hs.jsq {
+		return
+	}
+	line := rest[1:]
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
+		line = line[:i]
+	}
+	if strings.Contains(line, "<?") || strings.HasSuffix(strings.TrimRight(line, " \t\r"), "\\") {
+		return // another value on the line, or a line continuation
+	}
+	for _, i := range s.strEcho {
+		s.toks[i].Flags |= flagStrClosed
+	}
 }
 
 func ctxBits(cs ...uint8) uint16 {
@@ -440,7 +483,7 @@ func (a *analysis) escaperCall(op []Token) (safe uint16, arg []Token, ok bool) {
 func (a *analysis) ctxHits(st state, op []Token, c uint8, depth int) bool {
 	op = stripParens(op)
 	if safe, arg, ok := a.escaperCall(op); ok && depth < 8 {
-		if safe&(1<<c) != 0 {
+		if safe&(1<<c) != 0 || c == ctxScriptStr && (safe&(1<<ctxJSStr) != 0 || safe&quotesLT == quotesLT) {
 			return false
 		}
 		return arg != nil && a.ctxHits(st, arg, c, depth+1) // escaped for another context: still the input
@@ -524,6 +567,7 @@ func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uin
 		out = out[2:]
 	}
 	base := uint8(sinkTok.Flags >> flagCtxShift & 7)
+	closed := base == ctxJSStr && sinkTok.Flags&flagStrClosed != 0
 	var hs htmlScan
 	fresh := base == ctxHTML // no inline HTML before: read the literal text as the start of a page
 	prefix := ""             // literal text written before, in the base context (first 64 bytes)
@@ -558,11 +602,17 @@ func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uin
 		if c == ctxURL && op != nil && a.r.leading && a.fixedStart(st, op) {
 			c = ctxAttrSQ // the value starts with a fixed part ('install.php?l=' . $l): not a scheme (quote unknown)
 		}
+		if c == ctxJSStr && closed && !fresh {
+			c = ctxScriptStr
+		}
 		return c
 	}
 	in := func(c uint8) bool {
 		if !seen {
 			return false
+		}
+		if c == ctxScriptStr {
+			c = ctxJSStr
 		}
 		for _, w := range want {
 			if w == c {
@@ -693,6 +743,9 @@ func (s *scanner) echoText(t *Token) {
 	case t.Kind == Ident && (t.Text == "echo" || t.Text == "print") && s.depth == 0:
 		t.Flags |= uint16(s.htmlCtx-1) << flagCtxShift
 		s.inEcho, s.echoPar = true, 0
+		if s.hs.inScriptStr() {
+			s.strEcho = append(s.strEcho, len(s.toks))
+		}
 	case !s.inEcho:
 	case t.Kind == Op && t.Text == ";":
 		s.inEcho = false
@@ -701,6 +754,7 @@ func (s *scanner) echoText(t *Token) {
 	case isClose(*t):
 		s.echoPar--
 	case t.Kind == Str && s.echoPar == 0 && s.depth == 0 && t.Flags&FlagShell == 0:
+		s.strBad = s.strBad || strings.ContainsAny(t.Text, "'\"`\\\n")
 		prev := 0
 		for k, p := range t.Parts {
 			s.hs.feed(t.Text[min(prev, p.Off):min(p.Off, len(t.Text))])

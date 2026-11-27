@@ -33,7 +33,7 @@ type Finding struct {
 	Title    string `json:"title"`
 	CWE      string `json:"cwe"`
 	Fix      string `json:"fix"`
-	Tier     string `json:"tier"` // the rule's tier: "info" or "alert"
+	Tier     string `json:"tier"` // the rule's tier: "info", "alert" or "reference"
 	// Routes: the routes registering the handler the sink sits in, when the
 	// file says so for certain (routerefs.go); absent otherwise.
 	Routes []RouteRef `json:"routes,omitempty"`
@@ -94,6 +94,7 @@ type argCond struct {
 	context        []uint8 // output contexts that count (ctxHTML ...); empty: any
 	markup         bool    // context: only input after markup written in the same value (contextTaint)
 	literal        bool
+	notLiteral     bool   // the argument must not be what literal accepts
 	key            string // the value under this key of an object argument (keyValue)
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
 	minLen         int    // literal: the shortest string that counts
@@ -101,6 +102,9 @@ type argCond struct {
 	unlessAt       string   // where unless looks: "" anywhere, "start", "top" (rules.Args.UnlessAt)
 	receiver       []*pat   // a method sink counts only on a receiver these name (receiver.go)
 	notReceiver    []*pat   // nor on an object surely of one of these classes (receiver.go)
+	recvFrom       []*pat   // only on a receiver made by one of these, or of one of recvNames (recvMadeBy)
+	recvNames      []string // the names recvFrom takes when the file does not show what made the receiver
+	identPh        bool     // a value after the format counts only for a placeholder in backticks (identArgs)
 	unlessCT       []string // nor once the response's Content-Type is one of these on every path (ctype.go)
 	unlessImports  []string // nor in a file importing one of these modules (imports.go)
 	importsNot     []string // ... unless the file or the receiver names one of these
@@ -253,7 +257,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 	foldMembers(c.sinks)
 	foldMembers(c.sanitizers)
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, recvNames: a.ReceiverNames, identPh: a.IdentPlaceholder, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":
@@ -271,6 +275,9 @@ func compileRule(r rules.Rule) (*crule, error) {
 		}
 		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
 			return nil, fmt.Errorf("args: min_len and exclude need literal")
+		}
+		if a.NotLiteral && (a.Arg == nil || a.Literal) {
+			return nil, fmt.Errorf("args: not_literal needs arg, and not literal")
 		}
 		for _, x := range a.Exclude {
 			re, err := regexp.Compile("(?i)" + x)
@@ -297,7 +304,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
-		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}, {a.NotReceiver, &ac.notReceiver}, {a.UnlessSubscript, &ac.unlessSub}} {
+		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}, {a.NotReceiver, &ac.notReceiver}, {a.ReceiverFrom, &ac.recvFrom}, {a.UnlessSubscript, &ac.unlessSub}} {
 			for _, raw := range list.raw {
 				p, err := compilePattern(r.Lang, raw, false)
 				if err != nil {

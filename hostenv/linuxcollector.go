@@ -221,6 +221,10 @@ func (c LinuxCollector) Packages(ctx context.Context, src Source, osr map[string
 	return set
 }
 
+// maxHalfListed is how many packages not fully installed the partial
+// detail names; the rest are counted.
+const maxHalfListed = 20
+
 // packages is Packages, and on Alpine which OpenRC scripts apk installed
 // (nil: unknown), from the same single pass over apk's database.
 func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]string) (Obs[PackageSet], map[string]bool) {
@@ -245,13 +249,19 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 		set.Feed = &feed
 	}
 	var items []Package
+	var half []string // dpkg: not fully installed
 	var err error
 	var res CmdResult
 	switch LinuxFamily(osr["ID"], osr["ID_LIKE"]) {
 	case "debian":
 		set.Manager = "dpkg"
 		if res, err = src.Run(ctx, dpkgArgv); err == nil && res.ExitCode == 0 {
-			items = ParseDpkgQuery(res.Stdout)
+			items, set.NotChecked, half = ParseDpkgQueryStates(res.Stdout)
+			// Not checked and not fully installed first: a list cut short
+			// for its length keeps them, the configuration-only ones after.
+			sort.SliceStable(set.NotChecked, func(i, j int) bool {
+				return !strings.HasSuffix(set.NotChecked[i], "(config-files)") && strings.HasSuffix(set.NotChecked[j], "(config-files)")
+			})
 		}
 	case "rhel", "suse":
 		set.Manager = "rpm"
@@ -287,6 +297,16 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 	}
 	if extrasErr != "" {
 		return Partial(set, extrasReason, "not fully read: "+extrasErr), apkOwned
+	}
+	// A package not fully installed (unpacked, half-installed...) may be
+	// mid-upgrade: the list is partial. One with only its configuration left
+	// (config-files) has nothing to run; it is listed in NotChecked only.
+	if len(half) > 0 {
+		listed, more := half, ""
+		if len(listed) > maxHalfListed {
+			listed, more = listed[:maxHalfListed], fmt.Sprintf(", and %d more", len(half)-maxHalfListed)
+		}
+		return Partial(set, ReasonNotInstalled, fmt.Sprintf("%d package(s) not fully installed: %s%s", len(half), strings.Join(listed, ", "), more)), apkOwned
 	}
 	return OK(set), apkOwned
 }

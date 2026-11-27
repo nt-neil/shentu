@@ -7,9 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -17,7 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nt-neil/shentu/internal/osutil"
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // Installed Python packages (plan cd58fb installed-pkgs-and-pth): a venv or
@@ -94,11 +92,11 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 		return true
 	}
 	full := false
+	src := hostSource()
 	if system {
 		for _, g := range systemSitePackages {
-			ms, _ := filepath.Glob(g)
-			for _, m := range ms {
-				if st, err := os.Lstat(m); err == nil && st.IsDir() && !add(m) {
+			for _, m := range hostenv.Glob(src, g) {
+				if st, err := hostenv.Lstat(src, m); err == nil && st.Mode.IsDir() && !add(m) {
 					full = true
 				}
 			}
@@ -110,7 +108,7 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 			break
 		}
 		base := strings.Count(filepath.Clean(root), string(filepath.Separator))
-		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		hostenv.Walk(src, root, func(p string, st hostenv.FileStat, err error) error {
 			if err != nil {
 				if !errors.Is(err, fs.ErrNotExist) {
 					unread++
@@ -120,17 +118,17 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 			if visits++; visits > sitePkgVisits {
 				return filepath.SkipAll
 			}
-			if !d.IsDir() {
+			if !st.Mode.IsDir() {
 				return nil
 			}
-			if n := d.Name(); n == "site-packages" || n == "dist-packages" {
+			if n := filepath.Base(p); n == "site-packages" || n == "dist-packages" {
 				if !add(p) {
 					full = true
 					return filepath.SkipAll
 				}
 				return filepath.SkipDir
 			}
-			if sitePkgSkip[d.Name()] {
+			if sitePkgSkip[filepath.Base(p)] {
 				return filepath.SkipDir
 			}
 			if strings.Count(p, string(filepath.Separator))-base >= sitePkgDepth {
@@ -158,7 +156,8 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 // readSitePackages reads the packages one folder holds and its .pth files.
 func readSitePackages(dir string) sitePkgDir {
 	r := sitePkgDir{Path: dir}
-	ents, err := os.ReadDir(dir)
+	src := hostSource()
+	ents, err := lsDir(src, dir)
 	if err != nil {
 		r.notes = append(r.notes, dir+" 讀不到（"+errText(err)+"）")
 		return r
@@ -169,7 +168,7 @@ func readSitePackages(dir string) sitePkgDir {
 	}
 	dists, unread, cut := 0, 0, 0
 	for _, e := range ents {
-		n, p := e.Name(), filepath.Join(dir, e.Name())
+		n, p := e.name, filepath.Join(dir, e.name)
 		switch {
 		case strings.HasSuffix(n, ".dist-info") || strings.HasSuffix(n, ".egg-info"):
 			if dists++; dists > sitePkgDistMax {
@@ -177,35 +176,35 @@ func readSitePackages(dir string) sitePkgDir {
 				continue
 			}
 			meta := p // an .egg-info file is the PKG-INFO itself
-			if e.IsDir() {
+			if e.isDir() {
 				meta = filepath.Join(p, "METADATA")
 				if strings.HasSuffix(n, ".egg-info") {
 					meta = filepath.Join(p, "PKG-INFO")
 				}
-			} else if !e.Type().IsRegular() {
+			} else if !e.isRegular() {
 				unread++
 				continue
 			}
 			if osManaged {
-				if !e.IsDir() {
+				if !e.isDir() {
 					continue // a distutils .egg-info file: the system's packages
 				}
-				b, ok := readHead(filepath.Join(p, "INSTALLER"), 256)
+				b, ok := readHead(src, filepath.Join(p, "INSTALLER"), 256)
 				if !ok || !pipInstallers[strings.TrimSpace(string(b))] {
 					continue
 				}
 			}
-			b, ok := readHead(meta, sitePkgHead)
+			b, ok := readHead(src, meta, sitePkgHead)
 			name, version := metaNameVersion(b)
 			if !ok || name == "" || version == "" {
 				unread++
 				continue
 			}
 			r.pkgs = append(r.pkgs, pkg{pep503(name), version})
-		case strings.HasSuffix(n, ".pth") && !e.Type().IsRegular():
+		case strings.HasSuffix(n, ".pth") && !e.isRegular():
 			r.notes = append(r.notes, p+" 不是一般檔案（symlink 之類），沒有檢查它會不會執行程式")
 		case strings.HasSuffix(n, ".pth"):
-			b, ok := readHead(p, sitePkgHead+1)
+			b, ok := readHead(src, p, sitePkgHead+1)
 			if !ok {
 				r.notes = append(r.notes, p+" 讀不到，沒有檢查它會不會執行程式")
 				continue
@@ -231,26 +230,47 @@ func readSitePackages(dir string) sitePkgDir {
 	return r
 }
 
+// errText is err without the path it names, for a text that says the path
+// itself: a PathError's own error, a replay's "not in fixture".
 func errText(err error) string {
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
 		return pe.Err.Error()
 	}
+	if errors.Is(err, hostenv.ErrNotRecorded) {
+		return hostenv.ErrNotRecorded.Error()
+	}
 	return err.Error()
 }
 
-// readHead reads at most max bytes of a regular file, not through a symlink.
-func readHead(p string, max int64) ([]byte, bool) {
-	f, err := osutil.OpenNoFollow(p, os.O_RDONLY, 0, true)
-	if err != nil {
-		return nil, false
+// readHead reads at most max bytes of a regular file, not through a
+// symlink, through the host source.
+func readHead(src hostenv.Source, p string, max int64) ([]byte, bool) {
+	b, err := hostenv.ReadFileNoFollowMax(src, p, max)
+	return b, err == nil || errors.Is(err, hostenv.ErrTruncated)
+}
+
+// dirEnt is one entry of a folder read through the host source: its
+// Lstat, or the error that gave (not a regular file, nor a folder, then).
+type dirEnt struct {
+	name string
+	st   hostenv.FileStat
+	err  error
+}
+
+func (e dirEnt) isDir() bool     { return e.err == nil && e.st.Mode.IsDir() }
+func (e dirEnt) isRegular() bool { return e.err == nil && e.st.Mode.IsRegular() }
+func (e dirEnt) isLink() bool    { return e.err == nil && e.st.Mode&fs.ModeSymlink != 0 }
+
+// lsDir is os.ReadDir through src: sorted names, each with its Lstat.
+func lsDir(src hostenv.Source, dir string) ([]dirEnt, error) {
+	names, err := src.ReadDir(dir)
+	out := make([]dirEnt, 0, len(names))
+	for _, n := range names {
+		st, lerr := hostenv.Lstat(src, filepath.Join(dir, n))
+		out = append(out, dirEnt{n, st, lerr})
 	}
-	defer f.Close()
-	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
-		return nil, false
-	}
-	b, err := io.ReadAll(io.LimitReader(f, max))
-	return b, err == nil
+	return out, err
 }
 
 // metaNameVersion reads Name and Version from the headers of a METADATA or
@@ -307,7 +327,7 @@ var knownPth = []struct {
 		regexp.MustCompile(`^import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os\.environ\.get\(var, '(?:local|stdlib)'\) == 'local'; enabled and __import__\('_distutils_hack'\)\.add_shim\(\); ?$`)}, true,
 		func(dir, name string, _ []string, _ []byte) []string { // the module and the .pth setuptools installed, as its RECORD has them
 			mod := filepath.Join(dir, "_distutils_hack", "__init__.py")
-			if rec, ok := recordHas(dir, "setuptools-*.dist-info", "_distutils_hack/__init__.py"); ok && sameRecordHas(dir, rec, name) {
+			if rec, ok := recordHas(hostSource(), dir, "setuptools-*.dist-info", "_distutils_hack/__init__.py"); ok && sameRecordHas(dir, rec, name) {
 				return []string{rec, mod}
 			}
 			if managedDir(dir) { // the system's setuptools (Debian keeps no RECORD)
@@ -318,7 +338,7 @@ var knownPth = []struct {
 	{regexp.MustCompile(`^_virtualenv\.pth$`), "virtualenv", []*regexp.Regexp{regexp.MustCompile(`^import _virtualenv$`)}, true,
 		func(dir, _ string, _ []string, _ []byte) []string { // a venv virtualenv made says so in its pyvenv.cfg
 			cfg := filepath.Join(dir, "..", "..", "..", "pyvenv.cfg")
-			b, ok := readHead(cfg, sitePkgHead)
+			b, ok := readHead(hostSource(), cfg, sitePkgHead)
 			if !ok || !virtualenvKey.Match(b) {
 				return nil
 			}
@@ -328,7 +348,7 @@ var knownPth = []struct {
 		func(dir, name string, lines []string, _ []byte) []string { // the finder and the .pth the package's RECORD lists
 			m := editableLine.FindStringSubmatch(lines[0])
 			dist := strings.TrimSuffix(strings.TrimPrefix(name, "__editable__."), ".pth")
-			if rec, ok := recordHas(dir, dist+".dist-info", m[1]+".py"); ok && len(lines) == 1 && sameRecordHas(dir, rec, name) {
+			if rec, ok := recordHas(hostSource(), dir, dist+".dist-info", m[1]+".py"); ok && len(lines) == 1 && sameRecordHas(dir, rec, name) {
 				return []string{rec, filepath.Join(dir, m[1]+".py")}
 			}
 			return nil
@@ -354,14 +374,14 @@ var virtualenvKey = regexp.MustCompile(`(?m)^virtualenv\s*=`)
 // name too, with its hash: a .pth written next to a real install, which
 // no RECORD lists, is not that install's (S-239r-1).
 func sameRecordHas(dir, rec, name string) bool {
-	_, ok := recordHas(dir, filepath.Base(filepath.Dir(rec)), name)
+	_, ok := recordHas(hostSource(), dir, filepath.Base(filepath.Dir(rec)), name)
 	return ok
 }
 
 // pthRecord is the RECORD that lists dir's .pth name with its hash, or,
 // in the system package manager's folders (no RECORD there), none needed.
 func pthRecord(dir, name string) []string {
-	if rec, ok := recordHas(dir, "*.dist-info", name); ok {
+	if rec, ok := recordHas(hostSource(), dir, "*.dist-info", name); ok {
 		return []string{rec}
 	}
 	if managedDir(dir) {
@@ -406,12 +426,13 @@ func unverifiedDistutilsHack(dirs []string, complete bool) bool {
 	}
 	seen := map[string]bool{}
 	var all []string
+	src := hostSource()
 	for _, d := range dirs {
 		if !seen[d] {
 			seen[d] = true
 			all = append(all, d)
 		}
-		added, whole := pthPaths(d)
+		added, whole := pthPaths(src, d)
 		if !whole {
 			return true // a .pth not read whole: a folder it adds is not known
 		}
@@ -426,7 +447,7 @@ func unverifiedDistutilsHack(dirs []string, complete bool) bool {
 		}
 	}
 	for _, d := range all {
-		ents, err := os.ReadDir(d)
+		ents, err := lsDir(src, d)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue // not there: nothing to import from it (a file there, a zip, can be imported from)
 		}
@@ -434,9 +455,9 @@ func unverifiedDistutilsHack(dirs []string, complete bool) bool {
 			return true
 		}
 		for _, e := range ents {
-			n := e.Name()
+			n := e.name
 			if n == "_distutils_hack" {
-				if _, rec := recordHas(d, "setuptools-*.dist-info", "_distutils_hack/__init__.py"); !e.IsDir() || !(rec || systemModule(d, "_distutils_hack/__init__.py")) {
+				if _, rec := recordHas(src, d, "setuptools-*.dist-info", "_distutils_hack/__init__.py"); !e.isDir() || !(rec || systemModule(d, "_distutils_hack/__init__.py")) {
 					return true
 				}
 			} else if strings.HasPrefix(n, "_distutils_hack.") {
@@ -463,19 +484,19 @@ func pySpace(r rune) bool { return unicode.IsSpace(r) || r >= 0x1c && r <= 0x1f 
 // sys.path, read as site.py reads them (a line starting "#" or "import"
 // as written is not one; trailing white space dropped; relative ones taken
 // from dir); whole is false when a .pth there was not read whole.
-func pthPaths(dir string) (out []string, whole bool) {
-	ents, err := os.ReadDir(dir)
+func pthPaths(src hostenv.Source, dir string) (out []string, whole bool) {
+	ents, err := lsDir(src, dir)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, false
 	}
 	for _, e := range ents {
-		if !strings.HasSuffix(e.Name(), ".pth") {
+		if !strings.HasSuffix(e.name, ".pth") {
 			continue
 		}
-		if !e.Type().IsRegular() {
+		if !e.isRegular() {
 			return nil, false
 		}
-		b, ok := readHead(filepath.Join(dir, e.Name()), sitePkgHead+1)
+		b, ok := readHead(src, filepath.Join(dir, e.name), sitePkgHead+1)
 		if !ok || len(b) > sitePkgHead {
 			return nil, false
 		}
@@ -502,10 +523,9 @@ func systemModule(dir, rel string) bool {
 
 // recordHas: a dist-info matching glob in dir lists rel in its RECORD, and
 // the file there now has the sha256 RECORD gives; rec is that RECORD.
-func recordHas(dir, glob, rel string) (rec string, ok bool) {
-	ms, _ := filepath.Glob(filepath.Join(dir, glob))
-	for _, m := range ms {
-		b, ok := readHead(filepath.Join(m, "RECORD"), 4<<20)
+func recordHas(src hostenv.Source, dir, glob, rel string) (rec string, ok bool) {
+	for _, m := range hostenv.Glob(src, filepath.Join(dir, glob)) {
+		b, ok := readHead(src, filepath.Join(m, "RECORD"), 4<<20)
 		if !ok {
 			continue
 		}
@@ -515,7 +535,7 @@ func recordHas(dir, glob, rel string) (rec string, ok bool) {
 				continue
 			}
 			want, _, _ = strings.Cut(want, ",")
-			b, ok := readHead(filepath.Join(dir, filepath.FromSlash(rel)), 4<<20)
+			b, ok := readHead(src, filepath.Join(dir, filepath.FromSlash(rel)), 4<<20)
 			sum := sha256.Sum256(b)
 			if ok && want != "" && base64.RawURLEncoding.EncodeToString(sum[:]) == want {
 				return filepath.Join(m, "RECORD"), true

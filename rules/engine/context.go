@@ -138,9 +138,52 @@ func (a *analysis) fixedText(text string) bool {
 		return len(text) >= 2 && text[1] != '/' && text[1] != '\\'
 	case strings.HasPrefix(text, "\\"):
 		return false
+	case driveStart(text):
+		return true
 	}
 	return notScheme(text)
 }
+
+// driveStart reports a Windows drive at the start of text (C:\, C:/): a local
+// path, though "C:" alone reads as a scheme to notScheme. No network scheme is
+// one letter long.
+func driveStart(text string) bool {
+	return len(text) >= 3 && (text[0]|0x20 >= 'a' && text[0]|0x20 <= 'z') && text[1] == ':' && (text[2] == '\\' || text[2] == '/')
+}
+
+// segmentAfter reports whether literal text written after a directory constant
+// (dirConsts) fixes the host for a URL: a character that is no separator, then "/",
+// "?" or "#" (WP_CONTENT_DIR . '/uploads/'), and no ":". Whatever the constant
+// holds, a host it starts ends in the text, and the input comes after it. A
+// bare "/" or "/a" does not: K = 'http:/' gives "http://" or "http://a", and
+// the input picks or extends the host; "p://" would finish K = 'htt'.
+// The text is read as written: an escape ("\x3a//" is "://") or a blank (a
+// URL parser drops tabs and line breaks: 'http:/' . "\t/" is http://) leaves
+// it unknown.
+func segmentAfter(lit string) bool {
+	seg := false
+	for i := 0; i < len(lit); i++ {
+		switch c := lit[i]; {
+		case c == ':' || c == '\\' || c <= ' ' || c >= 0x7f:
+			return false
+		case c == '/' || c == '?' || c == '#':
+			if seg {
+				return true
+			}
+		default:
+			seg = true
+		}
+	}
+	return false
+}
+
+// dirConsts are the directories PHP and the frameworks define themselves, an
+// absolute local path whatever the site: no request sets them. A plugin's own
+// constants are left out (one defined from input elsewhere would be missed),
+// and so are the *_URL ones, which a site may build from the Host header.
+var dirConsts = words("__DIR__ DIRECTORY_SEPARATOR ABSPATH WPINC WP_CONTENT_DIR WP_PLUGIN_DIR WPMU_PLUGIN_DIR " +
+	"WP_LANG_DIR TEMPLATEPATH STYLESHEETPATH DRUPAL_ROOT JPATH_ROOT JPATH_BASE JPATH_SITE JPATH_ADMINISTRATOR " +
+	"JPATH_LIBRARIES JPATH_PLUGINS JPATH_CACHE")
 
 // fixedHost reports whether text starts with a scheme and a host that the input
 // after it cannot change ("https://api.example.com/v1?q="): the host ends with
@@ -595,11 +638,17 @@ func (a *analysis) extractStmt(st state, t []Token) {
 	}
 	inner := stripParens(args[0])
 	lit := inner
+	ats := false // shortcode_atts: the keys of its defaults only
 	if len(inner) > 2 && inner[0].word("shortcode_atts") && inner[1].op("(") {
 		if xs := splitTop(inside(inner, 1, closeOf(inner, 1)), isComma); len(xs) > 0 {
-			lit = stripParens(xs[0])
+			lit, ats = a.litArray(st, stripParens(xs[0])), true
+		}
+	} else if len(inner) == 1 && inner[0].Kind == Var {
+		if _, ok := st[atsKey+inner[0].Text]; ok && a.atsDefs[inner[0].Text] != nil {
+			lit, ats = a.litArray(st, a.atsDefs[inner[0].Text]), true // $r = shortcode_atts($defaults, $atts); extract($r)
 		}
 	}
+	m := extractFlags(args)
 	var body []Token
 	switch {
 	case len(lit) > 1 && lit[0].op("["):
@@ -607,14 +656,271 @@ func (a *analysis) extractStmt(st state, t []Token) {
 	case len(lit) > 2 && lit[0].word("array") && lit[1].op("("):
 		body = inside(lit, 1, closeOf(lit, 1))
 	default:
+		keep := ""
+		if ats && len(lit) == 1 && lit[0].Kind == Var {
+			keep = lit[0].Text // its keys are not known here, but none of them is the defaults variable itself
+		}
+		a.extractAny(st, m, a.expr(st, inner, false), keep)
 		return
 	}
 	v := a.expr(st, inner, false)
 	for _, item := range splitTop(body, isComma) {
 		if len(item) > 2 && item[0].Kind == Str && len(item[0].Parts) == 0 && item[1].op("=>") && isIdentName(item[0].Text) {
-			a.setTarget(st, []Token{{Kind: Var, Text: "$" + item[0].Text, Line: t[0].Line}}, v, "=", false)
+			if name := m.target(item[0].Text, a.defined(st, "$"+item[0].Text)); name != "" {
+				a.setTarget(st, []Token{{Kind: Var, Text: "$" + name, Line: t[0].Line}}, v, "=", false)
+			}
 		}
 	}
+	if (m.prefixAll || m.prefixSame || m.prefixIfExists) && m.prefix == "" {
+		a.extractAny(st, extractMode{prefixAll: true}, v, "") // prefix_key with a prefix not written out
+	}
+}
+
+// extractMode is what extract()'s flags make it do with a key: overwrite a
+// variable already defined, create one not defined, or set prefix_key instead.
+type extractMode struct {
+	overwrite, create bool   // the key's own name, when defined / when not
+	prefix            string // the prefix (third argument) when written out
+	prefixAll         bool   // EXTR_PREFIX_ALL: every key as prefix_key
+	prefixSame        bool   // EXTR_PREFIX_SAME: a defined name as prefix_key
+	prefixIfExists    bool   // EXTR_PREFIX_IF_EXISTS: a defined name as prefix_key, nothing else
+}
+
+// extractFlags reads extract()'s second and third arguments. A flag not
+// written as one of PHP's constants counts as the default, EXTR_OVERWRITE.
+func extractFlags(args [][]Token) extractMode {
+	m := extractMode{overwrite: true, create: true}
+	if len(args) > 1 {
+		for _, tk := range args[1] {
+			switch tk.Text {
+			case "EXTR_SKIP":
+				m.overwrite = false
+			case "EXTR_PREFIX_SAME":
+				m.overwrite, m.prefixSame = false, true
+			case "EXTR_PREFIX_ALL":
+				m.overwrite, m.create, m.prefixAll = false, false, true
+			case "EXTR_IF_EXISTS":
+				m.create = false
+			case "EXTR_PREFIX_IF_EXISTS":
+				m.overwrite, m.create, m.prefixIfExists = false, false, true
+			}
+		}
+	}
+	if len(args) > 2 && len(args[2]) == 1 && args[2][0].Kind == Str && len(args[2][0].Parts) == 0 && isIdentName(args[2][0].Text) {
+		m.prefix = args[2][0].Text
+	}
+	return m
+}
+
+// target is the variable a key sets, without its "$" ("" for none), given
+// whether a variable of the key's name is defined.
+func (m extractMode) target(key string, defined bool) string {
+	switch {
+	case m.prefixAll || m.prefixIfExists && defined || m.prefixSame && defined:
+		if m.prefix == "" {
+			return ""
+		}
+		return m.prefix + "_" + key
+	case defined && m.overwrite || !defined && m.create:
+		return key
+	}
+	return ""
+}
+
+// defined reports whether a variable is defined here: in the state, or a
+// parameter of the function being analysed.
+func (a *analysis) defined(st state, name string) bool {
+	if _, ok := st[name]; ok {
+		return true
+	}
+	return slices.Contains(a.curParams, name)
+}
+
+// atsKey marks a variable assigned shortcode_atts($defaults, ...): it holds the
+// keys of $defaults only; the defaults expression is kept in a.atsDefs.
+const atsKey = "\x00ats:"
+
+// litArray returns t, or the array a variable holds when recordLit knows it
+// ($defaults = array(...); shortcode_atts($defaults, $atts)), from the function
+// being analysed only (a.arrs), so another function's $defaults in the file
+// does not make its keys unknown.
+func (a *analysis) litArray(st state, t []Token) []Token {
+	if len(t) == 1 && t[0].Kind == Var {
+		if _, ok := st[litKey+t[0].Text]; ok && a.arrs[t[0].Text] != nil {
+			if d := stripParens(a.arrs[t[0].Text]); len(d) > 1 && d[0].op("[") || len(d) > 2 && d[0].word("array") && d[1].op("(") {
+				return d // only an array written out; a call's value ($defaults = apply_filters(...)) is no known keys
+			}
+		}
+	}
+	return t
+}
+
+// atsAssign records $r = shortcode_atts(<array written out, or a variable>, ...)
+// for extract($r); any other assignment to $r forgets it.
+func (a *analysis) atsAssign(st state, t []Token) {
+	if !a.php || len(t) < 4 || t[0].Kind != Var || !t[1].op("=") {
+		return
+	}
+	delete(st, atsKey+t[0].Text)
+	rhs := t[2:]
+	if n := len(rhs); n > 0 && rhs[n-1].op(";") {
+		rhs = rhs[:n-1]
+	}
+	if len(rhs) < 3 || !rhs[0].word("shortcode_atts") || !rhs[1].op("(") || closeOf(rhs, 1) != len(rhs)-1 {
+		return
+	}
+	xs := splitTop(inside(rhs, 1, len(rhs)-1), isComma)
+	if len(xs) == 0 {
+		return
+	}
+	d := stripParens(xs[0])
+	if !(len(d) == 1 && d[0].Kind == Var || len(d) > 1 && d[0].op("[") || len(d) > 2 && d[0].word("array") && d[1].op("(")) {
+		return // the defaults are an array written out or a variable (its array looked up at extract())
+	}
+	if a.atsDefs == nil {
+		a.atsDefs = map[string][]Token{}
+	}
+	if old, seen := a.atsDefs[t[0].Text]; seen && (old == nil || !tokensEqual(old, d)) {
+		a.atsDefs[t[0].Text] = nil // two different arrays: not known
+		return
+	}
+	a.atsDefs[t[0].Text] = d
+	st[atsKey+t[0].Text] = entry{}
+}
+
+// extractKey marks, in a state, that extract() of input defined variables whose
+// names are not known here: a plain variable the state does not hold reads as
+// that input (postfix). Joined across paths like any key.
+const extractKey = "\x00extract"
+
+// extractAny follows extract($arr) of an array not written out: it may define a
+// variable for any key ($team_id, never assigned here, after extract($opts)) and,
+// as its flags say, overwrite the ones already defined ($template_name after
+// extract($args) in a template loader): EXTR_SKIP and the EXTR_PREFIX_* flags
+// overwrite none, EXTR_IF_EXISTS and EXTR_PREFIX_ALL create no variable of a
+// key's own name, and a prefix creates only prefix_ names.
+// wp_parse_args($in, $defaults) keeps the keys of $in, so it lands here too.
+// Superglobals and $this are not variables extract() can set.
+func (a *analysis) extractAny(st state, m extractMode, v val, keep string) {
+	if !v.taint {
+		return
+	}
+	add := entry{taint: true, raw: v.raw, emb: v.emb, weak: v.weak, ext: true}
+	join := func(e entry) entry {
+		return entry{taint: true, raw: e.raw || add.raw, emb: e.emb || add.emb, weak: weakOf(e.taint, e.weak, true, add.weak), ext: !e.taint || e.ext}
+	}
+	mark := func(k string) {
+		if e, ok := st[k]; ok {
+			st[k] = join(e)
+		} else {
+			st[k] = add
+		}
+	}
+	if m.overwrite {
+		for k, e := range st {
+			if extractable(k) && (keep == "" || k != keep && !strings.HasPrefix(k, keep+sepCh)) {
+				st[k] = join(e)
+			}
+		}
+		for _, p := range a.curParams {
+			if _, ok := st[p]; !ok && extractable(p) && p != keep && !m.create {
+				st[p] = add // EXTR_IF_EXISTS: a parameter is defined
+			}
+		}
+	}
+	if m.create {
+		mark(extractKey)
+	}
+	if m.prefixAll || m.prefixSame || m.prefixIfExists {
+		p := anyPrefix // the prefix not written out: any name with a "_" after its first letter may be prefix_key
+		if m.prefix != "" {
+			p = m.prefix + "_"
+		}
+		mark(extractKey + ":" + p) // prefix_key for any key (a defined one, for the IF_EXISTS form)
+	}
+}
+
+// anyPrefix is the extractKey suffix for a prefix extract() was given but not
+// written out (extract($_GET, EXTR_PREFIX_ALL, $px)).
+const anyPrefix = "*"
+
+// outParams are PHP functions that write a variable passed by reference, by
+// the argument written (from 1).
+var outParams = map[string][]int{"preg_match": {3}, "preg_match_all": {3}, "parse_str": {2}, "exec": {2, 3}}
+
+// outSubject is the argument (from 1) each of outParams reads.
+var outSubject = map[string]int{"preg_match": 2, "preg_match_all": 2, "parse_str": 1, "exec": 1}
+
+// outParamStmt: after preg_match($p, $s, $m), parse_str($q, $out) or
+// exec($c, $output), the variable written is defined by the call, so what it
+// held before (a value extract() set, say) is gone. Whether it holds parts of
+// the subject's input is not followed, as before: it reads as clean, unless
+// the variable written is the subject itself (preg_match($p, $m, $m),
+// parse_str($q, $q)): then it keeps what it held.
+func (a *analysis) outParamStmt(st state, t []Token) {
+	if !a.php {
+		return
+	}
+	for i := 0; i+1 < len(t); i++ {
+		w, ok := outParams[t[i].Text]
+		if !ok || t[i].Kind != Ident || !t[i+1].op("(") || i > 0 && (memberOp(true, t[i-1]) || t[i-1].word("function")) {
+			continue
+		}
+		c := closeOf(t, i+1)
+		if c < 0 {
+			continue
+		}
+		args := splitTop(inside(t, i+1, c), isComma)
+		var subj []Token
+		if n := outSubject[t[i].Text]; len(args) >= n {
+			subj = stripParens(args[n-1])
+		}
+		for _, x := range w {
+			if len(args) < x {
+				continue
+			}
+			if tg := stripParens(args[x-1]); len(tg) == 1 && tg[0].Kind == Var && !(len(subj) == 1 && subj[0].Kind == Var && subj[0].Text == tg[0].Text) {
+				a.setTarget(st, tg, val{}, "=", false)
+			}
+		}
+	}
+}
+
+// extractEntry is what a variable the state does not hold reads as after
+// extract() of input set variables whose names are not known: the input, when
+// an extractKey marker covers its name.
+func extractEntry(s state, k string) (entry, bool) {
+	if !extractable(k) {
+		return entry{}, false
+	}
+	if e, ok := s[extractKey]; ok {
+		return e, true
+	}
+	root := k
+	if i := strings.Index(k, sepCh); i >= 0 {
+		root = k[:i]
+	}
+	for i := 2; i < len(root); i++ {
+		if root[i] == '_' {
+			if e, ok := s[extractKey+":"+root[1:i+1]]; ok {
+				return e, true
+			}
+			if e, ok := s[extractKey+":"+anyPrefix]; ok {
+				return e, true
+			}
+		}
+	}
+	return entry{}, false
+}
+
+// extractable reports whether a state key is a plain PHP variable or a path
+// under one, which extract() can set.
+func extractable(k string) bool {
+	root := k
+	if i := strings.Index(k, sepCh); i >= 0 {
+		root = k[:i]
+	}
+	return len(root) > 1 && root[0] == '$' && root != "$this" && root != "$GLOBALS" && !strings.HasPrefix(root, "$_")
 }
 
 func isIdentName(s string) bool {
@@ -663,6 +969,14 @@ func (a *analysis) recordLit(st state, t []Token) {
 		a.lits[name] = nil // two different values: not known
 	} else {
 		a.lits[name] = rhs
+	}
+	if a.arrs == nil {
+		a.arrs = map[string][]Token{}
+	}
+	if old, seen := a.arrs[name]; seen && (old == nil || !tokensEqual(old, rhs)) {
+		a.arrs[name] = nil // the same, within the function (litArray)
+	} else {
+		a.arrs[name] = rhs
 	}
 	st[litKey+name] = entry{san: true}
 }
@@ -851,18 +1165,22 @@ func phpDefines(lang string, toks []Token) map[string]string {
 		}
 	}
 	for i := 0; i+5 < len(toks); i++ {
-		if !toks[i].word("define") || !toks[i+1].op("(") || toks[i+2].Kind != Str || !toks[i+3].op(",") || toks[i+4].Kind != Str ||
-			len(toks[i+4].Parts) > 0 || !toks[i+5].op(")") || i > 0 && memberOp(true, toks[i-1]) {
+		if !toks[i].word("define") || !toks[i+1].op("(") || toks[i+2].Kind != Str || !toks[i+3].op(",") || i > 0 && memberOp(true, toks[i-1]) {
 			continue
 		}
 		if out == nil {
 			out = map[string]string{}
 		}
-		if _, dup := out[toks[i+2].Text]; dup {
-			out[toks[i+2].Text] = "" // defined twice: not known
-			continue
+		// a value that is no plain string (define('ABSPATH', $_GET['b'])) is not
+		// known: the name is still this file's, so it is no framework constant
+		v := ""
+		if toks[i+4].Kind == Str && len(toks[i+4].Parts) == 0 && toks[i+5].op(")") {
+			v = toks[i+4].Text
 		}
-		out[toks[i+2].Text] = toks[i+4].Text
+		if _, dup := out[toks[i+2].Text]; dup {
+			v = "" // defined twice: not known
+		}
+		out[toks[i+2].Text] = v
 	}
 	return out
 }

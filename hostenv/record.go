@@ -34,7 +34,7 @@ type fixture struct {
 }
 
 type entry struct {
-	Op        string    `json:"op"` // file, dir, link, stat, cmd
+	Op        string    `json:"op"` // file, dir, link, stat, lstat, cmd
 	Path      string    `json:"path,omitempty"`
 	Argv      []string  `json:"argv,omitempty"`
 	Err       string    `json:"err,omitempty"` // not_exist, permission, truncated, timeout, not_allowed, other:<text>
@@ -144,6 +144,35 @@ func (r *Recorder) Stat(path string) (FileStat, error) {
 	return st, err
 }
 
+// Lstat records under its own op: a fixture made before it has none, and
+// its replay says such a path was not recorded (never "not there").
+func (r *Recorder) Lstat(path string) (FileStat, error) {
+	st, err := Lstat(r.Inner, path)
+	e := &entry{Op: "lstat", Path: path, Err: errCode(err)}
+	if err == nil {
+		kept := st
+		kept.ID = "" // device and inode: not for a fixture
+		e.Stat = &kept
+	}
+	r.put(e)
+	return st, err
+}
+
+// ReadFileNoFollowMax records under the same key as ReadFile.
+func (r *Recorder) ReadFileNoFollowMax(path string, max int64) ([]byte, error) {
+	b, err := ReadFileNoFollowMax(r.Inner, path, max)
+	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: b})
+	return b, err
+}
+
+// ReadFileIfSameMax passes the comparison to Inner and records under the
+// same key as ReadFile.
+func (r *Recorder) ReadFileIfSameMax(path string, want FileStat, max int64) ([]byte, error) {
+	b, err := ReadFileIfSameMax(r.Inner, path, want, max)
+	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: b})
+	return b, err
+}
+
 // ReadFileMax records under the same key as ReadFile.
 func (r *Recorder) ReadFileMax(path string, max int64) ([]byte, error) {
 	b, err := ReadFileMax(r.Inner, path, max)
@@ -163,6 +192,14 @@ func (r *Recorder) ReadDir(path string) ([]string, error) {
 	n, err := r.Inner.ReadDir(path)
 	r.put(&entry{Op: "dir", Path: path, Err: errCode(err), Names: n})
 	return n, err
+}
+
+// ReadDirMax records the names read under the dir key: a replay gives
+// those (it cannot tell there were more).
+func (r *Recorder) ReadDirMax(path string, n int) ([]string, bool, error) {
+	names, more, err := ReadDirMax(r.Inner, path, n)
+	r.put(&entry{Op: "dir", Path: path, Err: errCode(err), Names: names})
+	return names, more, err
 }
 
 func (r *Recorder) Readlink(path string) (string, error) {
@@ -343,6 +380,20 @@ func (rp *Replay) ReadFile(path string) ([]byte, error) {
 
 func (rp *Replay) Stat(path string) (FileStat, error) {
 	e, err := rp.find("stat", path, nil)
+	if err != nil {
+		return FileStat{}, err
+	}
+	if e.Stat == nil {
+		return FileStat{}, codeErr(e.Err, path)
+	}
+	return *e.Stat, codeErr(e.Err, path)
+}
+
+// Lstat answers what was recorded; a path not recorded (a fixture made
+// before lstat was, or one the collector never asked) is ErrNotRecorded:
+// unread, not "not there".
+func (rp *Replay) Lstat(path string) (FileStat, error) {
+	e, err := rp.find("lstat", path, nil)
 	if err != nil {
 		return FileStat{}, err
 	}

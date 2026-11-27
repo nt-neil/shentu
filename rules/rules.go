@@ -26,7 +26,7 @@ type Rule struct {
 	Class      string   `toml:"class"`
 	CWE        string   `toml:"cwe"`
 	Severity   string   `toml:"severity"`
-	Tier       string   `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report
+	Tier       string   `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report; "reference" (no sources only): listed last, counted in one line of the daily report, never given to attack detection
 	Title      string   `toml:"title"`
 	Frameworks []string `toml:"frameworks"`
 	// RouteInput false: a route handler's parameters are not this rule's
@@ -101,6 +101,22 @@ type Args struct {
 	// receiver the file says nothing about still counts. An entry written as a
 	// variable ($wpdb) names the object itself: WordPress's global wpdb.
 	NotReceiver []string `toml:"not_receiver"`
+	// NotLiteral: the argument arg names must not be one (literal's opposite):
+	// a command or template made from a value the code does not write out.
+	NotLiteral bool `toml:"not_literal"`
+	// ReceiverFrom (Python method sinks): the call counts on a receiver the
+	// file shows made by one of these (env = jinja2.Environment(), or
+	// Environment imported from jinja2), followed as receiver is. A receiver
+	// the file shows made by a class of another name (Engine()) does not
+	// count; one the file shows nothing about counts when its last name is
+	// one of ReceiverNames (env, app.jinja_env).
+	ReceiverFrom []string `toml:"receiver_from"`
+	// ReceiverNames: see ReceiverFrom.
+	ReceiverNames []string `toml:"receiver_names"`
+	// IdentPlaceholder (a prepare()-style sink, without arg): a value after the
+	// format counts only when the format, written in the first argument, puts
+	// its placeholder inside backticks (`%s`, `%2$s`): an identifier there.
+	IdentPlaceholder bool `toml:"ident_placeholder"`
 	// UnlessAfter: the SQL text (or other text) does not count when every
 	// value from the input in it comes after one of these texts (any case)
 	// in a string written in the call: "... ORDER BY $col" is

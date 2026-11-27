@@ -20,7 +20,8 @@ import (
 var packageVulns = Tool{
 	Name: "package_vulns",
 	Description: "Checks installed OS packages against the OSV vulnerability database (online, api.osv.dev) and marks vulnerabilities that CISA lists as actively exploited (KEV); fix those first. Without arguments returns affected packages, vulnerability IDs and the exploited ones; with package set, returns the summary, severity and fixed version of that package's vulnerabilities. " +
-		"partial says what could not be checked (an advisory feed or topic that failed): those packages may have fixes pending. ecosystems_not_queried lists ecosystems the host may have that OSV does not carry; ecosystems lists every one queried when there are several (SUSE). kev_unchecked counts vulnerabilities not checked against KEV (lookups failed, or over 300 for one package): exploited ones among them are not marked.",
+		"partial says what could not be checked (an advisory feed or topic that failed): those packages may have fixes pending. ecosystems_not_queried lists ecosystems the host may have that OSV does not carry; ecosystems lists every one queried when there are several (SUSE). kev_unchecked counts vulnerabilities not checked against KEV (lookups failed, or over 300 for one package): exploited ones among them are not marked. " +
+		"packages_not_checked lists packages the package manager knows but that were not checked, with their state: half-installed or a state not read (no version known to be on the disk), then config-files (only their configuration left); the first 20, packages_not_checked_more counts the rest. Packages not fully installed (unpacked, half-configured...) are checked at the version recorded, and named in partial.",
 	Params: schema(`{"type":"object","properties":{
 		"package":{"type":"string","description":"show details for this package"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
@@ -37,6 +38,10 @@ var packageVulns = Tool{
 type pkg struct{ Name, Version string }
 
 const osvAPI = "https://api.osv.dev/v1"
+
+// osvMaxPages is how many pages of advisories (1000 each) one package is
+// read to; past it the rest are said not checked.
+const osvMaxPages = 10
 
 // PackageVulns queries OSV for every installed package.
 func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, error) {
@@ -59,6 +64,9 @@ const surfaceDetail = "\x00surface"
 // surfaceCVELookups bounds the advisories looked up for their CVEs past the
 // KEV check (KEV unavailable, or past its 300 per package).
 const surfaceCVELookups = 3000
+
+// maxNotChecked is how many packages_not_checked lists; the rest are counted.
+const maxNotChecked = 20
 
 func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, []detect.PackageVuln, error) {
 	forSurface := detailFor == surfaceDetail
@@ -119,44 +127,76 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 				Name      string `json:"name"`
 				Ecosystem string `json:"ecosystem"`
 			} `json:"package"`
-			Version string `json:"version"`
+			Version   string `json:"version"`
+			PageToken string `json:"page_token,omitempty"`
 		}
 		at := map[string]int{} // package -> index in found (SLES asks one ecosystem per module)
+		var cut []string       // packages OSV had more pages for than are read
 		for _, e := range feed.Ecosystems {
 			for start := 0; start < len(pkgs); start += 500 {
 				chunk := pkgs[start:min(start+500, len(pkgs))]
 				qs := make([]query, len(chunk))
+				idx := make([]int, len(chunk)) // query -> its package in chunk
 				for i, p := range chunk {
 					qs[i].Package.Name, qs[i].Package.Ecosystem, qs[i].Version = p.Name, e, feed.FeedVersion(p.Version)
+					idx[i] = i
 				}
-				var resp struct {
-					Results []struct {
-						Vulns []struct {
-							ID string `json:"id"`
-						} `json:"vulns"`
-					} `json:"results"`
-				}
-				if err := postJSON(ctx, hc, osvAPI+"/querybatch", map[string]any{"queries": qs}, &resp); err != nil {
-					return nil, nil, fmt.Errorf("OSV query failed (is the server online?): %w", err)
-				}
-				for i, r := range resp.Results {
-					if len(r.Vulns) == 0 || i >= len(chunk) {
-						continue
+				// OSV gives at most 1000 advisories a query (the kernel has
+				// more): the rest come on the pages its next_page_token names,
+				// asked again until none is left.
+				for page := 0; len(qs) > 0; page++ {
+					if page == osvMaxPages {
+						for _, i := range idx {
+							cut = append(cut, chunk[i].Name)
+						}
+						break
 					}
-					k, ok := at[chunk[i].Name]
-					if !ok {
-						k = len(found)
-						at[chunk[i].Name] = k
-						found = append(found, affected{Package: chunk[i].Name, Version: chunk[i].Version})
+					var resp struct {
+						Results []struct {
+							Vulns []struct {
+								ID string `json:"id"`
+							} `json:"vulns"`
+							NextPageToken string `json:"next_page_token"`
+						} `json:"results"`
 					}
-					for _, v := range r.Vulns {
-						if !slices.Contains(found[k].IDs, v.ID) {
-							found[k].IDs = append(found[k].IDs, v.ID)
-							total++
+					if err := postJSON(ctx, hc, osvAPI+"/querybatch", map[string]any{"queries": qs}, &resp); err != nil {
+						return nil, nil, fmt.Errorf("OSV query failed (is the server online?): %w", err)
+					}
+					var nqs []query
+					var nidx []int
+					for i, r := range resp.Results {
+						if i >= len(qs) {
+							continue
+						}
+						c := chunk[idx[i]]
+						if r.NextPageToken != "" {
+							q := qs[i]
+							q.PageToken = r.NextPageToken
+							nqs, nidx = append(nqs, q), append(nidx, idx[i])
+						}
+						if len(r.Vulns) == 0 {
+							continue
+						}
+						k, ok := at[c.Name]
+						if !ok {
+							k = len(found)
+							at[c.Name] = k
+							found = append(found, affected{Package: c.Name, Version: c.Version})
+						}
+						for _, v := range r.Vulns {
+							if !slices.Contains(found[k].IDs, v.ID) {
+								found[k].IDs = append(found[k].IDs, v.ID)
+								total++
+							}
 						}
 					}
+					qs, idx = nqs, nidx
 				}
 			}
+		}
+		if len(cut) > 0 {
+			slices.Sort(cut)
+			partial = strings.TrimPrefix(partial+"; "+fmt.Sprintf("OSV listed more than %d pages of advisories for %s: the rest not checked", osvMaxPages, strings.Join(slices.Compact(cut), ", ")), "; ")
 		}
 	}
 	out := map[string]any{"ecosystem": eco, "packages_checked": len(pkgs), "affected_packages": len(found), "total_vulns": total}
@@ -172,7 +212,16 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	if feed.Note != "" {
 		out["ecosystems_note"] = feed.Note
 	}
-	thirdPartyOut(out, set)
+	if len(set.NotChecked) > 0 { // known to the package manager, not installed in full: not checked, said
+		nc := set.NotChecked
+		if len(nc) > maxNotChecked { // a long-run host may keep dozens of config-files (old kernels)
+			out["packages_not_checked_more"] = len(nc) - maxNotChecked
+			nc = nc[:maxNotChecked]
+		}
+		out["packages_not_checked"] = nc
+	}
+	up, upWhy := upstreamCompare(ctx, set) // third-party PHP and nginx, against php.net's and nginx.org's advisories
+	thirdPartyOut(out, set, up, upWhy)
 	if len(feed.Ecosystems) > 1 { // SUSE: one per module; ecosystem shows the first only
 		out["ecosystems"] = feed.Ecosystems
 	}
@@ -201,14 +250,62 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 		}
 		return c, ok
 	}
+	// The upstream hits, counted in the summary every reader goes by (the
+	// patrol, the report, the model) as OSV's are: by source package and CVE.
+	// The binaries of one source (php8.3-fpm, -cli) are one affected package,
+	// as OSV names them, and a CVE OSV already reports for that source (also
+	// as an advisory's alias, a DSA's CVE) is not counted again.
+	ups := upstreamBySource(up)
+	osvHas := map[srcCVE]bool{}
+	inFound := map[string]bool{}
+	for _, a := range found {
+		inFound[a.Package] = true
+		if !ups.sources[a.Package] {
+			continue
+		}
+		for _, id := range a.IDs {
+			cves := cveRe.FindAllString(strings.ToUpper(id), -1)
+			if len(cves) == 0 {
+				cves, _ = cvesOf(id)
+				cves, _ = releaseCVEs(id, cves, a.IDs)
+			}
+			for _, c := range cves {
+				osvHas[srcCVE{a.Package, c}] = true
+			}
+		}
+	}
+	newSources := map[string]bool{}
+	for _, k := range ups.order {
+		if !osvHas[k] {
+			total++
+			if !inFound[k.src] {
+				newSources[k.src] = true
+			}
+		}
+	}
+	out["total_vulns"], out["affected_packages"] = total, len(found)+len(newSources)
 	exploited := map[string][]Exploit{} // package -> KEV matches
-	if kev, err := loadKEV(ctx, hc); err != nil {
+	kev, kevErr := loadKEV(ctx, hc)     // kept for the upstream entries of the surface
+	if err := kevErr; err != nil {
 		out["kev"] = "CISA KEV list unavailable: " + err.Error()
 	} else {
 		var all []Exploit
 		unchecked := 0
+		var unsureMu sync.Mutex
+		var unsure []string // USNs whose CVEs could not be told to apply here
 		for _, a := range found {
-			list, n := matchKEV(kev, a.IDs, cvesOf)
+			ids := a.IDs
+			list, n := matchKEV(kev, ids, func(id string) ([]string, bool) {
+				c, ok := cvesOf(id)
+				c, u := releaseCVEs(id, c, ids) // a USN's CVEs of other releases are not this host's
+				if u {
+					unsureMu.Lock()
+					unsure = append(unsure, id)
+					unsureMu.Unlock()
+					return nil, false // not checked against KEV: counted in kev_unchecked
+				}
+				return c, ok
+			})
 			unchecked += n
 			for _, e := range list {
 				e.Package, e.Version = a.Package, a.Version
@@ -216,11 +313,30 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 				all = append(all, e)
 			}
 		}
+		// Upstream's, as OSV's (the patrol's KEV alert reads this list): one
+		// per source package and CVE, naming the binaries; OSV's own entry
+		// for it, when there is one, gets them instead of a second entry.
+		for _, k := range ups.order {
+			e, ok := kev[k.cve]
+			if !ok {
+				continue
+			}
+			if i := slices.IndexFunc(all, func(x Exploit) bool { return x.Package == k.src && x.CVE == k.cve }); i >= 0 {
+				all[i].Binaries = ups.binaries[k]
+				continue
+			}
+			all = append(all, Exploit{Package: k.src, Version: ups.version[k.src], ID: k.cve, CVE: k.cve, Name: e.Name, Added: e.Added,
+				Ransomware: e.Ransomware == "Known", Binaries: ups.binaries[k]})
+		}
 		out["actively_exploited"] = all
 		switch {
 		case unchecked > 0:
 			out["kev_unchecked"] = unchecked
 			out["kev"] = fmt.Sprintf("%d vulnerabilities could not be checked against the CISA KEV list (their CVEs could not be looked up, or over 300 for one package): exploited ones among them are not marked", unchecked)
+			if len(unsure) > 0 {
+				slices.Sort(unsure)
+				out["kev"] = out["kev"].(string) + fmt.Sprintf("; for %s, whether its CVEs apply to this release could not be told (the package has no CVE-named advisory to tell by)", strings.Join(slices.Compact(unsure), ", "))
+			}
 		case len(all) == 0:
 			out["kev"] = "none of these vulnerabilities is on the CISA KEV list of actively exploited vulnerabilities"
 		}
@@ -244,7 +360,7 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 			v.CVEs = cveRe.FindAllString(strings.ToUpper(id), -1)
 			if len(v.CVEs) == 0 {
 				cveMu.Lock()
-				v.CVEs = cveMemo[id]
+				v.CVEs = cveMemo[id] // a USN's: this release's kept below
 				cveMu.Unlock()
 				if v.CVEs == nil && advisories != nil {
 					v.CVEs = advisories[id].CVEs
@@ -261,13 +377,31 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 			surface = append(surface, v)
 		}
 	}
+	surface = append(surface, upstreamSurface(up, kev)...)
+	missing := 0
 	if forSurface {
 		// The KEV check did not look up every advisory's CVEs (the list
 		// unavailable, or past 300 for one package): those it did not,
 		// looked up now; those still unknown are said.
-		if missing := surfaceCVEs(surface, cveMemo, &cveMu, lookup); missing > 0 {
-			out["surface_cves_missing"] = missing
+		missing = surfaceCVEs(surface, cveMemo, &cveMu, lookup)
+	}
+	// A USN's CVEs, from the KEV check or the lookup just made, are every
+	// release's: this release's kept, as for KEV (N-258-1); a USN that
+	// cannot tell is missing.
+	idsOf := map[string][]string{}
+	for _, a := range found {
+		idsOf[a.Package] = a.IDs
+	}
+	for i := range surface {
+		if v := &surface[i]; v.Source == "os" && strings.HasPrefix(v.ID, "USN-") {
+			var u bool
+			if v.CVEs, u = releaseCVEs(v.ID, v.CVEs, idsOf[v.Package]); u {
+				missing++
+			}
 		}
+	}
+	if forSurface && missing > 0 {
+		out["surface_cves_missing"] = missing
 	}
 	for i := range surface {
 		if v := &surface[i]; v.CVE == "" && len(v.CVEs) > 0 {
@@ -394,6 +528,9 @@ type Exploit struct {
 	Name       string `json:"name"`
 	Added      string `json:"kev_since"`
 	Ransomware bool   `json:"used_by_ransomware,omitempty"`
+	// Binaries are the installed packages of Package (a source package) the
+	// upstream compare found affected (php8.3-fpm, php8.3-cli).
+	Binaries []string `json:"binaries,omitempty"`
 }
 
 // surfaceCVEs fills the CVEs of surface's entries neither their id nor
@@ -509,6 +646,38 @@ func matchKEV(kev map[string]kevEntry, ids []string, cves func(id string) ([]str
 	return uniq, unchecked
 }
 
+// releaseCVEs are the CVEs of advisory id that apply to the host's release.
+// A USN covers every Ubuntu release it fixed, and its aliases name CVEs only
+// some of them have (USN-7980-1 names CVE-2025-11187, which OSV has for
+// 25.10 and 26.04, not 24.04): of a USN, only the CVEs OSV also lists for
+// this package, as UBUNTU-CVE-... or the CVE itself (ids, the package's
+// advisories), are kept. A CVE of another release is never marked
+// exploited on this host. Other advisories are per release already.
+//
+// unsure: the package has no CVE-named advisory to tell by, so none of the
+// USN's CVEs is known to apply (nor kept: that would bring other releases'
+// back); the caller says so.
+func releaseCVEs(id string, cves, ids []string) (out []string, unsure bool) {
+	if !strings.HasPrefix(id, "USN-") {
+		return cves, false
+	}
+	has := map[string]bool{}
+	for _, x := range ids {
+		for _, c := range cveRe.FindAllString(strings.ToUpper(x), -1) {
+			has[c] = true
+		}
+	}
+	if len(has) == 0 {
+		return nil, len(cves) > 0
+	}
+	for _, c := range cves {
+		if has[c] {
+			out = append(out, c)
+		}
+	}
+	return out, false
+}
+
 // osvCVEs returns the CVEs an OSV advisory covers (aliases and upstream).
 // osvCVEs is the CVEs an OSV id stands for; ok is false when OSV could not
 // be asked (offline, rate limited), which is not "no CVE".
@@ -553,11 +722,7 @@ func installedPackages(ctx context.Context) (string, hostenv.PatchFeed, []pkg, e
 func pkgsOf(items []hostenv.Package) []pkg {
 	var pkgs []pkg
 	for _, p := range items {
-		name := p.Name
-		if p.Source != "" {
-			name = p.Source
-		}
-		pkgs = append(pkgs, pkg{name, p.Version})
+		pkgs = append(pkgs, pkg{sourceOf(p), p.Version})
 	}
 	return uniq(pkgs)
 }
@@ -604,18 +769,26 @@ func installedSet(ctx context.Context) (string, hostenv.PatchFeed, hostenv.Packa
 // the distribution's. OSV publishes the distribution's packages only, so
 // these were compared as if the distribution had built them and matched
 // nothing: that silence is not "no vulnerabilities", and says so.
-func thirdPartyOut(out map[string]any, set hostenv.PackageSet) {
+func thirdPartyOut(out map[string]any, set hostenv.PackageSet, up []upstreamHit, why map[string]string) {
 	type thirdParty struct {
 		Package string `json:"package"`
 		Version string `json:"version"`
 		Origin  string `json:"origin"`
 		FoundBy string `json:"found_by"`
+		Why     string `json:"why,omitempty"` // a PHP or nginx package not compared with its upstream: why
+	}
+	compared := map[string]bool{}
+	for _, h := range up {
+		compared[h.Package] = true
 	}
 	var tp []thirdParty
 	for _, it := range set.Items {
-		if it.Origin != "" {
-			tp = append(tp, thirdParty{it.Name, it.Version, it.Origin, it.OriginBy})
+		if it.Origin != "" && !compared[it.Name] {
+			tp = append(tp, thirdParty{it.Name, it.Version, it.Origin, it.OriginBy, why[it.Name]})
 		}
+	}
+	if len(up) > 0 {
+		out["third_party_upstream"] = up
 	}
 	if len(tp) > 0 {
 		out["third_party_unchecked"] = tp

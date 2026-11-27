@@ -3,6 +3,7 @@ package engine
 import (
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -34,6 +35,7 @@ type entry struct {
 	emb   bool // the input is embedded in a larger string ("WHERE id = " . $id), not passed as is
 	weak  bool // all the input came through the result of a call the analysis does not know (get_post($id))
 	keys  bool // an array tainted only by what was written under literal keys ($q['a'] = $in): another literal key it does not hold reads clean (get)
+	ext   bool // tainted only by extract() of input, which sets strings and arrays: a property of it ($wpdb->prefix) holds no input (postfix)
 }
 
 type state map[string]entry
@@ -91,12 +93,16 @@ func mergeInto(x, y state) state {
 		if e, ok := s.get(k); ok {
 			return e
 		}
+		if x, ok := extractEntry(s, k); ok {
+			return x // a variable extract() of input may have set on that path (context.go)
+		}
 		return entry{taint: src, src: src, raw: src}
 	}
 	both := func(a, b entry) entry {
 		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san, pre: a.pre && b.pre,
 			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak),
-			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys)} // tainted only under literal keys on every path that taints it
+			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys), // tainted only under literal keys on every path that taints it
+			ext:  (a.taint || b.taint) && (!a.taint || a.ext) && (!b.taint || b.ext)}
 	}
 	type add struct {
 		k string
@@ -144,6 +150,8 @@ type analysis struct {
 	seed        []*paramSeed      // the values a callback's parameters are called with (whenSeeds, pcallSeeds), for the next function analysed
 	curParams   []string          // the parameters of the function being analysed (the innermost), by name: $callback(...) of one is no other file's
 	curMoved    map[string]bool   // ... those its body assigns again ($cb = wrap($cb)): no longer what the caller passed
+	curGiven    map[string]bool   // ... in a summary's run, those given input (guardedParams)
+	curUnset    map[string]bool   // ... in a summary's run, those the body unsets (guardedParams)
 	laravelVars map[string]bool   // per PHP variable, whether it may be Laravel's request (laravelRequest)
 	phpUses     map[string]string // PHP: short class name (lower case) to the name a use statement gives it (phpUseOther)
 	branchBlock bool              // the next block is an if's branch, whose request aliases the if joins (block, sIf)
@@ -177,10 +185,12 @@ type analysis struct {
 	cparents map[string]string
 	cproj    *Project // the project, for those classes' parents in other files, also in the pass that follows no calls
 
-	lits   map[string][]Token // values written in the code, kept for argument conditions (context.go)
-	locals map[string]bool    // names of the file's own functions and methods (context.go)
-	defs   map[string]string  // PHP: define('NAME', 'text') in this file (context.go)
-	fname  string             // name of the function being analysed
+	lits    map[string][]Token // values written in the code, kept for argument conditions (context.go)
+	atsDefs map[string][]Token // $r = shortcode_atts(<array>, ...): the array, for extract($r) (context.go)
+	arrs    map[string][]Token // x = <value with no input> in the function being analysed, for litArray (context.go)
+	locals  map[string]bool    // names of the file's own functions and methods (context.go)
+	defs    map[string]string  // PHP: define('NAME', 'text') in this file (context.go)
+	fname   string             // name of the function being analysed
 
 	file  string            // the file analysed, for findings and for calls into other files
 	proj  *Project          // the project the file belongs to, or nil (project.go)
@@ -286,6 +296,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 						}
 					}
 				}
+				a.guardedParams(st, set)
 				a.summ.checks = append(a.summ.checks, set)
 			}
 		}
@@ -299,11 +310,14 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.markAssign(st, s.toks)
 		a.extractStmt(st, s.toks)
 		a.unsetStmt(st, s.toks)
+		a.outParamStmt(st, s.toks)
 		a.recordLit(st, s.toks)
+		a.atsAssign(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
 		a.sinks(st, s.toks)
 		a.condAssign(st, s.toks)
+		a.outParamStmt(st, s.toks)
 		t1, _ := a.refine(st, s.toks, true)
 		a.nonceCond(t1, s.toks, true)
 		// request aliases (reqalias.go): each branch starts from what held
@@ -391,6 +405,28 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 	return st, noExit
 }
 
+// closureScope: a PHP closure has a scope of its own, which sees only the
+// variables of its use (...): what extract() of input may have set around it
+// reaches the closure through those, and its own parameters and other names
+// are not the input (the markers are dropped).
+func closureScope(x state, f *fn) {
+	for _, u := range f.uses {
+		if u.Kind != Var {
+			continue
+		}
+		if _, ok := x[u.Text]; !ok {
+			if e, ok := extractEntry(x, u.Text); ok {
+				x[u.Text] = e
+			}
+		}
+	}
+	for k := range x {
+		if strings.HasPrefix(k, extractKey) {
+			delete(x, k)
+		}
+	}
+}
+
 // try: the body may stop at any statement, so a handler starts from what the
 // state was before or after it; the code after continues from every path that
 // did not exit.
@@ -407,8 +443,12 @@ func (a *analysis) try(s *stmt, st state) (state, uint8) {
 	} else {
 		exit = min(exit, e1)
 	}
-	for _, h := range s.handlers {
-		sh, eh := a.block(h, from.clone())
+	for i, h := range s.handlers {
+		in := from.clone()
+		if i < len(s.catchVars) && s.catchVars[i] != "" {
+			a.setTarget(in, []Token{{Kind: Var, Text: s.catchVars[i]}}, val{}, "=", false) // the exception object the catch binds
+		}
+		sh, eh := a.block(h, in)
 		if eh == noExit {
 			outs = append(outs, sh)
 		} else {
@@ -485,6 +525,9 @@ func (a *analysis) function(f *fn, st state) {
 	x := state{}
 	if !f.fresh {
 		x = st.clone()
+		if a.php && !f.arrow {
+			closureScope(x, f)
+		}
 	}
 	for _, p := range f.params {
 		if p.Kind == Var || p.Kind == Ident {
@@ -501,7 +544,20 @@ func (a *analysis) function(f *fn, st state) {
 		}
 	}
 	a.seed = nil
+	if a.php && !f.fresh {
+		for _, p := range fnParamNames(f) {
+			if _, ok := x[p]; !ok && p != "" {
+				x[p] = entry{} // a parameter is the caller's value, not what extract() set around the closure
+			}
+		}
+	}
 	curParams, curMoved := a.curParams, a.curMoved
+	arrs, atsDefs := a.arrs, a.atsDefs // what a function assigns is its own: another function's $defaults says nothing here
+	a.arrs, a.atsDefs = nil, nil       // a PHP named function sees nothing of the code around it
+	if !f.fresh {
+		a.arrs, a.atsDefs = maps.Clone(arrs), maps.Clone(atsDefs) // a closure or arrow function sees the enclosing scope's
+	}
+	defer func() { a.arrs, a.atsDefs = arrs, atsDefs }()
 	a.curParams = fnParamNames(f)
 	a.curMoved = paramsMoved(f.body, a.curParams)
 	defer func() { a.curParams, a.curMoved = curParams, curMoved }()
@@ -707,6 +763,9 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 				st[canonKey+key] = entry{san: true}
 			} else if _, had := st[canonKey+key]; had {
 				delete(st, canonKey+key)
+			}
+			if a.php {
+				a.setRealOf(st, key, rhs, t[k].Text == "=")
 			}
 			a.setURLOf(st, key, rhs, t[k].Text == "=", tg[0].Line)
 			a.urlWrite(st, key, v)
@@ -1033,9 +1092,21 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 	switch {
 	case a.php && n == 1 && first[0].Kind == Ident && !a.kw[first[0].Text] && !isLiteral(first):
 		if netClasses[a.r.rule.Class] {
-			// a URL: only a constant defined in this file whose text fixes the host
-			v, ok := a.defs[first[0].Text]
-			return ok && a.fixedText(v)
+			// a URL: a constant defined in this file whose text fixes the host, or
+			// a framework's directory followed by a path segment
+			// (WP_CONTENT_DIR . '/uploads/' . $f)
+			if v, ok := a.defs[first[0].Text]; ok {
+				return a.fixedText(v)
+			}
+			if !dirConsts[first[0].Text] || len(parts) < 2 || len(parts[1]) != 1 || parts[1][0].Kind != Str {
+				return false
+			}
+			tk := parts[1][0]
+			lit := tk.Text
+			if len(tk.Parts) > 0 {
+				lit = lit[:min(tk.Parts[0].Off, len(lit))]
+			}
+			return segmentAfter(lit)
 		}
 		return true // a constant: WP_PLUGIN_DIR, __DIR__ (in PHP a bare name is no variable)
 	case a.php && n == 3 && first[0].Kind == Ident && first[1].op("::") && first[2].Kind == Ident:
@@ -1265,6 +1336,9 @@ func (a *analysis) expr(st state, t []Token, whole bool) val {
 	if a.py && indexTop(t, 0, isOp(":")) >= 0 {
 		return a.anyOf(st, splitTop(t, isOp(":")), whole)
 	}
+	if a.numberOnly() && a.arithmetic(t) {
+		return val{} // ($page - 1) * $per: a number, which carries no quote or markup
+	}
 
 	var v val
 	terms := 0
@@ -1464,6 +1538,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 	}
 	srcEnd := -1
 	byKeys, litIdx := false, false // the value so far is an array tainted only under literal keys; the last access is a literal index
+	ext := false                   // the value so far is tainted only by extract(): a string or an array
 	source := func(pos int) {
 		if a.noSrc {
 			return
@@ -1482,8 +1557,12 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			if e, ok := st[key]; ok {
 				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak}
 				byKeys = e.keys && e.taint
+				ext = e.ext && e.taint
 			} else if byKeys && litIdx {
 				v, byKeys = val{}, false // a literal key an array tainted only under other literal keys does not hold
+			} else if x, ok := extractEntry(st, key); ok && a.php && pos == baseEnd {
+				v = val{taint: x.taint, raw: x.raw, emb: x.emb, weak: x.weak} // a variable extract() of input may have defined (context.go)
+				ext = true
 			}
 		}
 	}
@@ -1505,6 +1584,9 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		}
 		switch {
 		case memberOp(a.php, tk) && j+1 < len(t) && (t[j+1].Kind == Ident || t[j+1].Kind == Var):
+			if ext {
+				v, ext = val{}, false // a property or method of a string or an array extract() set: no value from the input
+			}
 			// flask.request.form, self.request.GET: a source can start at a member.
 			source(j + 1)
 			if key != "" {
@@ -1906,6 +1988,46 @@ type keyRef struct {
 var prefixChecks = map[string]bool{"str_starts_with": true, "strncmp": true, "strncasecmp": true, "strpos": true,
 	"stripos": true, "startsWith": true, "startswith": true}
 
+// symmetricPrefix are the prefix checks that compare the first n bytes of
+// their first two arguments alike (strncmp, strncasecmp): which one is the
+// base, and so which one is checked, the length n tells (strncmpValue).
+var symmetricPrefix = map[string]bool{"strncmp": true, "strncasecmp": true}
+
+// strncmpValue reads strncmp(a, b, n) === 0 as a check that the value starts
+// with the base, and returns the value. The base is the argument whose length
+// n is: strlen() of it (strlen('/var/logs/'), strlen($base)), or a number equal
+// to the length of a literal base. Any other n checks less than the base
+// (strncmp($real, '/var/logs/', 3) passes /var/www) or asks whether the value
+// is a prefix of the base (n = strlen($real): / and /var pass), and a base
+// made of input checks nothing.
+func (a *analysis) strncmpValue(st state, args [][]Token) ([]Token, bool) {
+	if len(args) != 3 {
+		return nil, false
+	}
+	pair := [2][]Token{stripParens(args[0]), stripParens(args[1])}
+	n := stripParens(args[2])
+	base := -1
+	switch {
+	case len(n) > 3 && n[0].Kind == Ident && strings.EqualFold(n[0].Text, "strlen") && n[1].op("(") && closeOf(n, 1) == len(n)-1:
+		of := stripParens(n[2 : len(n)-1])
+		for i, x := range pair {
+			if tokensEqual(of, x) {
+				base = i
+			}
+		}
+	case len(n) == 1 && n[0].Kind == Num:
+		for i, x := range pair {
+			if len(x) == 1 && x[0].Kind == Str && len(x[0].Parts) == 0 && !strings.Contains(x[0].Text, "\\") && strconv.Itoa(len(x[0].Text)) == n[0].Text {
+				base = i
+			}
+		}
+	}
+	if base < 0 || a.expr(st, pair[base], false).taint {
+		return nil, false
+	}
+	return pair[1-base], true
+}
+
 // predicates are the sanitizers that answer yes or no about a value, so using
 // them as a condition validates it. A transforming sanitizer (intval, basename,
 // Number) cleans only its result: if (intval($x)) says nothing about $x.
@@ -1918,6 +2040,17 @@ var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is
 	"allowed_file": true, "is_string": true, "isinstance": true, "wp_check_jsonp_callback": true,
 	"isBasePath": true, "isAbsolute": true, // Symfony Path::isBasePath($base, $path), Path::isAbsolute($path)
 	"isInternal": true} // Joomla Uri::isInternal($url): the URL stays on this site
+
+// zeroIsMatch reports a call of a zeroMeansMatch function that returns an int
+// (strncmp, strcmp and their kin), not a position or false (strpos, which
+// posOrFalse reads apart): its truthy result means "different".
+func zeroIsMatch(t []Token) bool {
+	if len(t) < 3 || t[0].Kind != Ident || !t[1].op("(") || closeOf(t, 1) != len(t)-1 {
+		return false
+	}
+	n := strings.ToLower(t[0].Text)
+	return zeroMeansMatch[n] && !posOrFalse[n]
+}
 
 // zeroMeansMatch are comparisons for which "=== 0" means the check passed.
 var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strcmp": true, "strcasecmp": true,
@@ -2014,12 +2147,19 @@ func (a *analysis) cleans(st state, cond []Token, truth bool) ([]keyRef, []strin
 // allowed host validates, for the SSRF rules, the URL it is the host of
 // (urlguard.go).
 func (a *analysis) guard(st state, atom []Token) (bool, []keyRef) {
+	if pos, keys := a.realFound(st, atom); len(keys) > 0 {
+		return pos, a.urlChecked(st, atom, keys)
+	}
 	pos, keys := a.guardAtom(st, atom)
+	if a.callAtom(atom) {
+		keys = a.realOrigins(st, keys) // a check of $real (strpos($real, $base) === 0), not its value ($real === false)
+	}
 	return pos, a.urlChecked(st, atom, keys)
 }
 
 func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 	pos = true
+	strictZero := false // the atom compared a result with 0 by === or !==
 	atom = stripParens(atom)
 	for len(atom) > 0 && (atom[0].op("!") || a.py && atom[0].word("not")) {
 		pos, atom = !pos, stripParens(atom[1:])
@@ -2104,25 +2244,37 @@ func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 			}
 			return pos, a.keysOf(lhs[1:])
 		}
-		switch strings.ToLower(rhs[0].Text) {
-		case "true":
-			if ne {
+		// strncmp() and its kin return an int that is 0 on a match: truthy means
+		// different, so == true and != false say "different", == false says
+		// "the same", and === true or === false never holds.
+		zeroOK := zeroIsMatch(lhs)
+		switch v := strings.ToLower(rhs[0].Text); {
+		case (v == "true" || v == "false") && zeroOK && (op == "===" || op == "!=="):
+			return pos, nil
+		case v == "true":
+			if ne != zeroOK {
 				pos = !pos
 			}
-		case "0":
+		case v == "0":
 			if zeroMeansMatch[lhs[0].Text] == ne {
 				pos = !pos
 			}
-		case "false", "null", "none":
-			if eq {
+			strictZero = op == "===" || op == "!=="
+		case v == "false" || v == "null" || v == "none":
+			if eq != zeroOK {
 				pos = !pos
 			}
 		default:
 			return pos, nil
 		}
 		atom = stripParens(lhs)
-	} else if len(atom) > 0 && zeroIsValid[atom[0].Text] {
-		pos = !pos // if (validate_file($f)) { wp_die(); }: a non-zero result means invalid
+	} else if len(atom) > 0 && (zeroIsValid[atom[0].Text] || zeroIsMatch(atom)) {
+		// if (validate_file($f)) { wp_die(); }: a non-zero result means invalid;
+		// if (strncmp($real, $base, n)) { die(); }: a non-zero result means different
+		pos = !pos
+	}
+	if n := len(atom); n > 2 && atom[0].Kind == Ident && posOrFalse[strings.ToLower(atom[0].Text)] && atom[1].op("(") && closeOf(atom, 1) == n-1 && !strictZero {
+		return pos, nil // strpos($p, $base) is 0 at the start, false when absent and true elsewhere: only === 0 says "starts with"
 	}
 	if keys, ok := a.regexPrefix(st, atom); ok {
 		return pos, keys // re.match(re.escape(base) + r'/[a-z]', url): the value starts with base/ and a letter
@@ -2135,6 +2287,11 @@ func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 	}
 	return pos, a.checkKeys(st, atom)
 }
+
+// posOrFalse are the PHP prefix checks that give a position or false: only a
+// strict comparison with 0 tells "starts with" from "absent" (false == 0) and
+// from "found further on" (a truthy position).
+var posOrFalse = map[string]bool{"strpos": true, "stripos": true}
 
 // zeroIsValid are checks that return 0 for a valid value and an error code otherwise.
 var zeroIsValid = map[string]bool{"validate_file": true}
@@ -2210,7 +2367,7 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	if a.php && n > 2 && (atom[0].word("in_array") || atom[0].word("array_key_exists") || atom[0].word("validate_file")) &&
 		atom[1].op("(") && closeOf(atom, 1) == n-1 {
 		args := splitTop(atom[2:n-1], isComma)
-		if len(args) >= 2 && a.allowlist(st, args[1]) && !(atom[0].word("in_array") && looseNumbers(args)) {
+		if len(args) >= 2 && a.allowlist(st, args[1]) && !(atom[0].word("in_array") && looseNumbers(args)) && !lossyLookup(args[0]) {
 			return a.keysOf(args[0])
 		}
 		return nil
@@ -2234,8 +2391,27 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		if s.name == "validate_file" && (len(args) < 2 || !a.allowlist(st, args[1])) {
 			return nil // without a list of allowed files it lets /etc/passwd through
 		}
+		if symmetricPrefix[s.name] {
+			v, ok := a.strncmpValue(st, args)
+			switch {
+			case !ok:
+				return nil
+			case netClasses[a.r.rule.Class]:
+				return a.plainSubject([][]Token{v})
+			}
+			return a.keysOf(v)
+		}
 		if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
 			return a.plainSubject(args) // str_starts_with($u, '/x/'): only $u, and only a plain path
+		}
+		if prefixChecks[s.name] {
+			if len(args) == 0 {
+				return nil
+			}
+			// strpos($real, '/var/logs/') === 0 checks $real, the haystack. Turned
+			// round, strpos('/var/logs/', $real) === 0 holds for / and /var: a
+			// parent of the base, not a path under it.
+			return a.keysOf(args[0])
 		}
 		return a.keysOf(atom)
 	}
@@ -2499,7 +2675,19 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
 		return false
 	}
+	if cond != nil && cond.notLiteral && a.literalArg(st, cond, region, open) {
+		return false // os.system("make clean"): a command written out in full
+	}
 	if a.noSources() {
+		if s.member && len(a.r.sanitizers) > 0 && a.expr(st, t[a.chainStart(t, i):i], false).san {
+			return false // SandboxedEnvironment().from_string(x): an object a sanitizer made
+		}
+		if s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, cond.recvNames, t[a.chainStart(t, i):i]) {
+			return false // Engine().from_string(x): a Django template, not Jinja
+		}
+		if !s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, nil, t[i:open]) {
+			return false // md5(x) of a function the file does not import from hashlib
+		}
 		a.span = spanText(t, i, end, open)
 		a.report(t[i].Line)
 		return true
@@ -2519,12 +2707,18 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		if cond != nil && len(cond.receiver) > 0 && !a.recvIs(cond.receiver, recv) {
 			return false // finders.find(path) is not a MongoDB collection
 		}
+		if cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, cond.recvNames, recv) {
+			return false // Engine().from_string(x): a Django template, not Jinja
+		}
 		if cond != nil && len(cond.notReceiver) > 0 && a.recvSurely(cond.notReceiver, recv) {
 			return false // (new WP_Query)->query($args): a query built from an arguments array, not SQL
 		}
 		if cond != nil && len(cond.unlessImports) > 0 && a.importsLeaveOut(cond, recv) {
 			return false // a TypeORM repository on an SQL database: where becomes bound parameters
 		}
+	}
+	if !s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, nil, t[i:open]) {
+		return false // md5(x) of a function the file does not import from hashlib
 	}
 	whole := cond != nil && cond.whole
 	emb := false
@@ -2563,6 +2757,15 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		tainted = hit(a.expr(st, recv, false))
 	case open >= 0:
 		args := splitTop(region, isComma)
+		if cond != nil && cond.identPh {
+			for _, k := range a.identArgs(st, args) {
+				if reaches(args[k]) {
+					tainted = true
+					break
+				}
+			}
+			break
+		}
 		if cond != nil && (cond.arg != nil || cond.name != "") {
 			if arg, ok := a.condArg(args, cond); ok {
 				tainted = reaches(arg)

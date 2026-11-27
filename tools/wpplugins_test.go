@@ -77,11 +77,11 @@ func TestWordPressPluginsReview2(t *testing.T) {
 	for i := 0; i < wpMaxDirEntries; i++ {
 		os.WriteFile(filepath.Join(d, fmt.Sprintf("f%05d", i)), nil, 0o644)
 	}
-	if _, err := readDirMax(d, wpMaxDirEntries); err != nil {
+	if _, err := readDirMax(hostSource(), d, wpMaxDirEntries); err != nil {
 		t.Errorf("exactly %d entries: %v", wpMaxDirEntries, err)
 	}
 	os.WriteFile(filepath.Join(d, "extra"), nil, 0o644)
-	if _, err := readDirMax(d, wpMaxDirEntries); !errors.Is(err, errTooMany) {
+	if _, err := readDirMax(hostSource(), d, wpMaxDirEntries); !errors.Is(err, errTooMany) {
 		t.Errorf("one more: %v", err)
 	}
 }

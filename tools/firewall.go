@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -398,7 +398,11 @@ func checkBlock(args json.RawMessage) (ipArgs, net.IP, time.Duration, error) {
 	if ownAddrs()[ip.String()] {
 		return a, nil, 0, coded(BlockInternal, errors.New("refusing to block one of this server's own addresses"))
 	}
-	if infraAddrs()[ip.String()] {
+	infra, err := infraAddrs(hostSource())
+	if err != nil {
+		return a, nil, 0, coded(BlockStateError, errors.New("refusing to block: "+err.Error()+"; the IP may be this server's gateway or DNS server"))
+	}
+	if infra[ip.String()] {
 		return a, nil, 0, coded(BlockLockout, errors.New("refusing to block this server's default gateway or DNS server"))
 	}
 	peers, err := SSHPeers()
@@ -441,11 +445,27 @@ func ownAddrs() map[string]bool {
 }
 
 // infraAddrs returns the default gateways and DNS servers; blocking them would cut the server off.
-func infraAddrs() map[string]bool {
+// They are read from the host source (as SSHPeers is). A file absent is no entry (no systemd-resolved,
+// no IPv6); one there but not read is an error, so the block is refused rather than the list taken
+// for empty.
+func infraAddrs(src hostenv.Source) (map[string]bool, error) {
 	m := map[string]bool{}
+	read := func(f string) (string, error) {
+		b, err := src.ReadFile(f)
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("%s could not be read (%s)", f, errText(err)) // the path said once
+		}
+		return string(b), nil
+	}
 	for _, f := range []string{"/etc/resolv.conf", "/run/systemd/resolve/resolv.conf"} {
-		b, _ := os.ReadFile(f)
-		for _, l := range strings.Split(string(b), "\n") {
+		s, err := read(f)
+		if err != nil {
+			return nil, err
+		}
+		for _, l := range strings.Split(s, "\n") {
 			if f := strings.Fields(l); len(f) >= 2 && f[0] == "nameserver" {
 				if ip := net.ParseIP(f[1]); ip != nil {
 					m[normIP(ip)] = true
@@ -454,8 +474,11 @@ func infraAddrs() map[string]bool {
 		}
 	}
 	// /proc/net/route: Iface Destination Gateway ..., hex in host (little-endian) byte order.
-	b, _ := os.ReadFile("/proc/net/route")
-	for _, l := range strings.Split(string(b), "\n") {
+	s, err := read("/proc/net/route")
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range strings.Split(s, "\n") {
 		f := strings.Fields(l)
 		if len(f) > 2 && f[1] == "00000000" && len(f[2]) == 8 && f[2] != "00000000" {
 			var v [4]byte
@@ -465,8 +488,10 @@ func infraAddrs() map[string]bool {
 		}
 	}
 	// /proc/net/ipv6_route: dest dest_len src src_len next_hop ...
-	b, _ = os.ReadFile("/proc/net/ipv6_route")
-	for _, l := range strings.Split(string(b), "\n") {
+	if s, err = read("/proc/net/ipv6_route"); err != nil {
+		return nil, err
+	}
+	for _, l := range strings.Split(s, "\n") {
 		f := strings.Fields(l)
 		if len(f) > 4 && f[1] == "00" && f[4] != strings.Repeat("0", 32) {
 			if ip := net.ParseIP(hexToIPv6(f[4])); ip != nil {
@@ -474,7 +499,7 @@ func infraAddrs() map[string]bool {
 			}
 		}
 	}
-	return m
+	return m, nil
 }
 
 func hexToIPv6(h string) string {

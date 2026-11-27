@@ -20,14 +20,13 @@ var (
 	aspAudit = runtime.GOOS == "windows"
 	// foldPaths compares web-root paths case-insensitively, as Windows does.
 	foldPaths = runtime.GOOS == "windows"
-	// winSource is the live Windows host the IIS web roots come from.
-	winSource = func() hostenv.Source {
-		l, err := hostenv.NewLive(hostenv.ForOS("windows").Allowlist())
-		if err != nil {
-			panic(err) // the allowlist is a constant; a bad one is a programming error
-		}
-		return l
-	}
+	// winSource is the Windows host the Windows checks read: the host read
+	// (hostSource). On Windows that is the live machine, made as it always
+	// was (NewLive with Windows' allowlist); a Windows replay, or another
+	// host's survey, is read in its place and the machine running the check
+	// never is. A host read of another OS is no Windows source: the checks
+	// asking for one say it could not be read.
+	winSource = func() hostenv.Source { return hostSource() }
 )
 
 // aspExt are the page types IIS runs as code.

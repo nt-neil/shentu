@@ -139,7 +139,23 @@ How the engine reads them:
   - `array_map('absint', $x)` (any sanitizer of the rule, or a number cast, as the
     callback) returns sanitized values, with the keys of `$x`;
   - `extract(shortcode_atts(array('id' => 0, ...), $atts))` and `extract(array(...))`
-    define one variable per literal key;
+    define one variable per literal key; `extract()` of any other array that holds
+    input (`extract($args)`, `extract(wp_parse_args($atts, [...]))`, which keeps
+    every key of `$atts`) may define any variable and overwrite the ones already
+    defined, so after it every variable of the scope holds that input until it is
+    assigned again, a variable never assigned before included. The flags count:
+    `EXTR_SKIP` and `EXTR_PREFIX_SAME` overwrite nothing, `EXTR_IF_EXISTS`
+    overwrites but creates nothing, `EXTR_PREFIX_ALL` and `EXTR_PREFIX_IF_EXISTS`
+    set only `prefix_` names (any such name when the prefix is not written out).
+    A variable extract() creates around a closure is seen in it only through its
+    `use (...)`, and its parameters are the caller's values; an arrow function
+    sees the scope around it. (A variable defined before the closure is still
+    copied into it, as for any PHP closure.) The keys of `$defaults` are those it
+    is given in the same function. After `preg_match($p, $s, $m)`,
+    `parse_str($q, $out)` or `exec($c, $output)` the variable written is the
+    call's (what extract() set there is gone; whether it holds the subject's input
+    is not followed), unless it is the subject itself (`preg_match($p, $m, $m)`),
+    which keeps what it held; a `catch (E $e)` variable is the exception;
   - in the SSRF rules, a check of a parsed URL's host against an allowlist that
     is surely a collection (`.has(`, `.includes(`, `in` on a list, set, tuple
     or array written out, `new Set(...)`, `set(...)` or `frozenset(...)` of one
@@ -330,6 +346,16 @@ it. An `alert` rule is pushed as well. Every new rule starts as `info`; it becom
 `alert` only after it has been run on real, clean projects and its false-positive
 rate is low, and the change says which measurement justified it.
 
+A `reference` rule is about how a call is made, not about input reaching it (an
+MD5 hash, a template rendered without a sandbox), so only a rule with
+`sources = []` may have this tier (`rules_test` checks it). `app_code_audit` and
+chat list its findings after the others, marked as reference; the daily report
+gives them one line with their count. They are never pushed and never given to
+attack detection, and cvebench counts them only in its "with reference" columns,
+never in the main verdict. Such a rule may list sanitizers too: a method sink on
+an object one of them made (`SandboxedEnvironment().from_string(x)`) is not
+reported.
+
 ### Text in strings
 
 Some sources and sinks are not code but text inside a string literal: an SQL
@@ -364,6 +390,7 @@ arguments, not the options).
 | `key` | the argument is an object, dict or array literal (`{ Location: v }`, `['Location' => v]`): only the value under this key, in any case, counts; without the key the call is not this sink |
 | `keys` | an argument that is an array, object or dict literal counts by its keys only: Yii's `orderBy([$column => SORT_ASC])` puts the key in the query, while the value only picks a direction. An item without a key (`[$column]`) counts as a key; an argument that is not a literal counts whole |
 | `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources. The string may be reached through a variable, a constant, a PHP class constant (`self::KEY`), a property declared with it (`$this->key`, `self::$key`; not when the file assigns the property elsewhere), a concatenation, or a call that only reshapes it (`hash('sha256', '...')`, `base64_decode`, `substr`...), at most four steps deep; a name given two different values in the file is not known |
+| `not_literal` | with `arg`, rules without sources only: the argument must not be what `literal` accepts, so a command or template written out in full (`os.system("make clean")`, or through a name holding it) is not reported, and one made from a value the code does not write out (`os.system(" ".join(args))`, a parameter) is. Such a rule's tier is `reference`. A limit: a command split into adjacent literals (`os.system('ls ' '-l')`, one string to Python) or joined from a list of literals (`' '.join(['ls', '-l'])`) is still taken as not written out |
 | `min_len` | with `literal`: one of the strings the value is made from must be at least this long |
 | `exclude` | with `literal`: regular expressions (any case); a string matching one does not count, so `exclude = ["^[a-z0-9_]+-(sha\|md5)[0-9]*$"]` leaves out a purpose label such as `'wp-sha384'` |
 | `receiver` | method sinks only: the call does not count when the file shows its receiver is another kind of object than these. The receiver qualifies when one of the fragments appears in it, or in what its root name (`db`, `self._files`) is assigned, annotated or imported with in the file (`db = MongoClient(url).shop`, `def __init__(self, db: Database)`, `from pymongo.collection import Collection`), followed up to four steps; an import says what a name holds only when it comes from the standard library or a well-known package that is not MongoDB (`os`, `re`, `django`, `flask`...). A root the file says nothing about (no assignment, an import from a module of the project such as `from app.db import mongo` or `from .db import mongo`, a parameter without a type) still counts. So `finders.find(path)` after `from django.contrib.staticfiles import finders`, `'abc'.find(x)` and `data['text'].find(x)` after `data = request.get_json()` are not MongoDB queries, while `mongo.find(x)` after `from app.db import mongo` is; a `.find(` on an object of the project that is not a collection is then still reported (a false positive, kept over a miss) |
@@ -371,6 +398,8 @@ arguments, not the options).
 | `unless_after` | text patterns (any case): the arguments do not count when every value from the input in them comes after one of these texts in a string written in the call, read as a concatenation (`.` in PHP, `+` elsewhere) or a string's interpolated parts: `$wpdb->get_results("... ORDER BY $col")` is `php-sqli-orderby-identifier`'s, which reports it at that text. A call written there is read by its own arguments (`DB::select(DB::raw("... ORDER BY " . $col))`). Input before the text, or SQL built in a variable elsewhere, keeps the sink |
 | `unless_subscript` | the argument does not count when it is, as a whole and written in the call, one item of one of these: `zipfile.ZipFile(request.files["archive"])` reads the upload's stream as a file object, not a path. `request.files["a"].filename`, or the item through a variable, still counts |
 | `not_receiver` | method sinks only, the other way round: the call does not count when its receiver is surely an object of one of these classes, made in place (`(new WP_Query($args))->query($a)`, `new \WP_Query`) or a variable the file binds only to such objects (`$q = new WP_Query; $q->query($a)`): every occurrence of the name in the file is a statement assigning `new Class` or `new Class(...)`, a call or read through it, or the whole argument of a call. Assignments are not followed from one name to another (`$r = $q`), and a parameter is never taken to be of a class, its default value included (`function run($q = new WP_Query())`). The file is the one the code is in, also when it is reached from a caller in another file. An entry written as a variable names the object itself: `not_receiver = ["$wpdb"]` leaves out `$wpdb->query(...)` (WordPress's global wpdb, another rule's). A receiver the file says nothing about, or a name also assigned anything else or bound any other way (a parameter, `global`, `foreach ... as`, `list()`, `use`, `&`), still counts, so `$db->query($sql)` on a parameter is reported as before. Passing the name to a call (`update_post_thumbnail_cache($q)`) keeps it, unless the file declares a function or method of that name with a parameter by reference (`function f(&$x)`). A limit: a callee declared in another file that takes the object by reference and assigns it something else is not seen, and the sink is then left out; only the application's own code can do that, not its input |
+| `receiver_from`, `receiver_names` | Python only, stricter than `receiver`. A method sink counts when its receiver, or what its root is assigned or imported with in the file (followed as for `receiver`, an import with its module and the name it imports, also under an alias), names one of `receiver_from` (`jinja2.Environment()`, `env = Environment()` after `from jinja2 import Environment`, `h.md5(x)` after `import hashlib as h`). It does not count when on the way the receiver is made by a class of another name (`Engine()`, `self.engine = Engine(debug=True)`), by another well-known package (`engines['django']` or `Engine.get_default()` after `from django.template import ...`) or by one of the rule's sanitizers (`jinja_env = SandboxedEnvironment()` at the top of the file, used in a function; `SE()` after `from jinja2.sandbox import SandboxedEnvironment as SE`), whatever it is called. A receiver the file says nothing about (a parameter), an attribute (`app.jinja_env`) or what a function returns (`make_env()`) counts only when its last name is one of `receiver_names`. A function sink (`md5(`, `Template(`) counts only when the file imports that name from one of `receiver_from` (`from hashlib import md5`); a name imported under another one (`from hashlib import md5 as m; m(x)`) is not matched by the sink. Limits: an attribute receiver is known by its name even where the file assigns it (`h.env = Engine()`, then `h.env.from_string(s)` is reported), and a method sink is only what the rule lists (`o.system(cmd)` after `import os as o` is not reported, while `h.md5(x)` after `import hashlib as h` is) |
+| `ident_placeholder` | a prepare()-style sink (`$wpdb->prepare(`), without `arg`: a value after the format counts only when the format, the strings written in the first argument (or a variable holding only a literal), puts its placeholder inside backticks, outside an SQL string: ``UPDATE t SET `%s` = 1`` or a numbered `` `%2$s` ``. `$wpdb->prepare` quotes a `%s` value as a string, which protects it between quotes, standing alone, after `ORDER BY` or in `LIMIT`, but not as an identifier; `%d`, `%f` and `%i` (WordPress's identifier placeholder) do not count. Inside SQL comments (`/* */`, `-- `, `#`) quotes and backticks are no SQL's, but `prepare()` still fills their placeholders, which take their values in turn; MySQL runs the text of a `/*! ... */` comment, which is read as SQL. PHP's escapes in the string are read as PHP reads them (a `'...'` string has only `\\` and `\'`, a nowdoc none). Double quotes count as an SQL string, not an identifier, as they do unless MySQL runs with `ANSI_QUOTES`. `sanitize_title` is no sanitizer of this rule: it runs filters a plugin can change. Parts of the format that are no written string are not read |
 | `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress URL helper that ends in a path (`admin_url(...)`, `get_permalink(...)`, `rest_url(...)`; `home_url('/...')` and `site_url('/...')` only with a path); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; `trailingslashit` or `user_trailingslashit` whose first argument is fixed; In the `ssrf`, `open-redirect` and `xss` rules the prefix must also keep the request on a known host: a literal scheme and host followed by `/`, `?` or `#` (`https://api.example.com/...`), a root path whose second character is neither `/` nor `\` (`/account`, not `/` that the input turns into `//evil.com`), or a relative path (`users.php?id=`); `home_url()` without a path, `untrailingslashit` and `rtrim` are not fixed there, and a PHP constant is fixed only when this file defines it (`define('API', 'https://api.example.com/')`) with such a text, or when it names a folder (`__DIR__`, `ABSPATH`, `*_DIR`, `*_PATH`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
@@ -604,6 +633,24 @@ rule of its language.
    heredoc (nowdoc stays text) and backticks; Python f-strings; JavaScript
    template literals, nested to any depth. Unterminated strings and comments end
    at the end of the line or file.
+   A PHP property every assignment of its class gives WordPress's `$wpdb`
+   (`$this->wpdb = $wpdb`, `= &$wpdb`, `self::$mysqli =& $wpdb`) is read as
+   `$wpdb` wherever the class uses it as an object (`$this->wpdb->get_results(...)`),
+   so the rules' `$wpdb` sinks and `$wpdb->prepare` match it. A property belongs
+   to the class, trait, interface or enum it is written in, together with the
+   traits of the file the class uses; `self::` and `static::` name the same one.
+   A destructuring (`[$this->db] = ...`, `list($a, $this->db) = ...`), a reference
+   (`&$this->db`) or a foreach target (`as $this->db`) counts as giving it
+   something else. The property's name says nothing on its own. Not read: a
+   property set in another file (a parent class's constructor), `ClassName::$db`,
+   `parent::$db` and `$GLOBALS['wpdb']`.
+   Limits: the cost of a file mixing k classes, k traits and k such properties
+   grows as about n^1.5 (such a file is over 1 MB, the code audit's cap per
+   file). A property written some way the file does not show as an assignment
+   (`$this->{'db'} = $pdo`, `__set`, `Closure::bind`, a trait used inside a
+   trait giving it a PDO) is still read as `$wpdb`, a possible false positive.
+   Not followed: a local alias (`$db = $this->db; $db->get_results(...)`) and a
+   parent class of the same file giving the property `$wpdb`.
 2. **Statements and scopes.** Statements, `if`/`else`, loops, `try` and function
    bodies (braces in PHP and JavaScript, indentation in Python). Closures and arrow
    functions are scopes of their own that see the variables around them; PHP
