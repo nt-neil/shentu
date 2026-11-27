@@ -154,6 +154,9 @@ Chinese for the zh-TW pages; keep the two in step.
 - PHP rules: input put in `array(...)` and passed to another function keeps its input, as `[...]`
   did (`edit_status(array($_REQUEST['id']))`); before, `array(...)` read as a call the engine does
   not know, so the input did not cross into that function's sinks.
+- Python rules: Tornado request arguments (`self.get_argument()`, `self.get_query_argument()`,
+  `self.get_body_argument()`) passed to `self.redirect()` are reported; before, neither the arguments
+  nor `self.redirect()` were read by the redirect rule.
 - PHP rules: PSR-7 request input (`$request->getQueryParams()`, `->getParsedBody()`) passed to a
   redirect response (`new RedirectResponse($url)`) is reported.
 - PHP rules: a Symfony request's body (`$request->getContent()`, `$request->toArray()`) written into
@@ -167,6 +170,9 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ### Known issues
 
+- A redirect target checked in another file (a Tornado base class's `self.sanitize_next_url()`) is
+  still reported: app_code_audit reads each file on its own first, and that finding stays when the
+  calls across files show the check.
 - `fgetcsv()`: a row assigned in a `while` condition (`while (($row = fgetcsv($h)) !== false)`) is not
   followed into the loop, so that usual way of reading a CSV file is missed. A CSV file the
   application ships itself is reported as well.

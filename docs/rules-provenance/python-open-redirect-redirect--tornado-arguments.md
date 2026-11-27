@@ -36,8 +36,10 @@
     checks nothing.
 - Known limits:
   - reading `self.request.arguments[...]` directly is not covered;
-  - a check in another file is not seen on the product path (see Measurement),
-    so a fixed release with its check in a base class is still reported;
+  - a fixed false positive, known: when the check is written in another file
+    (a base class), the product's per-file pass still reports the flow;
+    cvebench scans with `Project.Scan`, which follows the call, and does not
+    (see Measurement). Held out as `r277 tornado next-URL check in another file`;
   - `urlparse(n).netloc` compared before the redirect is not read as a check.
 
 ## Probes
@@ -96,6 +98,12 @@ the method in a base class in `base.py`), product path / `Project.Scan`:
 
 So `Project.Scan` drops the flow only where the check or a clean value is
 really there, and the product reports every flow whose check is in another
-file. Load (1-minute) 12.0 at the start, 13.3 at the peak
+file.
+
+Decision (commander): this is accepted as a known fixed false positive. The
+held-out cases PY7, PY27, PY28 and QB32 lose the mark that held this rule back
+(they are reported now, as they should be), and the CHANGELOG lists the case
+under known issues. Moving cvebench to the product path, and dropping a per-file
+finding the project scan shows safe, are separate work. Load (1-minute) 12.0 at the start, 13.3 at the peak
 sampled, no segment voided. The full runs (independent, rule source, holdout,
 E7) are pending.
