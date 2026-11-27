@@ -37,7 +37,7 @@
   <label>Language <select id="fl"><option value="">All</option><option value="php">PHP</option><option value="python">Python</option><option value="js">JavaScript / TypeScript</option></select></label>
   <label>Class <select id="fc"><option value="">All</option><option value="cmdi">Command injection</option><option value="code-eval">Code evaluation</option><option value="deserialization">Unsafe deserialization</option><option value="file-upload">Dangerous file upload</option><option value="hardcoded-secret">Hard-coded credentials</option><option value="ldapi">LDAP injection</option><option value="nosqli">NoSQL injection</option><option value="open-redirect">Open redirect</option><option value="path-traversal">Path traversal</option><option value="sqli">SQL injection</option><option value="ssrf">Server-side request forgery</option><option value="weak-crypto">Weak cryptography</option><option value="xss">Cross-site scripting</option><option value="xxe">XML external entities</option></select></label>
   <label>Severity <select id="fs"><option value="">All</option><option value="critical">critical</option><option value="high">high</option><option value="medium">medium</option><option value="low">low</option></select></label>
-  <p class="count" aria-live="polite"><strong id="shown">131</strong> / 131 rules</p>
+  <p class="count" aria-live="polite"><strong id="shown">132</strong> / 132 rules</p>
 </form>
 <section class="routes">
   <h2>Route models</h2>
@@ -2156,6 +2156,25 @@ app.post(&#34;/upload&#34;, (req, res) =&gt; {
 });</code></pre></div>
     </div>
     <p class="fix"><strong>Fix</strong> Check the extension and MIME type against an allowlist before storing, and save the file under a name the server makes (crypto.randomUUID() plus a fixed extension) outside the web root.</p>
+  </details>
+  
+  <details class="rule" id="js-file-upload-client-name-write" data-rule-id="js-file-upload-client-name-write" data-lang="js" data-class="file-upload" data-sev="high" data-text="js-file-upload-client-name-write CWE-434 Uploaded file written under the name the client sent, without checking its type">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>high</b></span><span class="head"><code class="rid">js-file-upload-client-name-write</code> <span class="cwe">CWE-434</span><span class="title">Uploaded file written under the name the client sent, without checking its type</span></span></summary>
+    <p class="meta">Frameworks: express</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">Reported</h3><p class="note">the upload copied into a stream named by the client</p><pre><code>router.post(&#34;/file/upload&#34;, upload.single(&#34;file&#34;), (req, res) =&gt; {
+  const file = req.file;
+  const source = fs.createReadStream(file.path);
+  const dest = fs.createWriteStream(path.join(&#34;public/uploads&#34;, file.originalname.replace(/ /g, &#34;_&#34;)));
+  source.pipe(dest);
+  res.redirect(&#34;/admin&#34;);
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">Fixed</h3><p class="note">the client&#39;s bytes under a name the server makes</p><pre><code>app.post(&#34;/avatar&#34;, upload.single(&#34;avatar&#34;), (req, res) =&gt; {
+  fs.writeFileSync(path.join(&#34;uploads&#34;, crypto.randomUUID() &#43; &#34;.bin&#34;), req.file.buffer);
+  res.sendStatus(201);
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>Fix</strong> Check the extension and MIME type against an allowlist before writing, and write the file under a name the server makes (crypto.randomUUID() plus a fixed extension) outside the web root.</p>
   </details>
   
 </section>

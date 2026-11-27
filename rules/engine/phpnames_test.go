@@ -30,6 +30,7 @@ var phpNameKinds = map[string]string{
 	"exec":                                 "function",
 	"exif_imagetype":                       "function",
 	"exif_read_data":                       "function",
+	"fgetcsv":                              "function",
 	"file":                                 "function",
 	"file_exists":                          "function",
 	"file_get_contents":                    "function",

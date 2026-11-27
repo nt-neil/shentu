@@ -6,12 +6,13 @@ severity = "critical"
 title = "unserialize() on data the client can send or tamper with"
 frameworks = ["laravel"]
 sources = ["$_GET", "$_POST", "$_COOKIE", "$_REQUEST", "$_SERVER['HTTP_", "php://input", "$request->cookie(", "$request->input(",
-           "$request->query(", "$request->get(", "request()->cookie(", "request()->input(", "Cookie::get(", "filter_input(", "->filterInput(", "->filter_input("]
+           "$request->query(", "$request->get(", "request()->cookie(", "request()->input(", "Cookie::get(", "filter_input(", "->filterInput(", "->filter_input(",
+           "fgetcsv("]   # the rows of a CSV file, an uploaded one most often (an import)
 sinks = ["unserialize("]
 sanitizers = ["is_serialized_string("]   # a check: a serialized string unserializes to a string, never an object
 text = ["php://input"]
 fix = "Store and exchange plain data with json_encode/json_decode; if unserialize is unavoidable pass ['allowed_classes' => false] and verify an HMAC first."
-refs = ["CVE-2018-15133", "CVE-2026-10721"]
+refs = ["CVE-2018-15133", "CVE-2026-10721", "CVE-2025-13145"]
 
 [[args]]
 unless = ["'allowed_classes' => false"]
@@ -50,3 +51,25 @@ $cart = unserialize(base64_decode($_COOKIE['cart']), ['allowed_classes' => false
 sources = ["filter_input(", "->filterInput(", "->filter_input("]
 arg = 1
 values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]
+
+[[samples]]
+kind = "vulnerable"
+note = "a cell of an imported CSV file unserialized"
+code = '''
+<?php
+if (move_uploaded_file($_FILES['file']['tmp_name'], $csv_file) && ($handle = fopen($csv_file, 'r')) !== false) {
+    $row = fgetcsv($handle, 1000, ',');
+    update_post_meta($post_id, $row[0], @unserialize($row[1]));
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the same cell, unserialized without objects"
+code = '''
+<?php
+if (move_uploaded_file($_FILES['file']['tmp_name'], $csv_file) && ($handle = fopen($csv_file, 'r')) !== false) {
+    $row = fgetcsv($handle, 1000, ',');
+    update_post_meta($post_id, $row[0], @unserialize($row[1], ['allowed_classes' => false]));
+}
+'''

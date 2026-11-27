@@ -6,11 +6,11 @@ severity = "medium"
 tier = "info"
 title = "Symfony or Laravel redirect response built from a URL taken from the request"
 frameworks = ["symfony", "laravel"]
-sources = ["$request->headers->get('referer'", "$request->headers->get('Referer'", "$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
+sources = ["$request->headers->get('referer'", "$request->headers->get('Referer'", "$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "->getQueryParams(", "->getParsedBody(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["RedirectResponse(", "$this->redirect(", "RedirectResponse::create(", "TrustedRedirectResponse("]
 sanitizers = ["absint", "intval", "in_array", "$this->generateUrl(", "route("]
 fix = "Redirect to a route the server names ($this->redirectToRoute(), redirect()->route()), or accept the requested target only when it is one of a fixed list (in_array($target, $allowed, true)) and fall back to a default otherwise."
-refs = ["CVE-2026-31819"]
+refs = ["CVE-2026-31819", "CVE-2024-21641"]
 
 [[args]]
 arg = 1
@@ -99,3 +99,29 @@ class CartController extends AbstractController
 sources = ["filter_input(", "->filterInput(", "->filter_input("]
 arg = 1
 values = ["INPUT_GET", "INPUT_POST"]
+
+[[samples]]
+kind = "vulnerable"
+note = "PSR-7: a query parameter as the redirect target"
+code = '''
+<?php
+class LogOutController implements RequestHandlerInterface {
+    public function handle(ServerRequestInterface $request): ResponseInterface {
+        $url = Arr::get($request->getQueryParams(), 'return', $this->url->to('forum')->base());
+        return new RedirectResponse($url);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+function handle(ServerRequestInterface $request): ResponseInterface {
+    $to = $request->getParsedBody()['to'] ?? '/';
+    if (!in_array($to, ['/', '/account', '/settings'], true)) {
+        $to = '/';
+    }
+    return new RedirectResponse($to);
+}
+'''

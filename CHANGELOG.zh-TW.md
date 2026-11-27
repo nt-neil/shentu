@@ -24,9 +24,20 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - PHP 規則：WordPress 的 `$wpdb` 存在屬性裡（`$this->wpdb = $wpdb`、`$this->db = &$wpdb`、`self::$mysqli =& $wpdb`），同一個檔案透過它查詢時（`$this->wpdb->get_results(...)`），現在就當成 `$wpdb`，所以把 request 輸入接進這種查詢會回報；以前只有 `$wpdb` 本身算 sink。這個 class（或它 use 的、同一個檔案裡的 trait）要看得到這個指派：只是屬性叫 `wpdb` 或 `db`、在別的檔案（例如上層類別的建構式）設定的，或是同一個檔案裡另一個 class 的同名屬性，都不算 `$wpdb`。
 - PHP 規則：request 輸入透過 `$wpdb->prepare()` 傳給寫在反引號裡的 `%s`（這時值是欄位或資料表名稱，有編號的 `%2$s` 也一樣）時，現在會回報（`php-sqli-prepare-identifier`）：`prepare()` 把值當字串加上引號，擋不住欄位或資料表名稱。以前 `prepare()` 一律當成每個值都已處理。放在引號裡、單獨出現、在 `ORDER BY` 後面或 `LIMIT` 裡的 `%s`，以及 `%d` 和 `%i`，都不會回報。
 - PHP 規則：放進 `array(...)` 再傳給別的函式的輸入，現在和 `[...]` 一樣保留下來（`edit_status(array($_REQUEST['id']))`）；以前 `array(...)` 被當成引擎不認得的呼叫，輸入不會跟進那個函式的 sink。
+- Python 規則：Tornado 的 request 參數（`self.get_argument()`、`self.get_query_argument()`、`self.get_body_argument()`）傳給 `self.redirect()` 時會回報；以前轉址規則不讀這些參數，也不讀 `self.redirect()`。
+- PHP 規則：PSR-7 的 request 輸入（`$request->getQueryParams()`、`->getParsedBody()`）傳給轉址回應（`new RedirectResponse($url)`）時會回報。
+- PHP 規則：Symfony request 的 body（`$request->getContent()`、`$request->toArray()`）在同一個函式裡寫進 SQL 時會回報，當成 ORDER BY 欄位也會。
+- PHP 規則：用 `fgetcsv()` 讀出的欄位（例如使用者上傳的 CSV 檔）沒加 `['allowed_classes' => false]` 就傳給 `unserialize()` 時會回報。
+- 新的 JavaScript 規則 `js-file-upload-client-name-write`：上傳的檔案用 `fs.createWriteStream()`、`fs.writeFile()`、`fs.writeFileSync()` 或 `fs.promises.writeFile()`，以用戶端送來的名稱（multer 的 `file.originalname`）寫入時會回報。express-fileupload 的 `.name` 不在範圍內。
 
 ### 已知問題
 
+- 轉址目標的檢查寫在另一個檔案時（例如 Tornado base class 的 `self.sanitize_next_url()`），仍然會回報：app_code_audit 先逐檔讀，跨檔追蹤看到檢查之後，那筆結果也不會拿掉。
+- `js-file-upload-client-name-write` 不會把 allowlist 當成檢查：檔名結尾或 MIME 類型已經對照清單檢查過，再用用戶端的名稱寫入時，仍然會回報（express-cart 1.1.7）。
+- 值交給路由產生器、產生站內路徑時（例如 PSR-7 的 `urlFor()`、Flarum 的 `$url->to(...)->route()`、Tornado 的 `reverse_url()`），轉址仍然會回報。
+- `fgetcsv()`：在 `while` 條件裡指派的列（`while (($row = fgetcsv($h)) !== false)`）不會被追進 `while` 的內容裡，所以這種最常見的 CSV 讀法會漏掉。應用程式自己附的 CSV 檔也會回報。
+- 用資料庫函式庫的 `->escape()` 處理過、放在引號裡的值，仍然會回報（`php-sqli-string-concat`）：有些函式庫的 escape 不會加引號，數字的位置也擋不住，所以規則不把 `->escape(` 當成檢查。現在 Symfony 的 body 也會流到這裡。
+- 用 `json_decode()` 解開的 Symfony body 傳給別的函式時，輸入會在那裡斷掉，所以在 controller 解開、在另一個類別寫進 SQL 的欄位會漏掉。
 - 對輸入 `extract()` 之後，它設定的變數讀屬性（`$cfg->path`）不算輸入，因為 request 資料只會設定字串和 array。`extract((array) json_decode($in))` 和 `extract(get_object_vars(json_decode($in)))` 可能設定物件，它的屬性是輸入，這兩種會漏報。
 - `reference` 規則有幾種寫法判斷不準：指令其實整行寫在程式裡，但拆成幾個中間沒有 `+` 的字串（`os.system('ls ' '-l')`，Python 會自動接成一個），或用 `' '.join()` 接起全是字面值的串列，仍然會報；屬性形式的物件（`h.env.from_string(s)`）只看名稱判斷，就算檔案裡寫了 `h.env = Engine()` 也一樣；`import os as o` 之後的 `o.system(cmd)`，以及換了名稱 import 的函式（`from hashlib import md5 as m` 之後的 `m(x)`），不會報。
 
