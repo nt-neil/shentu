@@ -29,7 +29,7 @@ func TestSurveySudoReboot(t *testing.T) {
 	for _, r := range Survey(context.Background(), &Env{}).Risks {
 		got[r.Key] = r
 	}
-	if r := got["sudo:nopasswd"]; r.Severity != "warning" || !strings.Contains(r.Summary, "/etc/sudoers.d/99-ops: admin ALL=(ALL) NOPASSWD:ALL (every command, as any user)") {
+	if r := got["sudo:nopasswd"]; r.Severity != "warning" || !strings.Contains(r.Summary, "/etc/sudoers.d/99-ops: admin (every command, as any user)") {
 		t.Errorf("sudo: %+v (risks %v)", r, got)
 	}
 	if r := got["reboot:pending"]; r.Severity != "warning" || !strings.Contains(r.Summary, "linux-image-6.8.0-90-generic") {
@@ -82,7 +82,7 @@ func TestSudoRisksBySource(t *testing.T) {
 	}
 	// One file with both: the default user's rule info, eve's a warning.
 	got := sudo(map[string]string{ci: "ubuntu ALL=(ALL) NOPASSWD:ALL\neve ALL=(ALL) NOPASSWD:ALL\n"})
-	if got["sudo:nopasswd"].Severity != "warning" || !strings.Contains(got["sudo:nopasswd"].Summary, "eve ALL") || strings.Contains(got["sudo:nopasswd"].Summary, "ubuntu ALL") || got["sudo:nopasswd:cloud-init"].Severity != "info" {
+	if got["sudo:nopasswd"].Severity != "warning" || !strings.Contains(got["sudo:nopasswd"].Summary, ": eve (") || strings.Contains(got["sudo:nopasswd"].Summary, ": ubuntu (") || got["sudo:nopasswd:cloud-init"].Severity != "info" {
 		t.Errorf("eve added to cloud-init's file: %+v", got)
 	}
 	if r := sudo(map[string]string{ci: "ubuntu ALL=(ALL) NOPASSWD:ALL\n"})["sudo:nopasswd:cloud-init"]; !strings.Contains(r.Summary, "cloud-init's default user") || !strings.Contains(r.Summary, "safe only while that user can log in with a key alone") || !strings.Contains(r.Summary, "(every command, as any user)") {
@@ -104,7 +104,7 @@ func TestSudoRebootRisks(t *testing.T) {
 		rules = append(rules, hostenv.SudoRule{File: f, Line: "1", Cmds: []string{"/x"}})
 	}
 	r := sudoRisks(hostenv.SudoNoPass{Rules: rules, Unread: []string{"/etc/sudoers.d (permission denied)"}})
-	if len(r) != 2 || r[0].Key != "sudo:nopasswd:some" || r[0].Severity != "info" || !strings.Contains(r[0].Summary, "a: 1 (only /x, as root); b: 1 (only /x, as root); c: 1 (only /x, as root) (and 1 more)") ||
+	if len(r) != 2 || r[0].Key != "sudo:nopasswd:some" || r[0].Severity != "info" || !strings.Contains(r[0].Summary, "a:  (only /x, as root); b:  (only /x, as root); c:  (only /x, as root) (and 1 more)") ||
 		!Unchecked(r[1]) || NotYet(r[1]) || !strings.Contains(r[1].Summary, "run Shentu as root") {
 		t.Errorf("%+v", r)
 	}
@@ -113,5 +113,27 @@ func TestSudoRebootRisks(t *testing.T) {
 	}
 	if r := append(sudoRisks(hostenv.SudoNoPass{}), rebootRisks(hostenv.RebootPending{})...); len(r) != 0 {
 		t.Errorf("nothing to say: %+v", r)
+	}
+}
+
+// S-274-10: what is pushed says each rule by its parsed fields, so the
+// secret masking every pushed text goes through leaves it whole.
+func TestSudoPushedTextNotMasked(t *testing.T) {
+	h := dirHost{scriptHost{memHost: memHost{
+		"/etc/sudoers":             "@includedir /etc/sudoers.d\n",
+		"/etc/sudoers.d/90-admins": "%admin ALL=NOPASSWD: ALL\ndeploy ALL=NOPASSWD: /usr/bin/systemctl restart app\nDefaults:backup !authenticate\n",
+	}}}
+	for _, r := range sudoRisks(hostenv.SudoNopasswd(h)) {
+		if got := hostenv.MaskSecrets(r.Summary); got != r.Summary || strings.Contains(r.Summary, "PASSWD") {
+			t.Errorf("%s: masked to %q", r.Key, got)
+		}
+	}
+	got := sudoRisks(hostenv.SudoNopasswd(h))
+	want := []string{"/etc/sudoers.d/90-admins: %admin (every command, as root)", "/etc/sudoers.d/90-admins: Defaults !authenticate for backup (every command, as root)", "/etc/sudoers.d/90-admins: deploy (only /usr/bin/systemctl restart app, as root)"}
+	all := got[0].Summary + got[len(got)-1].Summary
+	for _, w := range want {
+		if !strings.Contains(all, w) {
+			t.Errorf("missing %q in %q", w, all)
+		}
 	}
 }

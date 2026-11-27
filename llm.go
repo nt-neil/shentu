@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/nt-neil/shentu/tools"
@@ -172,7 +171,7 @@ func opaqueDoError(ctx context.Context, err error) error {
 		return fmt.Errorf("LLM request to the model outside this host: %w", ctx.Err())
 	case errors.As(err, &dnsErr):
 		kind = "name lookup failed"
-	case errors.Is(err, syscall.ECONNREFUSED):
+	case connRefused(err):
 		kind = "connection refused"
 	case errors.As(err, &nerr) && nerr.Timeout():
 		kind = "timeout"

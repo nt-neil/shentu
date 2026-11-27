@@ -169,7 +169,7 @@ func webRootsFrom(globs []string) (roots, unreadable []string) {
 
 // depth counts path separators in the OS's own spelling ("\\" on Windows),
 // so auditMaxDepth holds there too.
-func depth(p string) int { return strings.Count(p, string(filepath.Separator)) }
+func depth(p, sep string) int { return strings.Count(p, sep) }
 
 // served reports whether p is inside a folder the web server serves. Without any
 // server configuration, folders named like public/, html/ or www/ count as served.
@@ -313,7 +313,7 @@ var varWWW = "/var/www"
 // siteFolder reports whether dir holds a site's front page.
 func siteFolder(dir string) bool {
 	for _, f := range []string{"index.php", "index.html", "index.htm", "wp-config.php"} {
-		if _, err := hostenv.Lstat(hostSource(), filepath.Join(dir, f)); err == nil {
+		if _, err := hostenv.Lstat(hostSource(), hostPaths().Join(dir, f)); err == nil {
 			return true
 		}
 	}
@@ -720,6 +720,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	// rules' deadline is for the injection rules). Cut short, it goes on from
 	// where it stopped in the next audit, to the end and round from the start
 	// again, so a few audits cover every file.
+	hp := hostenv.PathFor(src) // the host's path spelling, once (S-272-2)
 	var walkEntry func(root string, base int, p string, st hostenv.FileStat, err error) error
 	var notRegular notRegularCount // files the audit would read that are no regular file (S-257-3)
 	posFile := walkPosFile(roots)
@@ -754,7 +755,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				walkCut = append(walkCut, UnfinishedFile{root, "walk", ""})
 				continue
 			}
-			base := depth(filepath.Clean(root))
+			base := depth(hp.Clean(root), hp.Sep)
 			hostenv.Walk(src, root, func(p string, st hostenv.FileStat, err error) error {
 				if ctx.Err() != nil {
 					stopAt(second, ri, p)
@@ -791,7 +792,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			if name == ".git" && served(p, webRoots) {
 				add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
 			}
-			if skipDirs[name] || depth(p)-base > auditMaxDepth {
+			if skipDirs[name] || depth(p, hp.Sep)-base > auditMaxDepth {
 				return filepath.SkipDir
 			}
 			return nil

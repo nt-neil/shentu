@@ -18,7 +18,11 @@ func TestInsideAnyBoundaries(t *testing.T) {
 }
 
 func TestDepthUsesOSSeparator(t *testing.T) {
-	if d := depth(filepath.Join("a", "b", "c")); d != 2 {
+	if d := depth(filepath.Join("a", "b", "c"), string(filepath.Separator)); d != 2 {
 		t.Errorf("depth = %d, want 2", d)
+	}
+	// a Linux host read anywhere: its separator, "/" (S-272-2)
+	if d := depth("/srv/a/b", "/"); d != 3 {
+		t.Errorf("depth of a Linux host's path = %d, want 3", d)
 	}
 }

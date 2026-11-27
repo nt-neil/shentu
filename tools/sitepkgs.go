@@ -80,6 +80,7 @@ type sitePkgDir struct {
 // findSitePackages returns the site-packages folders under roots (and the
 // system's, with system set), and what the walk could not cover.
 func findSitePackages(roots []string, system bool) (dirs []string, notes []string) {
+	hp := hostPaths() // the host's path spelling (S-272-2)
 	seen := map[string]bool{}
 	add := func(p string) bool {
 		if seen[p] {
@@ -108,7 +109,7 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 		if full {
 			break
 		}
-		base := strings.Count(filepath.Clean(root), string(filepath.Separator))
+		base := strings.Count(hp.Clean(root), hp.Sep)
 		hostenv.Walk(src, root, func(p string, st hostenv.FileStat, err error) error {
 			if err != nil {
 				if !errors.Is(err, fs.ErrNotExist) {
@@ -122,17 +123,17 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 			if !st.Mode.IsDir() {
 				return nil
 			}
-			if n := filepath.Base(p); n == "site-packages" || n == "dist-packages" {
+			if n := hp.Base(p); n == "site-packages" || n == "dist-packages" {
 				if !add(p) {
 					full = true
 					return filepath.SkipAll
 				}
 				return filepath.SkipDir
 			}
-			if sitePkgSkip[filepath.Base(p)] {
+			if sitePkgSkip[hp.Base(p)] {
 				return filepath.SkipDir
 			}
-			if strings.Count(p, string(filepath.Separator))-base >= sitePkgDepth {
+			if strings.Count(p, hp.Sep)-base >= sitePkgDepth {
 				deep++ // its folders not looked into: said (N-239-2)
 				return filepath.SkipDir
 			}
@@ -156,6 +157,7 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 
 // readSitePackages reads the packages one folder holds and its .pth files.
 func readSitePackages(dir string) sitePkgDir {
+	hp := hostPaths() // the host's path spelling (S-272-2)
 	r := sitePkgDir{Path: dir}
 	src := hostSource()
 	ents, err := lsDir(src, dir)
@@ -169,7 +171,7 @@ func readSitePackages(dir string) sitePkgDir {
 	}
 	dists, unread, cut := 0, 0, 0
 	for _, e := range ents {
-		n, p := e.name, filepath.Join(dir, e.name)
+		n, p := e.name, hp.Join(dir, e.name)
 		switch {
 		case strings.HasSuffix(n, ".dist-info") || strings.HasSuffix(n, ".egg-info"):
 			if dists++; dists > sitePkgDistMax {
@@ -178,9 +180,9 @@ func readSitePackages(dir string) sitePkgDir {
 			}
 			meta := p // an .egg-info file is the PKG-INFO itself
 			if e.isDir() {
-				meta = filepath.Join(p, "METADATA")
+				meta = hp.Join(p, "METADATA")
 				if strings.HasSuffix(n, ".egg-info") {
-					meta = filepath.Join(p, "PKG-INFO")
+					meta = hp.Join(p, "PKG-INFO")
 				}
 			} else if !e.isRegular() {
 				unread++
@@ -190,7 +192,7 @@ func readSitePackages(dir string) sitePkgDir {
 				if !e.isDir() {
 					continue // a distutils .egg-info file: the system's packages
 				}
-				b, ok := readHead(src, filepath.Join(p, "INSTALLER"), 256)
+				b, ok := readHead(src, hp.Join(p, "INSTALLER"), 256)
 				if !ok || !pipInstallers[strings.TrimSpace(string(b))] {
 					continue
 				}
@@ -265,10 +267,11 @@ func (e dirEnt) isLink() bool    { return e.err == nil && e.st.Mode&fs.ModeSymli
 
 // lsDir is os.ReadDir through src: sorted names, each with its Lstat.
 func lsDir(src hostenv.Source, dir string) ([]dirEnt, error) {
+	hp := hostPaths() // the host's path spelling (S-272-2)
 	names, err := src.ReadDir(dir)
 	out := make([]dirEnt, 0, len(names))
 	for _, n := range names {
-		st, lerr := hostenv.Lstat(src, filepath.Join(dir, n))
+		st, lerr := hostenv.Lstat(src, hp.Join(dir, n))
 		out = append(out, dirEnt{n, st, lerr})
 	}
 	return out, err
@@ -327,7 +330,7 @@ var knownPth = []struct {
 	{regexp.MustCompile(`^distutils-precedence\.pth$`), "setuptools", []*regexp.Regexp{
 		regexp.MustCompile(`^import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os\.environ\.get\(var, '(?:local|stdlib)'\) == 'local'; enabled and __import__\('_distutils_hack'\)\.add_shim\(\); ?$`)}, true,
 		func(dir, name string, _ []string, _ []byte) []string { // the module and the .pth setuptools installed, as its RECORD has them
-			mod := filepath.Join(dir, "_distutils_hack", "__init__.py")
+			mod := hostPaths().Join(dir, "_distutils_hack", "__init__.py")
 			if rec, ok := recordHas(hostSource(), dir, "setuptools-*.dist-info", "_distutils_hack/__init__.py"); ok && sameRecordHas(dir, rec, name) {
 				return []string{rec, mod}
 			}
@@ -338,19 +341,19 @@ var knownPth = []struct {
 		}},
 	{regexp.MustCompile(`^_virtualenv\.pth$`), "virtualenv", []*regexp.Regexp{regexp.MustCompile(`^import _virtualenv$`)}, true,
 		func(dir, _ string, _ []string, _ []byte) []string { // a venv virtualenv made says so in its pyvenv.cfg
-			cfg := filepath.Join(dir, "..", "..", "..", "pyvenv.cfg")
+			cfg := hostPaths().Join(dir, "..", "..", "..", "pyvenv.cfg")
 			b, ok := readHead(hostSource(), cfg, sitePkgHead)
 			if !ok || !virtualenvKey.Match(b) {
 				return nil
 			}
-			return []string{filepath.Clean(cfg), filepath.Join(dir, "_virtualenv.py")}
+			return []string{hostPaths().Clean(cfg), hostPaths().Join(dir, "_virtualenv.py")}
 		}},
 	{regexp.MustCompile(`^__editable__\.[A-Za-z0-9_.+-]+\.pth$`), "editable install", []*regexp.Regexp{editableLine}, true,
 		func(dir, name string, lines []string, _ []byte) []string { // the finder and the .pth the package's RECORD lists
 			m := editableLine.FindStringSubmatch(lines[0])
 			dist := strings.TrimSuffix(strings.TrimPrefix(name, "__editable__."), ".pth")
 			if rec, ok := recordHas(hostSource(), dir, dist+".dist-info", m[1]+".py"); ok && len(lines) == 1 && sameRecordHas(dir, rec, name) {
-				return []string{rec, filepath.Join(dir, m[1]+".py")}
+				return []string{rec, hostPaths().Join(dir, m[1]+".py")}
 			}
 			return nil
 		}},
@@ -375,7 +378,8 @@ var virtualenvKey = regexp.MustCompile(`(?m)^virtualenv\s*=`)
 // name too, with its hash: a .pth written next to a real install, which
 // no RECORD lists, is not that install's (S-239r-1).
 func sameRecordHas(dir, rec, name string) bool {
-	_, ok := recordHas(hostSource(), dir, filepath.Base(filepath.Dir(rec)), name)
+	hp := hostPaths() // the host's path spelling (S-272-2)
+	_, ok := recordHas(hostSource(), dir, hp.Base(hp.Dir(rec)), name)
 	return ok
 }
 
@@ -404,11 +408,12 @@ func managedDir(dir string) bool {
 // rootChain: dir and every folder above it are root's alone (rootOnly), so
 // nothing in it was written by another user.
 func rootChain(dir string) bool {
-	for p := filepath.Clean(dir); ; p = filepath.Dir(p) {
+	hp := hostPaths() // the host's path spelling (S-272-2)
+	for p := hp.Clean(dir); ; p = hp.Dir(p) {
 		if !rootOnly(p, true) {
 			return false
 		}
-		if filepath.Dir(p) == p {
+		if hp.Dir(p) == p {
 			return true
 		}
 	}
@@ -486,6 +491,7 @@ func pySpace(r rune) bool { return unicode.IsSpace(r) || r >= 0x1c && r <= 0x1f 
 // as written is not one; trailing white space dropped; relative ones taken
 // from dir); whole is false when a .pth there was not read whole.
 func pthPaths(src hostenv.Source, dir string) (out []string, whole bool) {
+	hp := hostPaths() // the host's path spelling (S-272-2)
 	ents, err := lsDir(src, dir)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, false
@@ -497,7 +503,7 @@ func pthPaths(src hostenv.Source, dir string) (out []string, whole bool) {
 		if !e.isRegular() {
 			return nil, false
 		}
-		b, ok := readHead(src, filepath.Join(dir, e.name), sitePkgHead+1)
+		b, ok := readHead(src, hp.Join(dir, e.name), sitePkgHead+1)
 		if !ok || len(b) > sitePkgHead {
 			return nil, false
 		}
@@ -513,13 +519,15 @@ var rootOnly = rootOnlyFile
 // osManagedPrefixes), the folder, the .pth and the module are root's and
 // no one else can write them, as the package manager installed them.
 func systemOwned(dir, name, rel string) bool {
-	return systemModule(dir, rel) && rootOnly(filepath.Join(dir, name), false)
+	hp := hostPaths() // the host's path spelling (S-272-2)
+	return systemModule(dir, rel) && rootOnly(hp.Join(dir, name), false)
 }
 
 // systemModule: rel in dir is the system package manager's: under its
 // prefixes, the folders up to / and the file root's alone.
 func systemModule(dir, rel string) bool {
-	return managedDir(dir) && rootChain(dir) && rootOnly(filepath.Join(dir, filepath.FromSlash(rel)), false)
+	hp := hostPaths() // the host's path spelling (S-272-2)
+	return managedDir(dir) && rootChain(dir) && rootOnly(hp.Join(dir, hp.FromSlash(rel)), false)
 }
 
 // recordHas: a dist-info matching glob in dir lists rel in its RECORD, and
@@ -623,6 +631,7 @@ func pthLines(raw string) []string {
 
 // pthPathLines are the folders b's path lines add (pthPaths, one file).
 func pthPathLines(dir string, b []byte) []string {
+	hp := hostPaths() // the host's path spelling (S-272-2)
 	var out []string
 	for _, l := range pthLines(strings.TrimPrefix(string(b), "\ufeff")) {
 		if strings.HasPrefix(l, "#") || strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
@@ -631,10 +640,10 @@ func pthPathLines(dir string, b []byte) []string {
 		if l = strings.TrimRightFunc(l, pySpace); l == "" {
 			continue
 		}
-		if !filepath.IsAbs(l) {
-			l = filepath.Join(dir, l)
+		if !hp.IsAbs(l) {
+			l = hp.Join(dir, l)
 		}
-		out = append(out, filepath.Clean(l))
+		out = append(out, hp.Clean(l))
 	}
 	return out
 }
@@ -643,6 +652,7 @@ func pthPathLines(dir string, b []byte) []string {
 // "import " or "import\t", a UTF-8 BOM dropped, lines split as pthLineEnd
 // says); ok is false when there are none.
 func pthImports(dir, name string, b []byte) (PthFile, bool) {
+	hp := hostPaths() // the host's path spelling (S-272-2)
 	var f PthFile
 	var lines []string
 	raw := strings.TrimPrefix(string(b), "\ufeff")
@@ -677,7 +687,7 @@ func pthImports(dir, name string, b []byte) (PthFile, bool) {
 		files := k.record(dir, name, lines, b)
 		switch {
 		case files == nil:
-		case rootChain(dir) && rootOnly(filepath.Join(dir, name), false) && allRootOnly(files):
+		case rootChain(dir) && rootOnly(hp.Join(dir, name), false) && allRootOnly(files):
 			f.Known = k.label
 		case k.info:
 			f.Unproven = k.label
@@ -686,3 +696,7 @@ func pthImports(dir, name string, b []byte) (PthFile, bool) {
 	}
 	return f, true
 }
+
+// hostPaths are the path operations of the host read: a Linux host's paths
+// keep "/" read on any machine (S-272-2).
+func hostPaths() hostenv.PathOps { return hostenv.PathFor(hostSource()) }

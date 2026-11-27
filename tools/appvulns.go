@@ -80,14 +80,15 @@ func findLockfiles(roots []string) ([]Lockfile, notRegularCount) {
 	var skipped notRegularCount
 	src := hostSource()
 	for _, root := range roots {
-		base := strings.Count(filepath.Clean(root), string(filepath.Separator))
+		hp := hostPaths() // the host's spelling (S-272-2)
+		base := strings.Count(hp.Clean(root), hp.Sep)
 		hostenv.Walk(src, root, func(p string, st hostenv.FileStat, err error) error {
 			if err != nil {
 				return nil
 			}
 			name := filepath.Base(p)
 			if st.Mode.IsDir() {
-				if skipDirs[name] || strings.Count(p, string(filepath.Separator))-base > 6 {
+				if skipDirs[name] || strings.Count(p, hp.Sep)-base > 6 {
 					return filepath.SkipDir
 				}
 				return nil

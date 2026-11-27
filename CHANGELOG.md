@@ -112,8 +112,8 @@ Chinese for the zh-TW pages; keep the two in step.
   A running kernel not in `/boot` (a container) is not compared.
 - file_changes and log_search's hard-link check read the host as the other checks do, through the
   host source: a replay or another host's survey reads that host's files, not the machine running
-  the check (a Linux or macOS host's recording read on a Windows machine waits for a later
-  release). The host source's file details now carry the status-change time (ctime, which
+  the check, a Linux or macOS host's recording read on a Windows machine too (its paths keep their
+  "/": the walks, the log allowlist and the site-packages search spell them as the host does). The host source's file details now carry the status-change time (ctime, which
   file_changes counts as before: a file whose mtime was set back still shows) and the hard links;
   these checks are made on Unix only (on Windows the details say they do not apply, never 0).
 - A file app_code_audit, app_vulns' lock-file search or the WordPress plugin search would read that
