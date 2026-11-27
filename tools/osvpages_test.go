@@ -247,6 +247,19 @@ func TestPackageVulnsFixSplit(t *testing.T) {
 			t.Errorf("affected %s, want %s", b, want)
 		}
 	}
+	if n, _ := out["fix_note"].(string); !strings.Contains(n, "php.net or nginx.org has released a fixed version upstream, which the repository the package came from (sury, for one) may not have packaged yet") {
+		t.Errorf("fix_note on upstream entries %q", n)
+	}
+	// S-273-1: the counts are every package's: not given for one package.
+	d, err := PackageVulns(context.Background(), &http.Client{Transport: pagedOSV{asked: new([]string)}}, "openssl")
+	if err != nil || d["package"] != "openssl" {
+		t.Fatalf("detail %v %v", err, d)
+	}
+	for _, k := range []string{"fix_available", "fix_unconfirmed", "fix_note"} {
+		if _, ok := d[k]; ok {
+			t.Errorf("detail mode has %s: %v", k, d[k])
+		}
+	}
 	none, _ := pagedRun(t, "zlib\t\t1.3-1\tarm64\tii \n")
 	if _, ok := none["fix_unconfirmed"]; ok {
 		t.Errorf("fix counts with nothing found: %v", none)
