@@ -48,7 +48,7 @@ var appCodeAudit = Tool{
 		}
 		roots := env.AppPaths
 		if a.Path != "" {
-			clean := filepath.Clean(a.Path)
+			clean := hostPaths().Clean(a.Path) // the host's spelling (S-280-1)
 			if !insideAny(clean, env.AppPaths) {
 				return nil, fmt.Errorf("path is not inside the app paths: %s", strings.Join(env.AppPaths, ", "))
 			}
@@ -731,14 +731,14 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	}
 	var cut *walkPos
 	at := func(ri int, p string) bool { // before where the last audit stopped (that entry it had not checked)
-		return ri < posRoot || ri == posRoot && pathCmp(p, pos.Path) < 0
+		return ri < posRoot || ri == posRoot && pathCmp(p, pos.Path, hp.Sep) < 0
 	}
 	// stopAt keeps where the walk stopped. In the first pass, a stop at or
 	// before the kept place (the time ran out before the walk got there)
 	// keeps that place: the walk does not go back. Round from the start, the
 	// stop is the walk's progress.
 	stopAt := func(second bool, ri int, p string) {
-		if resumed && !second && (ri < posRoot || ri == posRoot && pathCmp(p, pos.Path) <= 0) {
+		if resumed && !second && (ri < posRoot || ri == posRoot && pathCmp(p, pos.Path, hp.Sep) <= 0) {
 			if cut == nil {
 				cut = &walkPos{pos.Root, pos.Path}
 			}
@@ -768,7 +768,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 						return filepath.SkipAll // round to where it started
 					}
 					if !second && before {
-						if err == nil && st.Mode.IsDir() && !(ri == posRoot && walkHolds(p, pos.Path)) {
+						if err == nil && st.Mode.IsDir() && !(ri == posRoot && walkHolds(p, pos.Path, hp.Sep)) {
 							return filepath.SkipDir
 						}
 						return nil
