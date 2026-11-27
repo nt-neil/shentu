@@ -74,7 +74,10 @@ var beforeOpen = func(string) {}
 // file (WCI), an AppExecLink.
 //
 // flag takes O_RDONLY, O_WRONLY, O_RDWR, O_APPEND, O_CREATE, O_EXCL,
-// O_TRUNC, with the access Go's syscall.Open gives them; the file is opened
+// O_TRUNC, with the access Go's syscall.Open gives them but for two
+// differences: O_CREATE adds no GENERIC_WRITE (Go's does), so a file
+// created read-only stays read-only, and O_TRUNC adds GENERIC_WRITE (Go's
+// does not), for the Truncate below; the file is opened
 // with CREATE_NEW, OPEN_ALWAYS or OPEN_EXISTING only, and O_TRUNC truncates
 // it once it is known not to be a link (as Go does since issue 38225:
 // CREATE_ALWAYS or TRUNCATE_EXISTING would truncate before the check, and

@@ -40,6 +40,9 @@ func TestOpenNoFollowWindows(t *testing.T) {
 	if b, _ := os.ReadFile(target); string(b) != "not to be read or written\n" {
 		t.Errorf("the link's target changed: %q", b)
 	}
+	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link itself was replaced: %v %v", st, err)
+	}
 
 	// Created, read-write and appended as os.OpenFile does.
 	n := filepath.Join(d, "new.lock")
