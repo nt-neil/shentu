@@ -80,6 +80,7 @@ type crule struct {
 	args                   map[*pat]*argCond
 	argsMore               map[*pat][]*argCond // a sink's further [[args]] blocks: a finding when any one holds
 	leading                bool                // some sink needs a fixed prefix, so values track raw input
+	notArray               bool                // some sink's argument does not count as an array (not_array): summaries record it (sinkArr)
 	ctypes                 bool                // some args block has unless_content_type: record Content-Type statements (ctype.go)
 	srcScope               map[*pat][]string   // sources of a route model that count on $this only in a class extending one of these (routes.go)
 	srcThis                map[*pat]bool       // sources of a route model that count only on $this or $this->parent (this_only)
@@ -96,6 +97,7 @@ type argCond struct {
 	literal        bool
 	notLiteral     bool   // the argument must not be what literal accepts
 	fixedExt       bool   // the argument does not count when it ends with a fixed extension (fixedExtEnd)
+	notArray       bool   // the argument does not count when it is an array on every path (val.arr)
 	key            string // the value under this key of an object argument (keyValue)
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
 	minLen         int    // literal: the shortest string that counts
@@ -258,7 +260,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 	foldMembers(c.sinks)
 	foldMembers(c.sanitizers)
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, fixedExt: a.FixedExt, recvNames: a.ReceiverNames, identPh: a.IdentPlaceholder, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, fixedExt: a.FixedExt, notArray: a.NotArray, recvNames: a.ReceiverNames, identPh: a.IdentPlaceholder, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":
@@ -269,6 +271,8 @@ func compileRule(r rules.Rule) (*crule, error) {
 			return nil, fmt.Errorf("args: unless_imports_not needs unless_imports")
 		case a.Markup && len(a.Context) == 0:
 			return nil, fmt.Errorf("args: markup needs context")
+		case a.NotArray && a.Arg == nil && a.Name == "":
+			return nil, fmt.Errorf("args: not_array needs arg or name")
 		}
 		for _, ct := range a.UnlessContentType {
 			ac.unlessCT = append(ac.unlessCT, strings.ToLower(ct))
@@ -295,6 +299,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 			ac.context = append(ac.context, cs...)
 		}
 		c.leading = c.leading || a.Leading
+		c.notArray = c.notArray || a.NotArray
 		for _, raw := range a.UnlessAfter {
 			p, err := compilePattern(r.Lang, raw, true)
 			if err != nil {

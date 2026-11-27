@@ -34,6 +34,7 @@ type entry struct {
 	raw   bool // the value came from input, even through a sanitizer ($n = basename($_GET['n']))
 	emb   bool // the input is embedded in a larger string ("WHERE id = " . $id), not passed as is
 	weak  bool // all the input came through the result of a call the analysis does not know (get_post($id))
+	arr   bool // PHP: the value is an array, on every path that taints it (array(...), [...], explode()): maybe_unserialize() returns it as is
 	keys  bool // an array tainted only by what was written under literal keys ($q['a'] = $in): another literal key it does not hold reads clean (get)
 	ext   bool // tainted only by extract() of input, which sets strings and arrays: a property of it ($wpdb->prefix) holds no input (postfix)
 }
@@ -56,7 +57,7 @@ func (s state) get(key string) (entry, bool) {
 	for k := key; k != ""; {
 		if e, ok := s[k]; ok {
 			if e.keys && e.taint && strings.HasPrefix(below, "[") && below != "[*]" {
-				e.taint, e.raw, e.emb, e.weak = false, false, false, false
+				e.taint, e.raw, e.emb, e.weak, e.arr = false, false, false, false, false
 			}
 			return e, true
 		}
@@ -100,7 +101,7 @@ func mergeInto(x, y state) state {
 	}
 	both := func(a, b entry) entry {
 		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san, pre: a.pre && b.pre,
-			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak),
+			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak), arr: weakOf(a.taint, a.arr, b.taint, b.arr),
 			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys), // tainted only under literal keys on every path that taints it
 			ext:  (a.taint || b.taint) && (!a.taint || a.ext) && (!b.taint || b.ext)}
 	}
@@ -127,7 +128,7 @@ func mergeInto(x, y state) state {
 	return x
 }
 
-type val struct{ taint, san, pre, raw, emb, weak bool } // pre, raw: see entry; set by assign only
+type val struct{ taint, san, pre, raw, emb, weak, arr bool } // pre, raw: see entry; set by assign only; arr: as weak, every tainted part
 
 // weakOf is the weak flag of a value with two tainted-or-not parts: weak when
 // some part is tainted and every tainted part is weak.
@@ -188,6 +189,7 @@ type analysis struct {
 	lits    map[string][]Token // values written in the code, kept for argument conditions (context.go)
 	extLits map[string]bool    // a name every value written in the code gives is an extension ('.png'): fixedExtEnd
 	wrote   map[string]bool    // names the file writes some way recordLit does not follow (writtenOtherwise)
+	arrRef  map[string]bool    // names whose arr mark cannot be believed (arrUnsure)
 	atsDefs map[string][]Token // $r = shortcode_atts(<array>, ...): the array, for extract($r) (context.go)
 	arrs    map[string][]Token // x = <value with no input> in the function being analysed, for litArray (context.go)
 	locals  map[string]bool    // names of the file's own functions and methods (context.go)
@@ -542,7 +544,7 @@ func (a *analysis) function(f *fn, st state) {
 			if e, ok := x[name]; ok && e.taint && !v.taint {
 				continue // two seeds of one parameter: the tainted one holds
 			}
-			x[name] = entry{taint: v.taint, san: v.san, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak}
+			x[name] = entry{taint: v.taint, san: v.san, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak} // no arr: a callback is given the collection's values, not the collection
 		}
 	}
 	a.seed = nil
@@ -634,6 +636,7 @@ func (a *analysis) loop(s *stmt, st state) state {
 	bind := func(x state) {
 		for k, t := range tl {
 			v := iv
+			v.arr = false // a key or one value of the collection, of any kind
 			if k == 0 && keyed && a.keysTainted(x, iter) {
 				v = val{taint: true} // the keys of a cleaned array are still the input's (context.go)
 			}
@@ -756,8 +759,13 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 		}
 	}
 	cls := a.newClass(rhs)
-	for _, tg := range a.targetList(lhs) {
-		a.setTarget(st, tg, v, t[k].Text, sep)
+	tl := a.targetList(lhs)
+	tv := v
+	if len(tl) != 1 || isOpen(lhs[0]) || lhs[0].word("list") || lhs[0].word("array") {
+		tv.arr = false // [$a, $b] = $arr: each one value of it, of any kind
+	}
+	for _, tg := range tl {
+		a.setTarget(st, tg, tv, t[k].Text, sep)
 		a.sourceParts(st, tg, rhs, t[k].Text)
 		a.sourceNot(st, tg, rhs, t[k].Text)
 		if key, _, ok := a.pathKey(tg); ok {
@@ -902,17 +910,17 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 		if v.taint {
 			keys = (!e.taint || e.keys) && !strings.HasSuffix(key, "[*]")
 		}
-		st[container] = entry{taint: e.taint || v.taint, raw: e.raw || v.raw, emb: e.emb || v.emb, weak: weakOf(e.taint, e.weak, v.taint, v.weak), keys: keys}
+		st[container] = entry{taint: e.taint || v.taint, raw: e.raw || v.raw, emb: e.emb || v.emb, weak: weakOf(e.taint, e.weak, v.taint, v.weak), arr: a.php && weakOf(e.taint, e.arr, v.taint, true), keys: keys}
 		if strings.HasSuffix(key, "[*]") && v.taint {
-			st.del(container) // $a[$i] = input may overwrite any key: forget what was known per key
-			st[container] = entry{taint: true, raw: true, emb: v.emb, weak: v.weak}
+			st.del(container)                                                                                          // $a[$i] = input may overwrite any key: forget what was known per key
+			st[container] = entry{taint: true, raw: true, emb: v.emb, weak: v.weak, arr: a.php && (!e.taint || e.arr)} // written by key: an array, unless it held input of another kind
 		}
 		if !strings.HasSuffix(key, "[*]") {
 			// $args['limit'] = absint(...): the key itself is known; reading another key
 			// or the whole array still sees the container.
 			if op == "=" {
 				st.del(key)
-				st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak}
+				st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak, arr: v.arr}
 			} else {
 				ek, _ := st.get(key) // $q['w'] .= $input taints the key it appends to
 				st[key] = entry{taint: ek.taint || v.taint, sep: sep, pre: ek.pre, raw: ek.raw || v.raw, emb: ek.emb || v.taint,
@@ -923,7 +931,7 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 	}
 	if op == "=" || op == ":=" {
 		st.del(key)
-		st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak}
+		st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak, arr: v.arr}
 		return
 	}
 	e, _ := st.get(key)
@@ -1360,18 +1368,20 @@ func (a *analysis) expr(st state, t []Token, whole bool) val {
 		v.taint = v.taint || tv.taint
 		v.emb = v.emb || tv.emb
 		v.san = tv.san
+		v.arr = tv.arr
 		terms++
 		i = max(e, i+1)
 	}
 	if terms != 1 {
 		v.san = false
+		v.arr = false            // "a" . $arr, $n + 1: a string or a number (array + array is rare enough to report)
 		v.emb = v.emb || v.taint // "SELECT " . $x, "a" + x, "%s" % x
 	}
 	return v
 }
 
 func or(x, y val) val {
-	return val{taint: x.taint || y.taint, emb: x.emb || y.emb, weak: weakOf(x.taint, x.weak, y.taint, y.weak)}
+	return val{taint: x.taint || y.taint, emb: x.emb || y.emb, weak: weakOf(x.taint, x.weak, y.taint, y.weak), arr: weakOf(x.taint, x.arr, y.taint, y.arr)}
 }
 
 func (a *analysis) anyOf(st state, parts [][]Token, whole bool) val {
@@ -1460,12 +1470,16 @@ func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
 				_, e := a.term(st, t, c+1, false)
 				return val{}, e // (int) $x: a number carries no injection
 			}
-			return a.term(st, t, c+1, whole) // (string) $x, (array) $x: the value passes through
+			v, e := a.term(st, t, c+1, whole) // (string) $x, (array) $x: the value passes through
+			v.arr = v.taint && strings.EqualFold(inner[0].Text, "array")
+			return v, e
 		}
 		return a.postfix(st, t, i, c+1, a.expr(st, inner, whole), whole)
 	case tk.op("[") || tk.op("{"):
 		c := closeOf(t, i)
-		return a.postfix(st, t, i, c+1, a.literal(st, inside(t, i, c), tk.Text, whole), whole)
+		lv := a.literal(st, inside(t, i, c), tk.Text, whole)
+		lv.arr = a.php && tk.op("[") && lv.taint // [$_POST['a']]: an array
+		return a.postfix(st, t, i, c+1, lv, whole)
 	case a.php && tk.word("match") && i+1 < len(t) && t[i+1].op("(") && closeOf(t, i+1)+1 < len(t) && t[closeOf(t, i+1)+1].op("{") &&
 		(i == 0 || !memberOp(true, t[i-1])):
 		return a.matchExpr(st, t, i, whole)
@@ -1557,7 +1571,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		}
 		if key != "" {
 			if e, ok := st[key]; ok {
-				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak}
+				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak, arr: e.arr && !a.arrUnsure(t[start].Text)}
 				byKeys = e.keys && e.taint
 				ext = e.ext && e.taint
 			} else if byKeys && litIdx {
@@ -1589,6 +1603,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			if ext {
 				v, ext = val{}, false // a property or method of a string or an array extract() set: no value from the input
 			}
+			v.arr = false
 			// flask.request.form, self.request.GET: a source can start at a member.
 			source(j + 1)
 			if key != "" {
@@ -1600,6 +1615,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			continue
 		case tk.op("["):
 			c := closeOf(t, j)
+			v.arr = false // one value of the array, of any kind; a key the state holds gives its own below
 			if key != "" {
 				ik := a.idxOf(key, inside(t, j, c))
 				key += sepCh + "[" + ik + "]"
@@ -1645,6 +1661,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 					// through it is the input, not a guess.
 					weak: !(t[start].Kind == Str || formatFuncs[name] || a.passes(t, start, j-1) || key != "" && !a.returnsUnknown(key))}
 			}
+			v.arr = v.taint && sum == nil && fn != "" && arrayFuncs[strings.ToLower(fn)] // explode($s): an array whatever it is given
 			if key != "" {
 				key += sepCh + "()"
 			}
@@ -1823,6 +1840,18 @@ func (a *analysis) argsTaint(st state, inner []Token, fn string) bool {
 	return false
 }
 
+// arrayFuncs are the PHP functions that never return a string, whatever they
+// are given: an array (false or null on bad arguments). What one returns is an
+// array to maybe_unserialize(), which unserializes strings only; array(...)
+// is read as a call to array. Left out:
+// those that return one value of an array (array_pop, array_shift, current,
+// reset, end) and those that return what was stored or filtered, which may be
+// a string (apply_filters, get_option, get_post_meta). rules/README.md gives
+// each one's reason.
+var arrayFuncs = words("array explode str_split mb_str_split preg_split str_getcsv array_map array_filter array_values array_keys " +
+	"array_merge array_slice array_unique array_reverse array_combine array_flip array_chunk array_column array_diff " +
+	"array_intersect array_replace array_fill_keys compact wp_parse_args wp_parse_list wp_list_pluck")
+
 // passFuncs return their input reshaped but whole (decoded, trimmed, case or
 // slashes changed): input through them is still the input, not a guess, so a
 // webshell's system(base64_decode($c)) is followed into other functions.
@@ -1875,10 +1904,13 @@ func (a *analysis) argVal(st state, arg []Token, whole bool) val {
 	if len(arg) > 1 && arg[0].Kind == Ident && (a.py && arg[1].op("=") || a.php && arg[1].op(":")) {
 		arg = arg[2:]
 	}
+	spread := false
 	for len(arg) > 0 && (arg[0].op("...") || arg[0].op("*") || arg[0].op("**")) {
-		arg, whole = arg[1:], false
+		arg, whole, spread = arg[1:], false, true
 	}
-	return a.expr(st, arg, whole)
+	v := a.expr(st, arg, whole)
+	v.arr = v.arr && !spread // f(...$arr): its values, of any kind, are the arguments
+	return v
 }
 
 func (a *analysis) strVal(st state, tk Token) val {
@@ -2777,7 +2809,8 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		if cond != nil && len(cond.context) > 0 {
 			return a.contextTaint(st, t[i], arg, cond.context, cond.markup)
 		}
-		return hit(a.argVal(st, arg, whole)) && !(cond != nil && cond.leading && a.fixedStart(st, arg))
+		v := a.argVal(st, arg, whole)
+		return hit(v) && !(cond != nil && cond.leading && a.fixedStart(st, arg)) && !(cond != nil && cond.notArray && v.arr)
 	}
 	tainted := false
 	switch {

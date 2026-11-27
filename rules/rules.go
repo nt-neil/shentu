@@ -109,6 +109,10 @@ type Args struct {
 	// one ($ext = '.jpg' ... $ext = '.gif'), so the stored name's type is the
 	// code's choice ($basename . '-image' . $ext).
 	FixedExt bool `toml:"fixed_ext"`
+	// NotArray (PHP): the argument arg names does not count when it is an
+	// array on every path that gives it input (array(...), [...], a value
+	// written by key, explode()): maybe_unserialize() returns a non-string as is.
+	NotArray bool `toml:"not_array"`
 	// ReceiverFrom (Python method sinks): the call counts on a receiver the
 	// file shows made by one of these (env = jinja2.Environment(), or
 	// Environment imported from jinja2), followed as receiver is. A receiver

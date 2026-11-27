@@ -123,6 +123,12 @@ Chinese for the zh-TW pages; keep the two in step.
 - PHP rules: input put in `array(...)` and passed to another function keeps its input, as `[...]`
   did (`edit_status(array($_REQUEST['id']))`); before, `array(...)` read as a call the engine does
   not know, so the input did not cross into that function's sinks.
+- `php-deserialization-wp-maybe-unserialize`: an argument that is an array on every path is not
+  reported (`maybe_unserialize(array('fields' => $_POST['f']))`, an array written by key, `explode()`),
+  also when a function of the code's own passes its parameter on as is: `maybe_unserialize()`
+  unserializes strings only and returns an array as is. Before, the input in the array counted. One
+  value of the array, a string made from it, and a path where the input arrives as a string are
+  still reported.
 ### Known issues
 
 - After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:
