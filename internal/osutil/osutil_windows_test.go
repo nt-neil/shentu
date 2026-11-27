@@ -30,7 +30,8 @@ func TestOpenNoFollowWindows(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err) // the runners may make links (hostenv's TestFileSecurityDanglingLink needs it too)
 	}
-	for _, flag := range []int{os.O_RDONLY, os.O_RDWR | os.O_CREATE, os.O_RDWR | os.O_APPEND | os.O_CREATE} {
+	for _, flag := range []int{os.O_RDONLY, os.O_RDWR | os.O_CREATE, os.O_RDWR | os.O_APPEND | os.O_CREATE,
+		os.O_WRONLY | os.O_CREATE | os.O_TRUNC, os.O_RDWR | os.O_TRUNC, os.O_WRONLY | os.O_APPEND | os.O_CREATE | os.O_TRUNC} {
 		if f, err := OpenNoFollow(link, flag, 0o600, true); err == nil {
 			f.Close()
 			t.Errorf("flag %#x: opened through a link", flag)
@@ -57,6 +58,23 @@ func TestOpenNoFollowWindows(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(n); string(b) != "ab" {
 		t.Errorf("after create and append: %q", b)
+	}
+	// O_TRUNC truncates once the file is known not to be a link, with append too.
+	if f, err := OpenNoFollow(n, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600, true); err != nil {
+		t.Fatalf("truncate: %v", err)
+	} else {
+		f.WriteString("c")
+		f.Close()
+	}
+	if f, err := OpenNoFollow(n, os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0o600, true); err != nil {
+		t.Fatalf("append and truncate: %v", err)
+	} else {
+		f.WriteString("d")
+		f.WriteString("e")
+		f.Close()
+	}
+	if b, _ := os.ReadFile(n); string(b) != "de" {
+		t.Errorf("after truncating: %q, want \"de\"", b)
 	}
 	if f, err := OpenNoFollow(n, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600, true); err == nil {
 		f.Close()

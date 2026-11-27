@@ -62,14 +62,25 @@ var beforeOpen = func(string) {}
 
 // OpenNoFollow refuses a symlink or junction in the last element. Windows
 // has no O_NOFOLLOW for os.OpenFile: the path is opened once, not following
-// a reparse point (FILE_FLAG_OPEN_REPARSE_POINT), that handle's own
-// attributes are checked, and it is the file returned, so nothing can be
-// swapped between the check and the use. (A Lstat, an open and os.SameFile
-// could not tell a swap: on Windows SameFile reads the Lstat's ID from the
-// path only when asked, by then the swapped-in file's.) flag takes
-// O_RDONLY, O_WRONLY, O_RDWR, O_APPEND, O_CREATE, O_EXCL, O_TRUNC, as
-// os.OpenFile does; perm only says read-only for a file it creates.
-// nonblock has no meaning here (named pipes do not live in the file system).
+// a reparse point (FILE_FLAG_OPEN_REPARSE_POINT), that handle's attributes
+// and reparse tag decide (ReparseKind, as Go's os.Lstat), and it is the file
+// returned, so nothing can be swapped between the check and the use. (A
+// Lstat, an open and os.SameFile could not tell a swap: on Windows SameFile
+// reads the Lstat's ID from the path only when asked, by then the swapped-in
+// file's.) A deduplicated file is opened again through its filter and used
+// only if it is the same file (FileIdInfo: the 128-bit ID, as ReFS has). Any
+// other reparse point fails closed, not opened: an AF_UNIX socket, a Cloud
+// Files or OneDrive placeholder (0x9000xxxA), a Windows container layer's
+// file (WCI), an AppExecLink.
+//
+// flag takes O_RDONLY, O_WRONLY, O_RDWR, O_APPEND, O_CREATE, O_EXCL,
+// O_TRUNC, with the access Go's syscall.Open gives them; the file is opened
+// with CREATE_NEW, OPEN_ALWAYS or OPEN_EXISTING only, and O_TRUNC truncates
+// it once it is known not to be a link (as Go does since issue 38225:
+// CREATE_ALWAYS or TRUNCATE_EXISTING would truncate before the check, and
+// CREATE_ALWAYS on a reparse point may replace the link). perm only says
+// read-only for a file it creates. nonblock has no meaning here (named pipes
+// do not live in the file system).
 func OpenNoFollow(path string, flag int, perm os.FileMode, nonblock bool) (*os.File, error) {
 	p16, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
@@ -84,24 +95,28 @@ func OpenNoFollow(path string, flag int, perm os.FileMode, nonblock bool) (*os.F
 	case os.O_RDWR:
 		access = syscall.GENERIC_READ | syscall.GENERIC_WRITE
 	}
-	if flag&os.O_APPEND != 0 {
-		access &^= syscall.GENERIC_WRITE
-		access |= syscall.FILE_APPEND_DATA
+	if flag&os.O_APPEND != 0 { // as Go's syscall.Open
+		if flag&os.O_TRUNC == 0 {
+			access &^= syscall.GENERIC_WRITE
+		}
+		access |= syscall.FILE_APPEND_DATA | windows.FILE_WRITE_ATTRIBUTES | windows.FILE_WRITE_EA | windows.STANDARD_RIGHTS_WRITE | windows.SYNCHRONIZE
+	}
+	if flag&os.O_TRUNC != 0 {
+		access |= syscall.GENERIC_WRITE // the truncation below
 	}
 	var create uint32
 	switch {
 	case flag&(os.O_CREATE|os.O_EXCL) == os.O_CREATE|os.O_EXCL:
 		create = syscall.CREATE_NEW
-	case flag&(os.O_CREATE|os.O_TRUNC) == os.O_CREATE|os.O_TRUNC:
-		create = syscall.CREATE_ALWAYS
 	case flag&os.O_CREATE == os.O_CREATE:
 		create = syscall.OPEN_ALWAYS
-	case flag&os.O_TRUNC == os.O_TRUNC:
-		create = syscall.TRUNCATE_EXISTING
 	default:
 		create = syscall.OPEN_EXISTING
 	}
-	attrs := uint32(syscall.FILE_ATTRIBUTE_NORMAL | fileFlagOpenReparsePoint | syscall.FILE_FLAG_BACKUP_SEMANTICS)
+	attrs := uint32(syscall.FILE_ATTRIBUTE_NORMAL | fileFlagOpenReparsePoint)
+	if access == syscall.GENERIC_READ { // as Go: a directory opened read-only
+		attrs |= syscall.FILE_FLAG_BACKUP_SEMANTICS
+	}
 	if flag&os.O_CREATE != 0 && perm&0o200 == 0 {
 		attrs |= syscall.FILE_ATTRIBUTE_READONLY
 	}
@@ -123,31 +138,41 @@ func OpenNoFollow(path string, flag int, perm os.FileMode, nonblock bool) (*os.F
 	case kind != "":
 		syscall.CloseHandle(h)
 		return nil, &os.PathError{Op: "open", Path: path, Err: errors.New(kind)}
-	case ti.FileAttributes&FileAttributeReparsePoint == 0:
-		return os.NewFile(uintptr(h), path), nil
+	case ti.FileAttributes&FileAttributeReparsePoint != 0:
+		// Deduplicated (Data Deduplication): a regular file, opened again
+		// through its filter, and used only if it is the same file.
+		id, ok := handleID(h)
+		syscall.CloseHandle(h)
+		if h, err = syscall.CreateFile(p16, access, share, nil, syscall.OPEN_EXISTING, attrs&^fileFlagOpenReparsePoint, 0); err != nil {
+			return nil, &os.PathError{Op: "open", Path: path, Err: err}
+		}
+		if id2, ok2 := handleID(h); !ok || !ok2 || id2 != id {
+			syscall.CloseHandle(h)
+			return nil, &os.PathError{Op: "open", Path: path, Err: fmt.Errorf("file changed while opening")}
+		}
 	}
-	// Deduplicated (Data Deduplication): a regular file, opened again
-	// through its filter, and used only if it is the same file.
-	id, ok := handleID(h)
-	syscall.CloseHandle(h)
-	h2, err := syscall.CreateFile(p16, access, share, nil, syscall.OPEN_EXISTING, attrs&^fileFlagOpenReparsePoint, 0)
-	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	f := os.NewFile(uintptr(h), path)
+	if flag&os.O_TRUNC != 0 {
+		if err := f.Truncate(0); err != nil {
+			f.Close()
+			return nil, &os.PathError{Op: "open", Path: path, Err: err}
+		}
 	}
-	if id2, ok2 := handleID(h2); !ok || !ok2 || id2 != id {
-		syscall.CloseHandle(h2)
-		return nil, &os.PathError{Op: "open", Path: path, Err: fmt.Errorf("file changed while opening")}
-	}
-	return os.NewFile(uintptr(h2), path), nil
+	return f, nil
 }
 
-// handleID is the volume and file index of an open handle.
-func handleID(h syscall.Handle) ([3]uint32, bool) {
-	var fi syscall.ByHandleFileInformation
-	if syscall.GetFileInformationByHandle(h, &fi) != nil {
-		return [3]uint32{}, false
-	}
-	return [3]uint32{fi.VolumeSerialNumber, fi.FileIndexHigh, fi.FileIndexLow}, true
+// fileIDInfo is FILE_ID_INFO.
+type fileIDInfo struct {
+	VolumeSerialNumber uint64
+	FileID             [16]byte
+}
+
+// handleID is an open handle's file ID: its volume and 128-bit index
+// (FILE_ID_INFO; the 64-bit index is not unique on ReFS).
+func handleID(h syscall.Handle) (fileIDInfo, bool) {
+	var id fileIDInfo
+	err := windows.GetFileInformationByHandleEx(windows.Handle(h), windows.FileIdInfo, (*byte)(unsafe.Pointer(&id)), uint32(unsafe.Sizeof(id)))
+	return id, err == nil
 }
 
 // fileFlagOpenReparsePoint is FILE_FLAG_OPEN_REPARSE_POINT (syscall lacks it).
