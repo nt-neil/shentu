@@ -22,6 +22,29 @@ func TestRecordRows(t *testing.T) {
 	}
 }
 
+// S-285-1: a line it cannot parse (a bare quote) is skipped: the lines
+// after it still verify, and a wrong hash still does not.
+func TestRecordRowsSkipsBadLine(t *testing.T) {
+	rows := recordRows([]byte("first.py,sha256=AAA,1\nbad\"quote.py,sha256=BBB,2\nafter.py,sha256=CCC,3\n"))
+	if len(rows) != 2 || rows[0] != (recordRow{"first.py", "AAA"}) || rows[1] != (recordRow{"after.py", "CCC"}) {
+		t.Fatalf("rows %+v", rows)
+	}
+	content := "print(1)\n"
+	sum := sha256.Sum256([]byte(content))
+	h := base64.RawURLEncoding.EncodeToString(sum[:])
+	src := dirHost{scriptHost{memHost: memHost{
+		"/sp/pkg-1.0.dist-info/RECORD": "x\"y.py,sha256=ZZZ,1\npkg/ok.py,sha256=" + h + ",9\npkg/bad.py,sha256=" + h + "x,9\n",
+		"/sp/pkg/ok.py":                content,
+		"/sp/pkg/bad.py":               content,
+	}}}
+	if _, ok := recordHas(src, "/sp", "pkg-*.dist-info", "pkg/ok.py"); !ok {
+		t.Error("the line after a bad one not verified")
+	}
+	if _, ok := recordHas(src, "/sp", "pkg-*.dist-info", "pkg/bad.py"); ok {
+		t.Error("a wrong hash verified")
+	}
+}
+
 // The file a quoted RECORD path names is matched and its hash verified.
 func TestRecordHasQuotedPath(t *testing.T) {
 	content := "print(1)\n"

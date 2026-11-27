@@ -538,16 +538,21 @@ type recordRow struct{ path, sha256 string }
 
 // recordRows reads a RECORD as the CSV it is (PEP 376): a path with a
 // comma or a quote is quoted (S-272-5: a split at ",sha256=" kept the
-// quotes, and such a file was never matched). Read up to a line it cannot
-// parse (a RECORD cut at its size cap): those before it stand.
+// quotes, and such a file was never matched). A line it cannot parse (a
+// bare quote, a RECORD cut at its size cap) is skipped and the rest read:
+// stopping there would leave the files after it unverified (S-285-1).
 func recordRows(b []byte) []recordRow {
 	r := csv.NewReader(bytes.NewReader(b))
 	r.FieldsPerRecord = -1
 	var out []recordRow
 	for {
 		f, err := r.Read()
+		var pe *csv.ParseError
+		if errors.As(err, &pe) {
+			continue
+		}
 		if err != nil {
-			return out
+			return out // io.EOF
 		}
 		if len(f) < 2 {
 			continue

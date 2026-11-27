@@ -215,7 +215,8 @@ Chinese for the zh-TW pages; keep the two in step.
   `--password <secret>`, `curl -u user:<secret>`) is not masked in the survey's texts.
 - On a non-Windows machine replaying a Windows host's recording, the code audit's ASP check, its
   web-root ACL check and its case-insensitive path comparison are not turned on yet, and
-  app_vulns' and app_code_audit's path argument is always refused (v0.5.9).
+  app_vulns' and app_code_audit's path argument is refused unless it is one of the app paths
+  exactly (v0.5.9).
 
 ## v0.5.7 — 2026-11-26
 
