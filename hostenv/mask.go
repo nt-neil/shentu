@@ -50,6 +50,12 @@ func replaceOutsideSudoTags(s string, re *regexp.Regexp, repl string) string {
 	for _, m := range sudoTag.FindAllStringSubmatchIndex(s, -1) {
 		tags = append(tags, m[2:4])
 	}
+	return replaceOutside(s, re, repl, tags)
+}
+
+// replaceOutside is re.ReplaceAllString(s, repl), except that a match
+// starting inside one of tags is left as it is.
+func replaceOutside(s string, re *regexp.Regexp, repl string, tags [][]int) string {
 	if len(tags) == 0 {
 		return re.ReplaceAllString(s, repl)
 	}
@@ -88,8 +94,59 @@ func tagAt(tags [][]int, i int) []int {
 
 // sudoTag is a sudoers NOPASSWD: or PASSWD: tag where sudoers puts one:
 // after a runas spec ")" or another tag, and before a command (ALL, an
-// absolute path, "!" or another tag). Group 1 is the tag. "PASSWD: x" or
-// "X-PASSWD: x" elsewhere is not a tag and is masked as a secret would be.
+// absolute path, "!" before a path or an upper-case name, or another
+// tag; ALL and a name end there: ALL-x, !x are not). Group 1 is the tag.
+// "PASSWD: x" or "X-PASSWD: x" elsewhere is not a tag and is masked as a
+// secret would be.
 // (A double-quoted pattern, so the rule-parity test, which reads
 // back-quoted patterns, skips it.)
-var sudoTag = regexp.MustCompile("(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|[A-Z]+:)")
+var sudoTag = regexp.MustCompile("(?m)(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL(?:[ \\t,:;)]|$)|/|![ \\t]*(?:/|[A-Z][A-Z0-9_]*(?:[ \\t]*(?:[,:]|$)|=))|[A-Z]+:)")
+
+// MaskSudoers is MaskSecrets for a sudoers file (/etc/sudoers, a file in
+// /etc/sudoers.d, one they include): besides sudoTag's, it keeps the tags
+// of a rule line ("user host = ..."; two words or more before its "=")
+// where sudoers puts them:
+//   - after its "=(run-as)" or a sudoers tag (SETENV:, NOEXEC:...),
+//     before a command: an absolute path, "!" before one, sudoedit, or an
+//     upper-case name ending there (an alias: then ",", ":" or the line's
+//     end; an option: then "=");
+//   - after its "=" with no run-as list, before ALL, an absolute path, "!"
+//     before one, sudoedit or another tag (an upper-case name there stays
+//     masked: it cannot be told from a secret).
+//
+// Any other text keeps MaskSecrets' masking, word for word.
+func MaskSudoers(s string) string {
+	for _, r := range secretRules {
+		s = replaceOutside(s, r.re, r.repl, sudoersTags(s))
+	}
+	return s
+}
+
+var (
+	sudoRuleLine = regexp.MustCompile(`^[ \t]*[^#\s=][^=\n]*[ \t][^=\s][^=\n]*=`)
+	sudoRuleTag  = regexp.MustCompile("(?m)(?:=[ \\t]*\\([^)\\n]*\\)|\\b(?:NOEXEC|EXEC|SETENV|NOSETENV|LOG_INPUT|NOLOG_INPUT|LOG_OUTPUT|NOLOG_OUTPUT|MAIL|NOMAIL|FOLLOW|NOFOLLOW|INTERCEPT|NOINTERCEPT|NOPASSWD|PASSWD):)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:/|![ \\t]*(?:/|[A-Z][A-Z0-9_]*(?:[ \\t]*(?:[,:]|$)|=))|sudoedit\\b|[A-Z][A-Z0-9_]*(?:[ \\t]*(?:[,:]|$)|=))|=[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL(?:[ \\t,:]|$)|/|![ \\t]*(?:/|[A-Z][A-Z0-9_]*(?:[ \\t]*(?:[,:]|$)|=))|sudoedit\\b|[A-Z]+:)")
+)
+
+// sudoersTags are the tags MaskSudoers keeps in s: sudoTag's anywhere, and
+// sudoRuleTag's in rule lines.
+func sudoersTags(s string) [][]int {
+	var tags [][]int
+	for _, m := range sudoTag.FindAllStringSubmatchIndex(s, -1) {
+		tags = append(tags, m[2:4])
+	}
+	off := 0
+	for _, ln := range strings.SplitAfter(s, "\n") {
+		if sudoRuleLine.MatchString(ln) {
+			for _, m := range sudoRuleTag.FindAllStringSubmatchIndex(ln, -1) {
+				for g := 2; g+1 < len(m); g += 2 { // the one group that matched
+					if m[g] >= 0 {
+						tags = append(tags, []int{off + m[g], off + m[g+1]})
+						break
+					}
+				}
+			}
+		}
+		off += len(ln)
+	}
+	return tags
+}
