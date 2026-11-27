@@ -431,20 +431,33 @@ func TestAgentsExternalRedirect(t *testing.T) {
 	leakCheck(t, out, state, sub, key, url.QueryEscape(key), elsewhere.URL)
 }
 
-// N-F-r4-1: a request that fails to connect keeps only the kind of
-// failure, not the URL (a base_url can hold a secret in its path).
+// N-F-r4-1: a request that fails keeps only the kind of failure, not the
+// URL (a base_url can hold a secret in its path). The far end takes each
+// connection and drops it at once; the listener holds its port the whole
+// test, so no other test's server can take it and answer (a closed port
+// could be reused, and was, on CI). The client reads EOF, not
+// ECONNREFUSED: "connection failed".
 func TestAgentsExternalConnectError(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	closed := l.Addr().String()
-	l.Close()
-	testAgentsBaseURL = func(key string) string { return "http://" + closed + "/t/" + url.PathEscape(key) + "/v1" }
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	dropped := l.Addr().String()
+	testAgentsBaseURL = func(key string) string { return "http://" + dropped + "/t/" + url.PathEscape(key) + "/v1" }
 	t.Cleanup(func() { testAgentsBaseURL = nil })
 	_, state, out, sub, key := externalDispatchWith(t, true, nil)
-	if !strings.Contains(out, "model outside this host: connection refused") {
+	if !strings.Contains(out, "model outside this host: connection failed") {
 		t.Errorf("output: %s", out)
 	}
-	leakCheck(t, out, state, sub, key, url.PathEscape(key), closed)
+	leakCheck(t, out, state, sub, key, url.PathEscape(key), dropped)
 }
