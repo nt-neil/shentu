@@ -192,7 +192,7 @@ func TestImagePackages(t *testing.T) {
 		{sp312 + "old-1.0.dist-info/METADATA": meta("old", "1.0")},
 		{sp312: ""},
 	}, "op:1")
-	opaque := d2.layerOf(1, 1) + "/" + strings.TrimSuffix(sp312, "/")
+	opaque := filepath.Join(d2.layerOf(1, 1), filepath.FromSlash(strings.TrimSuffix(sp312, "/")))
 	overlayOpaque = func(p string) bool { return p == opaque }
 	f = &pypiFeeds{}
 	imageResults(t, f)
@@ -279,7 +279,8 @@ func TestImagePackagesNotChecked(t *testing.T) {
 	other.image([]map[string]string{{sp312 + "moved-1.0.dist-info/METADATA": meta("moved", "1.0")}}, "m:1")
 	dockerRoot = filepath.Join(other.root, "none")
 	dockerDaemonJSON = filepath.Join(t.TempDir(), "daemon.json")
-	os.WriteFile(dockerDaemonJSON, []byte(`{"data-root": "`+other.root+`"}`), 0o600)
+	dr, _ := json.Marshal(map[string]string{"data-root": other.root}) // a Windows path has \ to escape
+	os.WriteFile(dockerDaemonJSON, dr, 0o600)
 	f := &pypiFeeds{}
 	if imageResults(t, f); strings.Join(f.queries, " ") != "moved@1.0" {
 		t.Errorf("data-root: %q", f.queries)
