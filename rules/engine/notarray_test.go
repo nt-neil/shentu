@@ -200,3 +200,25 @@ func TestNotArrayFileAlone(t *testing.T) {
 		})
 	}
 }
+
+// Every function wp_byvalue.txt lets through says why it takes its arguments
+// by value, and none is a PHP internal function (php_refparams.txt rules those).
+func TestWPByValueList(t *testing.T) {
+	n := 0
+	for _, l := range strings.Split(wpByValueList, "\n") {
+		if l = strings.TrimSpace(l); l == "" || strings.HasPrefix(l, "#") {
+			continue
+		}
+		n++
+		name, why, ok := strings.Cut(l, " # ")
+		if !ok || strings.TrimSpace(why) == "" || strings.ContainsAny(name, " \t") {
+			t.Errorf("%q: want <function> # <why it takes its arguments by value>", l)
+		}
+		if phpBuiltins[name] {
+			t.Errorf("%s is a PHP internal function", name)
+		}
+	}
+	if n != len(wpByValue) || n == 0 {
+		t.Errorf("%d lines, %d functions", n, len(wpByValue))
+	}
+}

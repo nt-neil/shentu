@@ -1,8 +1,15 @@
 # PHP's internal functions that take a parameter by reference, with the
 # places (from 0) of those parameters; "+" marks a variadic one (every place
-# from it on). Only functions in php_builtins.txt. Generated with PHP 8.5.12
-# by listing get_defined_functions()['internal'] and keeping each function a
-# ReflectionFunction parameter of which isPassedByReference().
+# from it on). Read by not_array (notarray.go mayTakeRef): an array passed
+# whole at such a place may come back a string.
+#
+# Generated with PHP 8.5.12 (cli, NTS), no php.ini (-n), from the repository
+# root, keeping only the functions php_builtins.txt lists:
+#
+#   php -n -r '$o=[];foreach(get_defined_functions()["internal"] as $f){$p=[];foreach((new ReflectionFunction($f))->getParameters() as $i=>$a){if($a->isPassedByReference()){$p[]=$i.($a->isVariadic()?"+":"");}}if($p){$o[strtolower($f)]=implode(",",$p);}}ksort($o,SORT_STRING);foreach($o as $f=>$p){echo "$f $p\n";}' > /tmp/refs
+#   awk 'NR==FNR{if($0!~/^#/)b[$1]=1;next}($1 in b)' rules/engine/php_builtins.txt /tmp/refs
+#
+# Regenerate it with the PHP version php_builtins.txt is made with.
 array_multisort 0,1+
 array_pop 0
 array_push 0

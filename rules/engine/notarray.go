@@ -174,13 +174,21 @@ var phpRefParams = func() map[string][]int {
 	return m
 }()
 
-// wpByValue are WordPress functions known to take their arguments by value,
-// which hold an array as given: maybe_unserialize() itself, and those code
+//go:embed wp_byvalue.txt
+var wpByValueList string
+
+// wpByValue are WordPress functions known to take their arguments by value
+// (wp_byvalue.txt, each with why): maybe_unserialize() itself, and those code
 // passes a settings array to.
-var wpByValue = words("maybe_unserialize maybe_serialize is_serialized is_serialized_string wp_parse_args wp_parse_list " +
-	"wp_list_pluck wp_json_encode wp_unslash wp_slash map_deep stripslashes_deep apply_filters do_action update_option " +
-	"add_option update_site_option set_transient set_site_transient update_post_meta add_post_meta update_user_meta " +
-	"add_user_meta update_term_meta add_term_meta wp_send_json wp_send_json_success wp_send_json_error")
+var wpByValue = func() map[string]bool {
+	m := map[string]bool{}
+	for _, l := range strings.Split(wpByValueList, "\n") {
+		if f := strings.Fields(l); len(f) > 0 && !strings.HasPrefix(f[0], "#") {
+			m[strings.ToLower(f[0])] = true
+		}
+	}
+	return m
+}()
 
 // mayTakeRef reports whether the function named at t[n] may take its
 // argument k by reference:

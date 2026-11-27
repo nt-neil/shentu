@@ -132,6 +132,21 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time, scanNote str
 		b.WriteString("\n## Cut by a clock\n\nFiles a clock or the heap cut short: these cases' results depend on how busy the machine was.\n\n| case | files (vulnerable / fixed) |\n|---|---|\n")
 		b.WriteString(strings.Join(clocked, "\n") + "\n")
 	}
+	var held []string
+	php := 0
+	for _, r := range results {
+		if r.Lang != "php" {
+			continue
+		}
+		php++
+		if r.Vuln.NamesIncomplete || r.FixedScan.NamesIncomplete {
+			held = append(held, fmt.Sprintf("| %s | %v / %v |", r.ID, r.Vuln.NamesIncomplete, r.FixedScan.NamesIncomplete))
+		}
+	}
+	if len(held) > 0 {
+		fmt.Fprintf(&b, "\n## Receivers held back\n\n%d of %d PHP cases: a file of the release was left out (a skipped folder, too deep, too big, not read), so no method sink counted as the project's own (receivers).\n\n| case | incomplete (vulnerable / fixed) |\n|---|---|\n", len(held), php)
+		b.WriteString(strings.Join(held, "\n") + "\n")
+	}
 	b.WriteString("\n## Cases\n\n")
 	b.WriteString("| case | package | releases | class | group | rule | vulnerable | fixed | in fix files | findings | unfinished files | scan time | calls cut | cuts by cause | at sink line (vulnerable / fixed) |\n")
 	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
