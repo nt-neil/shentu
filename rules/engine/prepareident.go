@@ -24,11 +24,16 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 		return nil
 	}
 	f := a.formatText(st, splitArgs[0])
-	out := identScan(f, len(splitArgs), false)
-	if strings.Contains(f, "--\x00") {
-		// -- then a part not written out: a comment or not, both are read and
-		// what either finds is kept
-		for _, n := range identScan(f, len(splitArgs), true) {
+	// -- then a part not written out may start a comment or not: each such
+	// place is read both ways, every combination of them, and what any finds
+	// is kept. Past maxDashUnknown of them, every %s counts.
+	k := strings.Count(f, "--\x00")
+	if k > maxDashUnknown {
+		return identScan(f, len(splitArgs), 0, true)
+	}
+	var out []int
+	for mask := uint(0); mask < 1<<k; mask++ {
+		for _, n := range identScan(f, len(splitArgs), mask, false) {
 			if !slices.Contains(out, n) {
 				out = append(out, n)
 			}
@@ -37,12 +42,16 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 	return out
 }
 
+// maxDashUnknown bounds the -- before a part not written out read both ways
+// (2^n readings of the format).
+const maxDashUnknown = 6
+
 // identScan is identArgs over the format text f, for a call of nargs
-// arguments; dashUnknown takes -- before a part not written out (0) for the
-// start of a comment.
-func identScan(f string, nargs int, dashUnknown bool) []int {
+// arguments. The n-th -- before a part not written out (0) starts a comment
+// when bit n of mask is set; all takes every %s for an identifier.
+func identScan(f string, nargs int, mask uint, all bool) []int {
 	var out []int
-	seq := 0
+	seq, dash := 0, 0
 	var quote byte
 	// placeholder reads the one at f[i] ('%') and returns where it ends; one
 	// in backticks (ident) whose value is a request's is listed.
@@ -72,7 +81,7 @@ func identScan(f string, nargs int, dashUnknown bool) []int {
 			seq++
 			n = seq
 		}
-		if ident && f[j] == 's' && n >= 1 && n < nargs { // %0$s names no value
+		if (ident || all) && f[j] == 's' && n >= 1 && n < nargs { // %0$s names no value
 			out = append(out, n)
 		}
 		return j
@@ -85,6 +94,11 @@ func identScan(f string, nargs int, dashUnknown bool) []int {
 				i = placeholder(i, false)
 			}
 			continue
+		}
+		dashUnknown := false
+		if quote == 0 && c == '-' && i+2 < len(f) && f[i+1] == '-' && f[i+2] == 0 {
+			dashUnknown = mask>>dash&1 == 1
+			dash++
 		}
 		switch {
 		case quote == 0 && c == '/' && i+1 < len(f) && f[i+1] == '*' && !(i+2 < len(f) && f[i+2] == '!'):
