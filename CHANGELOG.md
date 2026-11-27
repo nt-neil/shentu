@@ -110,6 +110,11 @@ Chinese for the zh-TW pages; keep the two in step.
   `/run/reboot-required` (with the packages it names); elsewhere a kernel in `/boot` newer than the
   running one of the same flavor (`+debug`, UEK and the distribution's own kernel compared apart).
   A running kernel not in `/boot` (a container) is not compared.
+- file_changes and log_search's hard-link check read the host as the other checks do, through the
+  host source: a replay or another host's survey reads that host's files, not the machine running
+  the check. The host source's file details now carry the status-change time (ctime, which
+  file_changes counts as before: a file whose mtime was set back still shows) and the hard links; on
+  Windows they are said not to apply, never 0.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
