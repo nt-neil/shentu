@@ -41,7 +41,7 @@ func TestSinkLines(t *testing.T) {
 			t.Errorf("%s: caught %v fixed FP %v, with sink lines %v %v; want %v %v, %v %v", x.name, r.Caught, r.FixedFP, r.CaughtSink, r.FixedFPSink, x.caught, x.fp, x.cs, x.fs)
 		}
 	}
-	md := markdown([]caseResult{{Case: c, CaughtSink: true}}, nil, time.Unix(0, 0))
+	md := markdown([]caseResult{{Case: c, CaughtSink: true}}, nil, time.Unix(0, 0), "")
 	if !strings.Contains(md, "| all | 1 | 0 | 0.0% |") || !strings.Contains(md, "| 1 (100.0%) | 0 (0.0%) |") {
 		t.Errorf("the two verdicts are not side by side:\n%s", md)
 	}

@@ -11,9 +11,12 @@ import (
 
 // markdown renders the summary and the per-case table. It names rules, files
 // and lines only, never code.
-func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
+func markdown(results []caseResult, rs []rules.Rule, now time.Time, scanNote string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# CVE bench\n\n%s, %d rules, %d cases.\n\n", now.Format("2006-01-02"), len(rs), len(results))
+	if scanNote != "" {
+		fmt.Fprintf(&b, "%s.\n\n", scanNote)
+	}
 	fmt.Fprintf(&b, "- caught: a rule of the case's class reports within %d lines of a line the fix changed, in the vulnerable release.\n", window)
 	b.WriteString("- fixed FP: a rule that caught the case still reports at the fix in the fixed release; the rate is over caught cases.\n")
 	b.WriteString("- rule source: a rule cites the id in its refs, so the rule was written from it; independent: no rule cites it.\n")
@@ -118,6 +121,16 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 			f += r.FixedScan.Cuts[c]
 		}
 		fmt.Fprintf(&b, "| %s | %d / %d |\n", c, v, f)
+	}
+	var clocked []string
+	for _, r := range results {
+		if r.Vuln.Clock+r.FixedScan.Clock > 0 {
+			clocked = append(clocked, fmt.Sprintf("| %s | %d / %d |", r.ID, r.Vuln.Clock, r.FixedScan.Clock))
+		}
+	}
+	if len(clocked) > 0 {
+		b.WriteString("\n## Cut by a clock\n\nFiles a clock or the heap cut short: these cases' results depend on how busy the machine was.\n\n| case | files (vulnerable / fixed) |\n|---|---|\n")
+		b.WriteString(strings.Join(clocked, "\n") + "\n")
 	}
 	b.WriteString("\n## Cases\n\n")
 	b.WriteString("| case | package | releases | class | group | rule | vulnerable | fixed | in fix files | findings | unfinished files | scan time | calls cut | cuts by cause | at sink line (vulnerable / fixed) |\n")

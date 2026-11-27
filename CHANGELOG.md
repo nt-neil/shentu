@@ -180,6 +180,12 @@ Chinese for the zh-TW pages; keep the two in step.
   `fs.createWriteStream()`, `fs.writeFile()`, `fs.writeFileSync()` or `fs.promises.writeFile()` under
   the name the client sent (multer's `file.originalname`) is reported. express-fileupload's `.name` is
   not read.
+- cvebench scans as app_code_audit does by default (`-scanpath product`): each file on its own,
+  then the calls across files, merged. Before, it decided each flow with the calls across files
+  (`Project.Scan`, now `-scanpath project`), so a check written in another file took a finding away
+  that app_code_audit still shows. The rules are the same; the bench's fixed false positives
+  usually rise, closer to what a user sees (measured on v0.5.8's cases: nothing reported
+  fewer). The report's header names the scan path and the project caps.
 
 ### Known issues
 
