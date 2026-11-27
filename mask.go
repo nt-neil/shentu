@@ -45,7 +45,11 @@ func mask(s string) string {
 func replaceOutsideSudoTags(s string, re *regexp.Regexp, repl string) string {
 	var tags [][]int
 	for _, m := range sudoTag.FindAllStringSubmatchIndex(s, -1) {
-		tags = append(tags, m[2:4])
+		if m[2] >= 0 {
+			tags = append(tags, m[2:4])
+		} else {
+			tags = append(tags, m[4:6])
+		}
 	}
 	if len(tags) == 0 {
 		return re.ReplaceAllString(s, repl)
@@ -83,10 +87,17 @@ func tagAt(tags [][]int, i int) []int {
 	return nil
 }
 
-// sudoTag is a sudoers NOPASSWD: or PASSWD: tag where sudoers puts one:
-// after a runas spec ")" or another tag, and before a command (ALL, an
-// absolute path, "!" or another tag). Group 1 is the tag. "PASSWD: x" or
-// "X-PASSWD: x" elsewhere is not a tag and is masked as a secret would be.
-// (A double-quoted pattern, so the rule-parity test, which reads
-// back-quoted patterns, skips it.)
-var sudoTag = regexp.MustCompile("(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|[A-Z]+:)")
+// sudoTag is a sudoers NOPASSWD: or PASSWD: tag where sudoers puts one,
+// in group 1 or 2:
+//   - after a run-as list ")" or another tag, before a command: ALL, an
+//     absolute path, "!", sudoedit, another tag, a command alias or an
+//     option (an upper-case name: DEPLOY, CWD=);
+//   - after the '=' of a rule with no run-as list, before ALL, an absolute
+//     path, "!", sudoedit or another tag (not an upper-case name: "x=PASSWD:
+//     <SECRET>" is no sudoers rule).
+//
+// "PASSWD: x" or "X-PASSWD: x" elsewhere is not a tag and is masked as a
+// secret would be; what follows a tag is masked like any other text. (A
+// double-quoted pattern, so the rule-parity test, which reads back-quoted
+// patterns, skips it; TestSudoTagMatchesRoot compares it.)
+var sudoTag = regexp.MustCompile("(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:/|!|sudoedit\\b|[A-Z][A-Z0-9_]*\\b)|=[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|sudoedit\\b|[A-Z]+:)")

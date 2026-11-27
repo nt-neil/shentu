@@ -276,6 +276,25 @@ func TestMaskSecretsMatchesRoot(t *testing.T) {
 	}
 }
 
+// sudoTag (double-quoted, so TestMaskSecretsMatchesRoot skips it) is the
+// same as the root package's.
+func TestSudoTagMatchesRoot(t *testing.T) {
+	line := func(path string) string {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Skip(path + " not found")
+		}
+		m := regexp.MustCompile(`(?m)^var sudoTag = regexp\.MustCompile\(.*\)$`).FindString(string(b))
+		if m == "" {
+			t.Fatalf("no sudoTag in %s", path)
+		}
+		return m
+	}
+	if root, here := line("../mask.go"), line("mask.go"); root != here {
+		t.Errorf("sudoTag differs:\nroot    %s\nhostenv %s", root, here)
+	}
+}
+
 func readTree(t *testing.T, dir string) string {
 	var sb strings.Builder
 	blobs, err := loadBlobs(dir)
@@ -400,6 +419,27 @@ func TestMaskKeepsNOPASSWD(t *testing.T) {
 		"ann ALL=(root) NOEXEC: NOPASSWD: !/bin/sh":            "ann ALL=(root) NOEXEC: NOPASSWD: !/bin/sh",
 		"NOPASSWD: " + fakeSecret():                            "NOPASSWD: [REDACTED]",
 		"https://u:" + fakeSecret() + "@h (ALL) NOPASSWD: ALL": "https://[REDACTED]@h (ALL) NOPASSWD: ALL",
+		// N-274-5: a tag after '=' (no run-as), before an alias, an option
+		// or sudoedit is kept, the command after it shown as it is...
+		"deploy ALL=NOPASSWD: /usr/bin/systemctl restart app": "deploy ALL=NOPASSWD: /usr/bin/systemctl restart app",
+		"deploy ALL = NOPASSWD: /bin/ls, /bin/cat":            "deploy ALL = NOPASSWD: /bin/ls, /bin/cat",
+		"%deploy ALL=(root) NOPASSWD: DEPLOY":                 "%deploy ALL=(root) NOPASSWD: DEPLOY",
+		"bob ALL=(root) NOPASSWD: sudoedit /etc/hosts":        "bob ALL=(root) NOPASSWD: sudoedit /etc/hosts",
+		"bob ALL=(root) NOPASSWD: CWD=/tmp /bin/ls":           "bob ALL=(root) NOPASSWD: CWD=/tmp /bin/ls",
+		"bob ALL=NOPASSWD: sudoedit /etc/hosts":               "bob ALL=NOPASSWD: sudoedit /etc/hosts",
+		// ...while what looks like a secret there is still masked.
+		"deploy ALL=NOPASSWD: " + fakeSecret():           "deploy ALL=NOPASSWD: [REDACTED]",
+		"x=PASSWD: " + strings.ToUpper(fakeSecret()):     "x=PASSWD: [REDACTED]",
+		"x = PASSWD: " + fakeSecret():                    "x = PASSWD: [REDACTED]",
+		"(root) PASSWD: " + fakeSecret():                 "(root) PASSWD: [REDACTED]",
+		"SETENV: NOPASSWD: " + fakeSecret():              "SETENV: NOPASSWD: [REDACTED]",
+		"my passwd: " + fakeSecret() + " again":          "my passwd: [REDACTED] again",
+		"ALL=NOPASSWD: /bin/ls password=" + fakeSecret(): "ALL=NOPASSWD: /bin/ls password=[REDACTED]",
+		"ALL=NOPASSWD: /bin/ls token=" + fakeSecret():    "ALL=NOPASSWD: /bin/ls token=[REDACTED]",
+		// An upper-case name right after "=...PASSWD:" stays masked: it
+		// cannot be told from a secret there (a rule then is every command).
+		"deploy ALL=NOPASSWD: DEPLOY":                   "deploy ALL=NOPASSWD: [REDACTED]",
+		"ALL=NOPASSWD:" + strings.ToUpper(fakeSecret()): "ALL=NOPASSWD:[REDACTED]",
 	} {
 		if got := MaskSecrets(in); got != want {
 			t.Errorf("MaskSecrets(%q) = %q, want %q", in, got, want)
