@@ -1,9 +1,11 @@
-# Windows Server build, tests and a live hostenv smoke run (Phase 2). Lives on the
-# hostenv-win branch only; main's ci.yml is untouched. Public repo: the runners are free.
+# Windows Server build, tests and a live hostenv smoke run (Phase 2): on pushes to
+# hostenv-win, on every PR into integ, and by hand. Public repo: the runners are free.
 name: windows
 on:
   push:
     branches: [hostenv-win]
+  pull_request:
+    branches: [integ] # every PR into integ is tested on Windows too
   workflow_dispatch:
 permissions:
   contents: read
