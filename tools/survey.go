@@ -186,6 +186,7 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 		p.Risks = append(p.Risks, Risk{"firewall:none", "info", "no host firewall detected (nftables, ufw, firewalld); fine only if a cloud firewall covers this server"})
 	}
 	p.Risks = append(p.Risks, phpRisks(ctx)...)
+	p.Risks = append(p.Risks, ContainerdNotYet(hostSource())...)
 
 	// Through the host source like every other read (S-173r3-1: os.Stat read
 	// the machine running the survey, not the host it surveys, in a replay).
@@ -386,7 +387,7 @@ func winApacheSeen(f *hostenv.Facts) bool {
 		}
 	}
 	for _, b := range phpWinServiceBins() {
-		if strings.Contains(strings.ToLower(b), "httpd.exe") {
+		if strings.EqualFold(winBase(winServiceExe(b)), "httpd.exe") {
 			return true
 		}
 	}

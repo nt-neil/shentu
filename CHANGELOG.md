@@ -62,6 +62,21 @@ Chinese for the zh-TW pages; keep the two in step.
   more unchecked risk, `unchecked:notyet:apache:windows`: Apache there is not checked yet, so
   CVE-2026-119618 (HTTP/2) is not evaluated. The daily report lists it under "Not checked by this
   release yet", not under the missing-permission heading.
+- `app_vulns` and the daily patrol check the Python packages in Docker images against OSV as PyPI,
+  with the CISA KEV mark. They are read from Docker's overlay2 image store on disk; no container is
+  started and the daemon is not asked. Each tagged image's layers are stacked as overlayfs stacks
+  them: a higher layer's file replaces a lower one's, a deleted file (a whiteout) removes only that
+  name in its own folder, and an opaque folder hides the lower layers' files in it. Until now a
+  package inside an image was not checked at all. A store that is there but could not be read
+  (not root, a file not read, past the bounds of 50 images, 200 layers or 200,000 files) is
+  reported as not checked, each such line of the daily report on its own; a host with no Docker
+  store says so apart. The store's folders are not followed when they are symlinks, and when the
+  run is stopped the images left are said not checked. Images in containerd's store (new
+  Docker releases keep them there by default: `/var/lib/containerd`, or `containerd-snapshotter`
+  turned on in `daemon.json`) are not read by this release: `partial` says so rather than "no
+  images", and the daily report lists it under what this release does not check yet. The store is
+  read only when the host read is this machine itself: a replay says the images were not checked.
+  A `.pth` in an image is never taken as a tool's own.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the

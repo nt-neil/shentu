@@ -372,6 +372,12 @@ func TestSurveyWindowsApacheUnchecked(t *testing.T) {
 	if got := apache(newWinRead()); len(got) != 1 {
 		t.Errorf("httpd.exe service: %+v", got)
 	}
+	for _, b := range []string{`"C:\lighttpd\lighttpd.exe" -D`, `C:\nginx\nginx.exe -c C:\nginx\httpd.exe.conf`} {
+		phpWinServiceBins = func() []string { return []string{b} }
+		if got := apache(newWinRead()); len(got) != 0 {
+			t.Errorf("%s is not Apache: %+v", b, got)
+		}
+	}
 }
 
 // winLstatRead is winRead with Lstat (no links: what Stat says), as Live

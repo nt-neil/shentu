@@ -101,6 +101,7 @@ var dailyText = map[string][2]string{ // English, Chinese
 	"f_cert":          {"certificate for %s expires in %d days", "%s 的憑證再 %d 天就到期"},
 	"f_kev_os":        {"%s %s has %s, which is being exploited in the wild (%s); update it: %v", "%s %s 有 %s，這個漏洞正在被實際利用（%s）；請更新：%v"},
 	"f_kev_app":       {"%s pins %s %s, which has %s, exploited in the wild (%s); upgrade it", "%s 鎖定了 %s %s，它有 %s，正在被實際利用（%s）；請升級"},
+	"f_kev_image":     {"Docker image %s has %s %s installed, which has %s, exploited in the wild (%s); rebuild it with a fixed version", "Docker 映像 %s 安裝了 %s %s，它有 %s，正在被實際利用（%s）；請用修正過的版本重建映像"},
 	"f_kev_site":      {"%s has %s %s installed, which has %s, exploited in the wild (%s); upgrade it", "%s 安裝了 %s %s，它有 %s，正在被實際利用（%s）；請升級"},
 	"f_pth":           {"%s has %d line(s) Python runs at every start, not a known tool's own: check what installed it", "%s 有 %d 行會在每次啟動 Python 時執行，不是已知工具自己寫的：請確認是誰安裝的"},
 	"repair_win":      {"`shentu dispatch repair` from an elevated prompt (Run as administrator)", "`shentu dispatch repair`（在以系統管理員身分開啟的命令提示字元）"},
