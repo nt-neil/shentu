@@ -32,7 +32,7 @@ var appVulns = Tool{
 		}
 		roots := env.AppPaths
 		if a.Path != "" {
-			clean := filepath.Clean(a.Path)
+			clean := hostPaths().Clean(a.Path) // the host's spelling (S-280-1)
 			if !insideAny(clean, env.AppPaths) {
 				return nil, fmt.Errorf("path is not inside the app paths: %s", strings.Join(env.AppPaths, ", "))
 			}
