@@ -35,3 +35,14 @@ func TestRecordHasQuotedPath(t *testing.T) {
 		t.Errorf("recordHas: %q %v", rec, ok)
 	}
 }
+
+// t12: the site-packages search walks with LstatNoID: it needs folders and
+// names only, no file opened for an ID.
+func TestFindSitePackagesWalksWithoutIDs(t *testing.T) {
+	var lstat, noID int
+	withHost(t, countNoID{statHost{files: map[string]string{"/srv/v/lib/python3.12/site-packages/x/__init__.py": ""}}, &lstat, &noID})
+	dirs, _ := findSitePackages([]string{"/srv/v"}, false)
+	if len(dirs) != 1 || noID == 0 || lstat != 0 {
+		t.Errorf("dirs %q, LstatNoID %d, Lstat %d: want every entry by LstatNoID", dirs, noID, lstat)
+	}
+}

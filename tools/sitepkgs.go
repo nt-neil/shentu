@@ -111,7 +111,7 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 			break
 		}
 		base := strings.Count(hp.Clean(root), hp.Sep)
-		hostenv.Walk(src, root, func(p string, st hostenv.FileStat, err error) error {
+		hostenv.WalkNoID(src, root, func(p string, st hostenv.FileStat, err error) error { // folders and names only: no file opened for an ID (t12)
 			if err != nil {
 				if !errors.Is(err, fs.ErrNotExist) {
 					unread++
