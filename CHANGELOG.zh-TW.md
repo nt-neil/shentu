@@ -33,6 +33,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 新的 JavaScript 規則 `js-file-upload-client-name-write`：上傳的檔案用 `fs.createWriteStream()`、`fs.writeFile()`、`fs.writeFileSync()` 或 `fs.promises.writeFile()`，以用戶端送來的名稱（multer 的 `file.originalname`）寫入時會回報。express-fileupload 的 `.name` 不在範圍內。
 - cvebench 預設改用和 app_code_audit 相同的掃描方式（`-scanpath product`）：先逐檔掃描，再追蹤跨檔呼叫，兩者的結果合併。以前它直接用跨檔呼叫來判斷每條流向（`Project.Scan`，現在是 `-scanpath project`），所以檢查寫在另一個檔案時，結果會被拿掉，但 app_code_audit 仍然會顯示。規則沒有改變；bench 的修正版誤報通常會變多，數字更接近使用者實際看到的（用 v0.5.8 的案例量測，結果是少報 0）。報告最前面會寫明掃描方式和專案的上限。
 
+- bench：比較用的基準改用和 app_code_audit 相同的掃描方式（`-scanpath product`）重新量測（cves 是 `baseline.md`，另外新增 `baseline-holdout.md`、`baseline-cves-ts.md`）；先前的基準是第一次量測，只有 59 案。
 ### 已知問題
 
 - 轉址目標的檢查寫在另一個檔案時（例如 Tornado base class 的 `self.sanitize_next_url()`），仍然會回報：app_code_audit 先逐檔讀，跨檔追蹤看到檢查之後，那筆結果也不會拿掉。

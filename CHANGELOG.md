@@ -187,6 +187,8 @@ Chinese for the zh-TW pages; keep the two in step.
   usually rise, closer to what a user sees (measured on v0.5.8's cases: nothing reported
   fewer). The report's header names the scan path and the project caps.
 
+- bench: the baselines are rerun on the product scan path (`baseline.md` for cves, and now
+  `baseline-holdout.md`, `baseline-cves-ts.md`); the one before was the first run, on 59 cases.
 ### Known issues
 
 - A redirect target checked in another file (a Tornado base class's `self.sanitize_next_url()`) is
