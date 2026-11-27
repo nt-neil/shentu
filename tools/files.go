@@ -13,7 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -79,11 +81,12 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 	var out []Changed
 	var unread, missing []string
 	truncated := false
+	src := hostSource() // the host read, not the machine running the check (host-source PR-2c)
 	for _, root := range roots {
 		// A root that is a link is walked where it leads (N-183-2: macOS's
-		// /etc is a link to /private/etc, and WalkDir does not follow a
+		// /etc is a link to /private/etc, and a walk does not follow a
 		// link given as its root), the paths shown under the root as set.
-		real, err := filepath.EvalSymlinks(root)
+		real, err := watchRoot(src, root)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			missing = append(missing, root) // not on this host: not "unread" (S-183-1)
@@ -100,46 +103,46 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 			}
 			return filepath.Clean(root) + strings.TrimPrefix(p, real) // no "//" from a trailing slash
 		}
-		filepath.WalkDir(real, func(p string, d fs.DirEntry, err error) error {
+		hostenv.WalkNoID(src, real, func(p string, st hostenv.FileStat, err error) error { // no file opened per entry (S-276-1)
 			if err != nil {
 				// Not read is not unchanged (M0: much of macOS's tree is
-				// closed to a user): said, up to a few. Gone meanwhile is not.
+				// closed to a user; a replay without the path): said, up
+				// to a few. Gone meanwhile is not.
 				if !errors.Is(err, fs.ErrNotExist) && len(unread) < maxUnread {
 					unread = append(unread, shown(p))
 				}
 				return nil
 			}
 			if ctx.Err() != nil {
-				return nil
+				return fs.SkipAll
 			}
-			if d.IsDir() {
+			if st.Mode.IsDir() {
 				if p == "/proc" || p == "/sys" || p == "/dev" {
-					return filepath.SkipDir
+					return fs.SkipDir
 				}
 				return nil
 			}
-			info, err := d.Info()
-			if err != nil || !info.Mode().IsRegular() {
+			if !st.Mode.IsRegular() {
 				return nil
 			}
-			mt := info.ModTime()
+			mt := st.ModTime
+			if st.CTime != nil && st.CTime.After(mt) {
+				mt = *st.CTime // a changed mtime is easy to fake; ctime is not
+			}
 			owner := ""
-			if ct, uid, ok := ctimeUID(info); ok {
-				if ct.After(mt) {
-					mt = ct // a changed mtime is easy to fake; ctime is not
-				}
-				owner = names[itoa(uid)]
+			if st.UID >= 0 && !slices.Contains(st.NotApplicable, "uid") {
+				owner = names[strconv.Itoa(st.UID)]
 			}
 			if mt.Before(since) {
 				return nil
 			}
 			if len(out) >= 300 {
 				truncated = true
-				return filepath.SkipAll
+				return fs.SkipAll
 			}
-			c := Changed{Path: shown(p), Size: info.Size(), Mode: info.Mode().String(), Owner: owner, Modified: mt}
-			if (webExt[strings.ToLower(filepath.Ext(p))] || aspPage(p)) && info.Size() < 512*1024 {
-				if b, err := os.ReadFile(p); err == nil {
+			c := Changed{Path: shown(p), Size: st.Size, Mode: st.Mode.String(), Owner: owner, Modified: mt}
+			if (webExt[strings.ToLower(filepath.Ext(p))] || aspPage(p)) && st.Size < 512*1024 {
+				if b, ok := readHead(src, p, 512*1024); ok {
 					for _, re := range webshellPatterns {
 						if m := re.Find(b); m != nil {
 							c.Webshell = append(c.Webshell, string(m))
@@ -168,20 +171,31 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 	return res, nil
 }
 
+// watchRoot is where root leads on the host read: its links resolved
+// through the source. hostenv.EvalSymlinks reads POSIX paths; a Windows
+// host's (C:\inetpub) are resolved as filepath does when it is this
+// machine, and taken as they are (there or not) when it is a recording.
+func watchRoot(src hostenv.Source, root string) (string, error) {
+	if !onWindows() {
+		return hostenv.EvalSymlinks(src, root)
+	}
+	if onThisMachine(src) {
+		return filepath.EvalSymlinks(root)
+	}
+	st, err := hostenv.Lstat(src, root)
+	if err != nil {
+		return "", err
+	}
+	if st.Mode&fs.ModeSymlink != 0 || st.Mode&fs.ModeIrregular != 0 {
+		// a link or junction a recording cannot resolve: said unread,
+		// never an empty, unchanged-looking list (S-276-2)
+		return "", fmt.Errorf("%s is a link or junction, not followed in a recording", root)
+	}
+	return root, nil
+}
+
 // maxUnread bounds the unreadable paths file_changes lists.
 const maxUnread = 20
-
-func itoa(u uint32) string {
-	b := []byte{}
-	if u == 0 {
-		return "0"
-	}
-	for u > 0 {
-		b = append([]byte{byte('0' + u%10)}, b...)
-		u /= 10
-	}
-	return string(b)
-}
 
 func insideAny(p string, roots []string) bool {
 	for _, r := range roots {
@@ -297,11 +311,13 @@ var logSearch = Tool{
 			return nil, errors.New("path is not in the allowed log paths: " + strings.Join(env.LogPaths, ", "))
 		}
 		// A symlink inside a log directory must not lead outside the allowlist.
-		real, err := filepath.EvalSymlinks(a.Path)
+		src := hostSource()
+		real, err := hostenv.EvalSymlinks(src, a.Path)
 		if err != nil {
 			return nil, err
 		}
-		if st, err := os.Stat(real); err != nil || !st.Mode().IsRegular() || !allowedLog(real, env.LogPaths) && !(onMac() && allowedLog(macUnprivate(real), env.LogPaths)) {
+		st, err := hostenv.Stat(src, real)
+		if err != nil || !st.Mode.IsRegular() || !allowedLog(real, env.LogPaths) && !(onMac() && allowedLog(macUnprivate(real), env.LogPaths)) {
 			return nil, errors.New("path resolves outside the allowed log files: " + real)
 		}
 		// A hard link is not a symlink: EvalSymlinks does not see it. A user
@@ -309,10 +325,8 @@ var logSearch = Tool{
 		// protected_hardlinks) could link a root-only file there, owner and
 		// all, for log_search run as root to read; logs have one link
 		// (S-186-1). A swap after this check is not ruled out.
-		if st, err := os.Stat(real); err == nil {
-			if n, ok := nlink(st); ok && n > 1 {
-				return nil, fmt.Errorf("%s has %d hard links: log_search reads a log file with one only", real, n)
-			}
+		if st.NLink != nil && *st.NLink > 1 {
+			return nil, fmt.Errorf("%s has %d hard links: log_search reads a log file with one only", real, *st.NLink)
 		}
 		a.Path = real
 		re, err := regexp.Compile(a.Pattern)

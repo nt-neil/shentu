@@ -246,3 +246,28 @@ func TestReadDirMax(t *testing.T) {
 		t.Errorf("replay: %q %v", got, err)
 	}
 }
+
+// S-276-1: WalkNoID gives the same entries as Walk with no file ID: the
+// file-ID step, an open per regular file on Windows, is never taken.
+func TestWalkNoID(t *testing.T) {
+	d := t.TempDir()
+	if err := os.WriteFile(filepath.Join(d, "a.php"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, _ := NewLive(nil)
+	ids := func(walk func(Source, string, WalkFunc) error) (n int, id string) {
+		walk(l, d, func(p string, st FileStat, err error) error {
+			if err == nil && st.Mode.IsRegular() {
+				n, id = n+1, st.ID
+			}
+			return nil
+		})
+		return n, id
+	}
+	if n, id := ids(Walk); n != 1 || id == "" {
+		t.Fatalf("Walk: %d files, ID %q", n, id)
+	}
+	if n, id := ids(WalkNoID); n != 1 || id != "" {
+		t.Errorf("WalkNoID: %d files, ID %q (an ID means the file was opened for it)", n, id)
+	}
+}

@@ -655,6 +655,11 @@ func sshBlob(keyType, key string) []byte {
 // those in /etc/sudoers.d, and those they include (#include, @include,
 // #includedir, @includedir; a relative path from the including file's
 // folder), as sudo reads them.
+//
+// Known limit: an includedir of a folder holding other configuration
+// (@includedir /etc) makes every file there without a dot (and not
+// ending in ~) a sudoers file, masked by MaskSudoers. That is how sudo
+// reads it too: sudo parses those files as sudoers.
 func sudoersFiles(entries []*entry) map[string]bool {
 	byPath := map[string]*entry{}
 	for _, e := range entries {
