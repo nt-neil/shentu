@@ -276,25 +276,6 @@ func TestMaskSecretsMatchesRoot(t *testing.T) {
 	}
 }
 
-// sudoTag (double-quoted, so TestMaskSecretsMatchesRoot skips it) is the
-// same as the root package's.
-func TestSudoTagMatchesRoot(t *testing.T) {
-	line := func(path string) string {
-		b, err := os.ReadFile(path)
-		if err != nil {
-			t.Skip(path + " not found")
-		}
-		m := regexp.MustCompile(`(?m)^var sudoTag = regexp\.MustCompile\(.*\)$`).FindString(string(b))
-		if m == "" {
-			t.Fatalf("no sudoTag in %s", path)
-		}
-		return m
-	}
-	if root, here := line("../mask.go"), line("mask.go"); root != here {
-		t.Errorf("sudoTag differs:\nroot    %s\nhostenv %s", root, here)
-	}
-}
-
 func readTree(t *testing.T, dir string) string {
 	var sb strings.Builder
 	blobs, err := loadBlobs(dir)
@@ -419,38 +400,92 @@ func TestMaskKeepsNOPASSWD(t *testing.T) {
 		"ann ALL=(root) NOEXEC: NOPASSWD: !/bin/sh":            "ann ALL=(root) NOEXEC: NOPASSWD: !/bin/sh",
 		"NOPASSWD: " + fakeSecret():                            "NOPASSWD: [REDACTED]",
 		"https://u:" + fakeSecret() + "@h (ALL) NOPASSWD: ALL": "https://[REDACTED]@h (ALL) NOPASSWD: ALL",
-		// N-274-5: a tag after '=' (no run-as), before an alias, an option
-		// or sudoedit is kept, the command after it shown as it is...
-		"deploy ALL=NOPASSWD: /usr/bin/systemctl restart app": "deploy ALL=NOPASSWD: /usr/bin/systemctl restart app",
-		"deploy ALL = NOPASSWD: /bin/ls, /bin/cat":            "deploy ALL = NOPASSWD: /bin/ls, /bin/cat",
-		"%deploy ALL=(root) NOPASSWD: DEPLOY":                 "%deploy ALL=(root) NOPASSWD: DEPLOY",
-		"bob ALL=(root) NOPASSWD: sudoedit /etc/hosts":        "bob ALL=(root) NOPASSWD: sudoedit /etc/hosts",
-		"bob ALL=(root) NOPASSWD: CWD=/tmp /bin/ls":           "bob ALL=(root) NOPASSWD: CWD=/tmp /bin/ls",
-		"bob ALL=NOPASSWD: sudoedit /etc/hosts":               "bob ALL=NOPASSWD: sudoedit /etc/hosts",
-		// ...while what looks like a secret there is still masked.
-		"deploy ALL=NOPASSWD: " + fakeSecret():           "deploy ALL=NOPASSWD: [REDACTED]",
-		"x=PASSWD: " + strings.ToUpper(fakeSecret()):     "x=PASSWD: [REDACTED]",
-		"x = PASSWD: " + fakeSecret():                    "x = PASSWD: [REDACTED]",
-		"(root) PASSWD: " + fakeSecret():                 "(root) PASSWD: [REDACTED]",
-		"SETENV: NOPASSWD: " + fakeSecret():              "SETENV: NOPASSWD: [REDACTED]",
-		"my passwd: " + fakeSecret() + " again":          "my passwd: [REDACTED] again",
-		"ALL=NOPASSWD: /bin/ls password=" + fakeSecret(): "ALL=NOPASSWD: /bin/ls password=[REDACTED]",
-		"ALL=NOPASSWD: /bin/ls token=" + fakeSecret():    "ALL=NOPASSWD: /bin/ls token=[REDACTED]",
-		// An upper-case name right after "=...PASSWD:" stays masked: it
-		// cannot be told from a secret there (a rule then is every command).
-		"deploy ALL=NOPASSWD: DEPLOY": "deploy ALL=NOPASSWD: [REDACTED]",
-		// An upper-case name is kept only after a rule's "=(run-as)" or a
-		// sudoers tag: after another ")" or "FOO:" it is masked.
-		"(x) PASSWD: " + strings.ToUpper(fakeSecret()):          "(x) PASSWD: [REDACTED]",
-		"FOO: PASSWD: " + strings.ToUpper(fakeSecret()):         "FOO: PASSWD: [REDACTED]",
-		"note (see) NOPASSWD: " + strings.ToUpper(fakeSecret()): "note (see) NOPASSWD: [REDACTED]",
-		"%deploy ALL=(root) SETENV: NOPASSWD: DEPLOY":           "%deploy ALL=(root) SETENV: NOPASSWD: DEPLOY",
-		"bob ALL = (root:adm) NOPASSWD: CWD=/tmp /bin/ls":       "bob ALL = (root:adm) NOPASSWD: CWD=/tmp /bin/ls",
-		"ALL=NOPASSWD:" + strings.ToUpper(fakeSecret()):         "ALL=NOPASSWD:[REDACTED]",
+		// N-274-6: outside sudoers files a value after these is masked,
+		// as on integ; and ALL-x, !x after a tag (integ's leaks) too.
+		"ADMIN=PASSWD: !" + fakeSecret():                                     "ADMIN=PASSWD: [REDACTED]",
+		"k=PASSWD:\t!" + fakeSecret():                                        "k=PASSWD:\t[REDACTED]",
+		"x = PASSWD: /" + fakeSecret() + "+=":                                "x = PASSWD: [REDACTED]",
+		"x=PASSWD: ABC:" + fakeSecret():                                      "x=PASSWD: [REDACTED]",
+		"auth=(prod) PASSWD: " + strings.ToUpper(fakeSecret()):               "auth=(prod) PASSWD: [REDACTED]",
+		"k = (r) PASSWD: " + strings.ToUpper(fakeSecret()):                   "k = (r) PASSWD: [REDACTED]",
+		"k=(r) NOPASSWD: " + strings.ToUpper(fakeSecret()):                   "k=(r) NOPASSWD: [REDACTED]",
+		`{"a": "=(r) PASSWD: ` + strings.ToUpper(fakeSecret()) + `"}`:        `{"a": "=(r) PASSWD: [REDACTED]"}`,
+		"=(x) PASSWD: P@" + fakeSecret():                                     "=(x) PASSWD: [REDACTED]",
+		"=(x) PASSWD: " + strings.ToUpper(fakeSecret()) + "-" + fakeSecret(): "=(x) PASSWD: [REDACTED]",
+		"note MAIL: PASSWD: " + strings.ToUpper(fakeSecret()):                "note MAIL: PASSWD: [REDACTED]",
+		"SMTP-MAIL: PASSWD: " + strings.ToUpper(fakeSecret()):                "SMTP-MAIL: PASSWD: [REDACTED]",
+		"EXEC: PASSWD: ABC." + fakeSecret():                                  "EXEC: PASSWD: [REDACTED]",
+		"PASSWORD=(a) PASSWD: " + strings.ToUpper(fakeSecret()):              "PASSWORD=[REDACTED] PASSWD: [REDACTED]",
+		"(prod) PASSWD: !" + fakeSecret():                                    "(prod) PASSWD: [REDACTED]",
+		"FOO: PASSWD: ALL-" + fakeSecret():                                   "FOO: PASSWD: [REDACTED]",
 	} {
 		if got := MaskSecrets(in); got != want {
 			t.Errorf("MaskSecrets(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// N-274-6: MaskSudoers keeps the tags of a sudoers rule line where
+// sudoers puts them (the rule's "=(run-as)" or a tag before a command or
+// an alias; its bare "=" before a path, sudoedit, ALL); a line that is no
+// rule, or a word after the tag that is no command, is masked as
+// MaskSecrets masks it.
+func TestMaskSudoers(t *testing.T) {
+	up := strings.ToUpper(fakeSecret())
+	for in, want := range map[string]string{
+		"deploy ALL=NOPASSWD: /usr/bin/systemctl restart app":    "deploy ALL=NOPASSWD: /usr/bin/systemctl restart app",
+		"deploy ALL = NOPASSWD: /bin/ls, /bin/cat":               "deploy ALL = NOPASSWD: /bin/ls, /bin/cat",
+		"%deploy ALL=(root) NOPASSWD: DEPLOY":                    "%deploy ALL=(root) NOPASSWD: DEPLOY",
+		"%deploy ALL=(root) SETENV: NOPASSWD: DEPLOY, /bin/x":    "%deploy ALL=(root) SETENV: NOPASSWD: DEPLOY, /bin/x",
+		"bob ALL=(root) NOPASSWD: sudoedit /etc/hosts":           "bob ALL=(root) NOPASSWD: sudoedit /etc/hosts",
+		"bob ALL=NOPASSWD: sudoedit /etc/hosts":                  "bob ALL=NOPASSWD: sudoedit /etc/hosts",
+		"bob ALL = (root:adm) NOPASSWD: CWD=/tmp /bin/ls":        "bob ALL = (root:adm) NOPASSWD: CWD=/tmp /bin/ls",
+		"bob ALL=(root) NOPASSWD: !/bin/sh, /bin/ls":             "bob ALL=(root) NOPASSWD: !/bin/sh, /bin/ls",
+		"#include /etc/sudoers.local\nann ALL=NOPASSWD: /bin/ls": "#include /etc/sudoers.local\nann ALL=NOPASSWD: /bin/ls",
+		// kept by MaskSecrets already (integ)
+		"user ALL=(ALL) NOPASSWD:ALL": "user ALL=(ALL) NOPASSWD:ALL",
+		// an alias right after a bare "=" stays masked (fail closed)
+		"deploy ALL=NOPASSWD: DEPLOY": "deploy ALL=NOPASSWD: [REDACTED]",
+		// (1) not a rule line: one word before "="
+		"ADMIN=NOPASSWD: /x" + fakeSecret(): "ADMIN=NOPASSWD: [REDACTED]",
+		"k=(r) NOPASSWD: " + up:             "k=(r) NOPASSWD: [REDACTED]",
+		"note MAIL: PASSWD: " + up:          "note MAIL: PASSWD: [REDACTED]",
+		// (2) the word after the tag is no command
+		"bob ALL=(r) PASSWD: P@" + fakeSecret():                  "bob ALL=(r) PASSWD: [REDACTED]",
+		"bob ALL=(r) PASSWD: " + up + "-x":                       "bob ALL=(r) PASSWD: [REDACTED]",
+		"bob ALL=(r) EXEC: PASSWD: ABC." + fakeSecret():          "bob ALL=(r) EXEC: PASSWD: [REDACTED]",
+		"bob ALL=(r) PASSWD: !" + fakeSecret():                   "bob ALL=(r) PASSWD: [REDACTED]",
+		"bob ALL=PASSWD: " + up:                                  "bob ALL=PASSWD: [REDACTED]",
+		"bob ALL=(r) NOPASSWD: /bin/ls password=" + fakeSecret(): "bob ALL=(r) NOPASSWD: /bin/ls password=[REDACTED]",
+	} {
+		if got := MaskSudoers(in); got != want {
+			t.Errorf("MaskSudoers(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// Any other text: word for word as MaskSecrets.
+	for _, s := range []string{"x=PASSWD: ABC:" + fakeSecret(), "password: " + fakeSecret(), "token=" + fakeSecret(), "(prod) PASSWD: !" + fakeSecret()} {
+		if MaskSudoers(s) != MaskSecrets(s) {
+			t.Errorf("MaskSudoers(%q) = %q, MaskSecrets %q", s, MaskSudoers(s), MaskSecrets(s))
+		}
+	}
+}
+
+// sudoTag (double-quoted, so TestMaskSecretsMatchesRoot skips it) is the
+// same as the root package's.
+func TestSudoTagMatchesRoot(t *testing.T) {
+	line := func(path string) string {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Skip(path + " not found")
+		}
+		m := regexp.MustCompile(`(?m)^var sudoTag = regexp\.MustCompile\(.*\)$`).FindString(string(b))
+		if m == "" {
+			t.Fatalf("no sudoTag in %s", path)
+		}
+		return m
+	}
+	if root, here := line("../mask.go"), line("mask.go"); root != here {
+		t.Errorf("sudoTag differs:\nroot    %s\nhostenv %s", root, here)
 	}
 }
 

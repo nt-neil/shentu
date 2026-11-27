@@ -45,12 +45,7 @@ func mask(s string) string {
 func replaceOutsideSudoTags(s string, re *regexp.Regexp, repl string) string {
 	var tags [][]int
 	for _, m := range sudoTag.FindAllStringSubmatchIndex(s, -1) {
-		for g := 2; g+1 < len(m); g += 2 { // the one group that matched
-			if m[g] >= 0 {
-				tags = append(tags, m[g:g+2])
-				break
-			}
-		}
+		tags = append(tags, m[2:4])
 	}
 	if len(tags) == 0 {
 		return re.ReplaceAllString(s, repl)
@@ -88,20 +83,12 @@ func tagAt(tags [][]int, i int) []int {
 	return nil
 }
 
-// sudoTag is a sudoers NOPASSWD: or PASSWD: tag where sudoers puts one,
-// in group 1, 2 or 3:
-//  1. after a run-as list ")" or another tag, before ALL, an absolute
-//     path, "!", sudoedit or another tag;
-//  2. after a rule's "=(run-as)" or a sudoers tag (SETENV:, NOEXEC:...),
-//     before an upper-case name: a command alias or an option (DEPLOY,
-//     CWD=). Only there: "(x) PASSWD: <UPPER-CASE SECRET>" or
-//     "FOO: PASSWD: <UPPER-CASE SECRET>" is no sudoers rule, and masked;
-//  3. after the "=" of a rule with no run-as list, before ALL, an absolute
-//     path, "!", sudoedit or another tag (an upper-case name there stays
-//     masked: "x=PASSWD: <SECRET>" cannot be told from an alias).
-//
+// sudoTag is a sudoers NOPASSWD: or PASSWD: tag where sudoers puts one:
+// after a runas spec ")" or another tag, and before a command (ALL, an
+// absolute path, "!" before a path or an upper-case name, or another
+// tag; ALL and a name end there: ALL-x, !x are not). Group 1 is the tag.
 // "PASSWD: x" or "X-PASSWD: x" elsewhere is not a tag and is masked as a
-// secret would be; what follows a tag is masked like any other text. (A
-// double-quoted pattern, so the rule-parity test, which reads back-quoted
-// patterns, skips it; TestSudoTagMatchesRoot compares it.)
-var sudoTag = regexp.MustCompile("(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|sudoedit\\b|[A-Z]+:)|(?:=[ \\t]*\\([^)\\n]*\\)|\\b(?:NOEXEC|EXEC|SETENV|NOSETENV|LOG_INPUT|NOLOG_INPUT|LOG_OUTPUT|NOLOG_OUTPUT|MAIL|NOMAIL|FOLLOW|NOFOLLOW|INTERCEPT|NOINTERCEPT|NOPASSWD|PASSWD):)[ \\t]*((?:NO)?PASSWD:)[ \\t]*[A-Z][A-Z0-9_]*\\b|=[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|sudoedit\\b|[A-Z]+:)")
+// secret would be.
+// (A double-quoted pattern, so the rule-parity test, which reads
+// back-quoted patterns, skips it.)
+var sudoTag = regexp.MustCompile("(?m)(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL(?:[ \\t,:;)]|$)|/|![ \\t]*(?:/|[A-Z][A-Z0-9_]*(?:[ \\t]*(?:[,:]|$)|=))|[A-Z]+:)")
