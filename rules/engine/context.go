@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -948,6 +949,9 @@ func (a *analysis) recordLit(st state, t []Token) {
 	for len(t) > 0 && t[0].Kind == Ident && declWords[t[0].Text] {
 		t = t[1:]
 	}
+	if len(t) >= 2 && (t[0].Kind == Var || t[0].Kind == Ident) && t[1].Kind == Op && t[1].Text != "=" && phpAssignOps[t[1].Text] {
+		delete(st, extKey+t[0].Text) // $name .= ...: its end is no longer known
+	}
 	if len(t) < 3 || !(t[0].Kind == Var || t[0].Kind == Ident && !a.kw[t[0].Text]) || !t[1].op("=") {
 		return
 	}
@@ -955,6 +959,11 @@ func (a *analysis) recordLit(st state, t []Token) {
 	rhs := t[2:]
 	if n := len(rhs); n > 0 && rhs[n-1].op(";") {
 		rhs = rhs[:n-1]
+	}
+	if len(rhs) > 0 && len(rhs) <= 256 && a.fixedExtEnd(st, rhs) {
+		st[extKey+name] = entry{san: true} // $basename = $base . '-image' . $ext: ends with a fixed extension
+	} else {
+		delete(st, extKey+name)
 	}
 	if len(rhs) == 0 || len(rhs) > 256 || len(rhs) == 1 && rhs[0].Text == name || a.rawInput(st, rhs) {
 		if _, ok := st[litKey+name]; ok {
@@ -970,6 +979,14 @@ func (a *analysis) recordLit(st state, t []Token) {
 	} else {
 		a.lits[name] = rhs
 	}
+	if a.extLits == nil {
+		a.extLits = map[string]bool{}
+	}
+	isExt := len(rhs) == 1 && rhs[0].Kind == Str && len(rhs[0].Parts) == 0 && fixedExtRe.MatchString(rhs[0].Text)
+	if prev, seen := a.extLits[name]; seen {
+		isExt = isExt && prev
+	}
+	a.extLits[name] = isExt
 	if a.arrs == nil {
 		a.arrs = map[string][]Token{}
 	}
@@ -980,6 +997,43 @@ func (a *analysis) recordLit(st state, t []Token) {
 	}
 	st[litKey+name] = entry{san: true}
 }
+
+// fixedExtRe is an extension written out at the end of a name: '.png', '-a.tar'.
+var fixedExtRe = regexp.MustCompile(`\.[A-Za-z0-9]{1,8}$`)
+
+// fixedExtEnd reports whether a name built in arg ends with a fixed
+// extension: its last operand is a string written out ending in one, or a
+// variable holding a value written in the code on every path, every value the
+// file gives it being one (extLits).
+func (a *analysis) fixedExtEnd(st state, arg []Token) bool {
+	join := "+"
+	if a.php {
+		join = "."
+	}
+	ops := splitTop(arg, isOp(join))
+	if len(ops) == 0 {
+		return false
+	}
+	last := stripParens(ops[len(ops)-1])
+	if len(last) != 1 {
+		return false
+	}
+	switch tk := last[0]; {
+	case tk.Kind == Str:
+		return len(tk.Parts) == 0 && fixedExtRe.MatchString(tk.Text)
+	case tk.Kind == Var || tk.Kind == Ident:
+		if e, ok := st[extKey+tk.Text]; ok && e.san {
+			return true // assigned a name ending with one on every path
+		}
+		e, ok := st[litKey+tk.Text]
+		return ok && e.san && a.extLits[tk.Text]
+	}
+	return false
+}
+
+// extKey marks, in a state, that a variable holds a name ending with a fixed
+// extension (fixedExtEnd) on every path that reaches here.
+const extKey = "\x00ext:"
 
 // expandLits returns region with each argument that is a variable recorded by
 // recordLit replaced by its value, so when and unless see the options it holds.

@@ -104,6 +104,11 @@ type Args struct {
 	// NotLiteral: the argument arg names must not be one (literal's opposite):
 	// a command or template made from a value the code does not write out.
 	NotLiteral bool `toml:"not_literal"`
+	// FixedExt: the argument arg names does not count when it ends with a fixed
+	// extension: a string written out ('.png') or a variable only ever given
+	// one ($ext = '.jpg' ... $ext = '.gif'), so the stored name's type is the
+	// code's choice ($basename . '-image' . $ext).
+	FixedExt bool `toml:"fixed_ext"`
 	// ReceiverFrom (Python method sinks): the call counts on a receiver the
 	// file shows made by one of these (env = jinja2.Environment(), or
 	// Environment imported from jinja2), followed as receiver is. A receiver

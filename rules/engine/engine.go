@@ -95,6 +95,7 @@ type argCond struct {
 	markup         bool    // context: only input after markup written in the same value (contextTaint)
 	literal        bool
 	notLiteral     bool   // the argument must not be what literal accepts
+	fixedExt       bool   // the argument does not count when it ends with a fixed extension (fixedExtEnd)
 	key            string // the value under this key of an object argument (keyValue)
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
 	minLen         int    // literal: the shortest string that counts
@@ -257,7 +258,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 	foldMembers(c.sinks)
 	foldMembers(c.sanitizers)
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, recvNames: a.ReceiverNames, identPh: a.IdentPlaceholder, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, fixedExt: a.FixedExt, recvNames: a.ReceiverNames, identPh: a.IdentPlaceholder, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":

@@ -24,6 +24,12 @@ func TestWordPressChecks(t *testing.T) {
 		{"is_serialized_string() guards unserialize()", "<?php\n$v = $_POST['v'];\nif (is_serialized_string($v)) {\n  $x = unserialize($v);\n}\n", "deserialization", 4, false},
 		{"is_serialized_string() kept in a variable and logged", "<?php\n$v = $_POST['v'];\n$ok = is_serialized_string($v);\nerror_log((string) $ok);\n$x = unserialize($v);\n", "deserialization", 5, true},
 		{"is_serialized() lets an object through", "<?php\n$v = $_POST['v'];\nif (is_serialized($v)) {\n  $x = unserialize($v);\n}\n", "deserialization", 4, true},
+		{"wp_upload_bits() of a name ending with a written extension", "<?php\n$n = $_FILES['f']['name'];\nwp_upload_bits($n . '.txt', null, 'x');\n", "file-upload", 3, false},
+		{"wp_upload_bits() of a name ending with $ext only ever an extension (image.php shape)", "<?php\n$ext = '.jpg';\nif ($_POST['m'] === 'image/png') {\n  $ext = '.png';\n}\n$basename = str_replace('.', '-', $_FILES['f']['name']) . '-image' . $ext;\nwp_upload_bits($basename, '', 'x');\n", "file-upload", 7, false},
+		{"wp_upload_bits() of the client's name", "<?php\n$n = $_FILES['f']['name'];\nwp_upload_bits($n, null, 'x');\n", "file-upload", 3, true},
+		{"$ext given request input on a path", "<?php\n$ext = '.jpg';\nif (isset($_POST['e'])) {\n  $ext = $_POST['e'];\n}\n$basename = 'a' . $ext;\nwp_upload_bits($basename, '', 'x');\n", "file-upload", 7, true},
+		{"a name ending with an extension, then appended to", "<?php\n$basename = $_FILES['f']['name'] . '.png';\n$basename .= $_POST['x'];\nwp_upload_bits($basename, '', 'x');\n", "file-upload", 4, true},
+		{"the extension taken from the client's name", "<?php\n$ext = pathinfo($_FILES['f']['name'], PATHINFO_EXTENSION);\nwp_upload_bits('a.' . $ext, '', 'x');\n", "file-upload", 3, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			pr := e.NewProject([]string{"a.php"}, func(string) ([]byte, error) { return []byte(c.src), nil }, ProjectOptions{})

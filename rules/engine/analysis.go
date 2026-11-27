@@ -186,6 +186,7 @@ type analysis struct {
 	cproj    *Project // the project, for those classes' parents in other files, also in the pass that follows no calls
 
 	lits    map[string][]Token // values written in the code, kept for argument conditions (context.go)
+	extLits map[string]bool    // a name every value written in the code gives is an extension ('.png'): fixedExtEnd
 	atsDefs map[string][]Token // $r = shortcode_atts(<array>, ...): the array, for extract($r) (context.go)
 	arrs    map[string][]Token // x = <value with no input> in the function being analysed, for litArray (context.go)
 	locals  map[string]bool    // names of the file's own functions and methods (context.go)
@@ -2687,6 +2688,11 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	}
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
 		return false
+	}
+	if cond != nil && cond.fixedExt && open >= 0 {
+		if arg, ok := a.condArg(splitTop(region, isComma), cond); ok && a.fixedExtEnd(st, arg) {
+			return false // $basename . '-image' . $ext, $ext only ever '.jpg' or '.png': the stored type is fixed
+		}
 	}
 	if cond != nil && cond.notLiteral && a.literalArg(st, cond, region, open) {
 		return false // os.system("make clean"): a command written out in full
