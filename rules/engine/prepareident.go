@@ -1,9 +1,6 @@
 package engine
 
-import (
-	"slices"
-	"strings"
-)
+import "strings"
 
 // identArgs is the ident_placeholder condition of a prepare()-style call
 // ($wpdb->prepare($format, ...)): the indexes in args of the values whose
@@ -24,23 +21,6 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 		return nil
 	}
 	f := a.formatText(st, splitArgs[0])
-	out := identScan(f, len(splitArgs), false)
-	if strings.Contains(f, "--\x00") {
-		// -- then a part not written out: a comment or not, both are read and
-		// what either finds is kept
-		for _, n := range identScan(f, len(splitArgs), true) {
-			if !slices.Contains(out, n) {
-				out = append(out, n)
-			}
-		}
-	}
-	return out
-}
-
-// identScan is identArgs over the format text f, for a call of nargs
-// arguments; dashUnknown takes -- before a part not written out (0) for the
-// start of a comment.
-func identScan(f string, nargs int, dashUnknown bool) []int {
 	var out []int
 	seq := 0
 	var quote byte
@@ -52,7 +32,7 @@ func identScan(f string, nargs int, dashUnknown bool) []int {
 		}
 		j, n, numbered := i+1, 0, false
 		for j < len(f) && f[j] >= '0' && f[j] <= '9' {
-			if n <= nargs { // past the values the number names none: it stops growing (no overflow)
+			if n <= len(splitArgs) { // past the values the number names none: it stops growing (no overflow)
 				n = n*10 + int(f[j]-'0')
 			}
 			j++
@@ -72,7 +52,7 @@ func identScan(f string, nargs int, dashUnknown bool) []int {
 			seq++
 			n = seq
 		}
-		if ident && f[j] == 's' && n >= 1 && n < nargs { // %0$s names no value
+		if ident && f[j] == 's' && n >= 1 && n < len(splitArgs) { // %0$s names no value
 			out = append(out, n)
 		}
 		return j
@@ -93,9 +73,9 @@ func identScan(f string, nargs int, dashUnknown bool) []int {
 				comment = i + 2 + end + 2
 			}
 			i++
-		case quote == 0 && (c == '#' || c == '-' && i+1 < len(f) && f[i+1] == '-' && (i+2 == len(f) || f[i+2] == 0 && dashUnknown || f[i+2] != 0 && f[i+2] <= ' ' || f[i+2] == 0x7f)):
+		case quote == 0 && (c == '#' || c == '-' && i+1 < len(f) && f[i+1] == '-' && (i+2 == len(f) || f[i+2] != 0 && f[i+2] <= ' ' || f[i+2] == 0x7f)):
 			// MySQL: -- then a space or control character starts a comment; a part
-			// not written out (0) may be anything: read both ways (identArgs)
+			// not written out (0) may be anything, so it starts none
 			comment = len(f)
 			if end := strings.IndexByte(f[i:], '\n'); end >= 0 {
 				comment = i + end
