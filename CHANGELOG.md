@@ -116,6 +116,11 @@ Chinese for the zh-TW pages; keep the two in step.
   release). The host source's file details now carry the status-change time (ctime, which
   file_changes counts as before: a file whose mtime was set back still shows) and the hard links;
   these checks are made on Unix only (on Windows the details say they do not apply, never 0).
+- A file app_code_audit, app_vulns' lock-file search or the WordPress plugin search would read that
+  is not a regular file (a FIFO, a device, a cloud or HSM placeholder such as a OneDrive file not
+  on the disk) is said rather than skipped quietly: the audit's `not_checked` and app_vulns'
+  `partial` count them and name the first three; a plugin's `.php` file of that kind is named among
+  what was not read when no header was found. A link is not followed, as before, and not counted.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
