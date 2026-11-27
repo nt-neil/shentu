@@ -1,0 +1,59 @@
+id = "js-file-upload-client-name-write"
+lang = "js"
+class = "file-upload"
+cwe = "CWE-434"
+severity = "high"
+tier = "info"
+title = "Uploaded file written under the name the client sent, without checking its type"
+frameworks = ["express"]
+sources = [".originalname"]
+sinks = ["fs.createWriteStream(", "fs.writeFile(", "fs.writeFileSync(", "fs.promises.writeFile("]
+sanitizers = ["crypto.randomUUID(", "randomUUID(", "uuidv4(", "nanoid("]
+fix = "Check the extension and MIME type against an allowlist before writing, and write the file under a name the server makes (crypto.randomUUID() plus a fixed extension) outside the web root."
+refs = ["CVE-2018-3758"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+note = "the upload copied into a stream named by the client"
+code = '''
+router.post("/file/upload", upload.single("file"), (req, res) => {
+  const file = req.file;
+  const source = fs.createReadStream(file.path);
+  const dest = fs.createWriteStream(path.join("public/uploads", file.originalname.replace(/ /g, "_")));
+  source.pipe(dest);
+  res.redirect("/admin");
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/avatar", upload.single("avatar"), async (req, res) => {
+  await fs.promises.writeFile(path.join(PUBLIC, req.file.originalname), req.file.buffer);
+  res.sendStatus(201);
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the client's bytes under a name the server makes"
+code = '''
+app.post("/avatar", upload.single("avatar"), (req, res) => {
+  fs.writeFileSync(path.join("uploads", crypto.randomUUID() + ".bin"), req.file.buffer);
+  res.sendStatus(201);
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the client's name written as content, not used as the path"
+code = '''
+app.post("/avatar", upload.single("avatar"), (req, res) => {
+  const log = fs.createWriteStream("/var/log/app/uploads.log", { flags: "a" });
+  log.write(req.file.originalname + "\n");
+  res.sendStatus(201);
+});
+'''

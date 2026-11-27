@@ -6,11 +6,11 @@ severity = "medium"
 tier = "info"
 title = "Redirect to a URL taken from the request"
 frameworks = ["django", "flask"]
-sources = ["request.args", "request.form", "request.values", "request.GET", "request.POST", "request.query_params"]
-sinks = ["redirect(", "flask.redirect(", "HttpResponseRedirect(", "HttpResponsePermanentRedirect(", "RedirectResponse("]
+sources = ["request.args", "request.form", "request.values", "request.GET", "request.POST", "request.query_params", "self.get_argument(", "self.get_query_argument(", "self.get_body_argument("]
+sinks = ["redirect(", "flask.redirect(", "HttpResponseRedirect(", "HttpResponsePermanentRedirect(", "RedirectResponse(", "self.redirect("]
 sanitizers = ["url_has_allowed_host_and_scheme(", "is_safe_url(", "url_for(", "reverse(", ".startswith("]
 fix = "Check the target with url_has_allowed_host_and_scheme() (Django) before redirecting, or redirect to url_for() or a fixed page; a prefix check (startswith('/') without '//' or '/\\\\') can be bypassed with a tab or newline ('/\\t/evil.example'), so it does not make the target safe."
-refs = ["CVE-2022-0697", "CVE-2024-41955"]
+refs = ["CVE-2022-0697", "CVE-2024-41955", "CVE-2025-67502"]
 
 [[args]]
 arg = 1
@@ -75,4 +75,36 @@ def after():
     if target.startswith('/') and not target.startswith('//') and not target.startswith('/\\'):
         return redirect(target)
     return redirect('/')
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Tornado: a request argument as the target; an empty-value default is no check"
+code = '''
+class LoginHandler(tornado.web.RequestHandler):
+    def post(self):
+        next_ = self.get_argument('next', '')
+        if not next_:
+            next_ = self.reverse_url('index')
+        return self.redirect(next_)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+class LoginHandler(tornado.web.RequestHandler):
+    def post(self):
+        next_ = self.get_argument('next', '')
+        if not url_has_allowed_host_and_scheme(next_, allowed_hosts={self.request.host}):
+            next_ = self.reverse_url('index')
+        return self.redirect(next_)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+class TabHandler(tornado.web.RequestHandler):
+    def get(self):
+        tab = self.get_query_argument('tab', 'home')
+        return self.redirect(self.reverse_url('dashboard') + '?tab=' + quote(tab))
 '''
