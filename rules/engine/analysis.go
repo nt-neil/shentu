@@ -190,6 +190,7 @@ type analysis struct {
 	extLits map[string]bool    // a name every value written in the code gives is an extension ('.png'): fixedExtEnd
 	wrote   map[string]bool    // names the file writes some way recordLit does not follow (writtenOtherwise)
 	arrRef  map[string]bool    // names whose arr mark cannot be believed (arrUnsure)
+	arrDyn  *bool              // the file writes variables by a computed name or through $GLOBALS (arrDynamic)
 	atsDefs map[string][]Token // $r = shortcode_atts(<array>, ...): the array, for extract($r) (context.go)
 	arrs    map[string][]Token // x = <value with no input> in the function being analysed, for litArray (context.go)
 	locals  map[string]bool    // names of the file's own functions and methods (context.go)

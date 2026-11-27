@@ -181,18 +181,25 @@ Chinese for the zh-TW pages; keep the two in step.
   the name the client sent (multer's `file.originalname`) is reported. express-fileupload's `.name` is
   not read.
 - `php-nosqli-mongo-query` and the CodeIgniter, Doctrine, Drupal, Joomla and Yii SQL rules: a
-  method sink (`$Db->find(...)`, `->where(...)`) reached from another file is not reported in a
-  project that never names the library (in its PHP code, a string, composer.json, composer.lock or
-  a vendor/ path) and whose own classes declare a method of that name: the call is the project's
-  own (a WordPress plugin's SQL helper). Before, a method of that name counted on any object. Any
-  mention of the library, a project that declares no such method, or a file that was not read or
-  indexed to its end keeps it reported, as does a call found in the file it is written in.
+  method sink (`$Db->find(...)`, `->where(...)`) reached from another file is not reported when the
+  project's own classes declare a method of that name and nothing app_code_audit reads names the
+  library: not its PHP code, a string in it, composer.json, composer.lock, nor the name of a package
+  under vendor/ (whose files it does not read). The call is the project's own (a WordPress plugin's
+  SQL helper). Before, a method of that name counted on any object. It stays reported when anything
+  names the library, when no class of the project declares the method, and whenever app_code_audit
+  left a file out: a folder it skips (node_modules/, .git/), one more than 8 levels deep, a file over
+  1 MiB or not readable, more than 20,000 files, or a walk cut short. A call found in the file it is
+  written in is reported as before.
 - `php-deserialization-wp-maybe-unserialize`: an argument that is an array on every path is not
   reported (`maybe_unserialize(array('fields' => $_POST['f']))`, an array written by key, `explode()`),
   also when a function of the code's own passes its parameter on as is: `maybe_unserialize()`
   unserializes strings only and returns an array as is. Before, the input in the array counted. One
   value of the array, a string made from it, and a path where the input arrives as a string are
-  still reported.
+  still reported, and so is an array the code may write some way the engine does not follow: a
+  variable of the global scope or declared `global`, a file with `$$name`, `${...}` or `$GLOBALS`,
+  or one passed whole to a method, a computed callee, a PHP function that takes it by reference, or
+  a function the project does not declare (WordPress's own, but for a few that take it by value) or
+  declares with a parameter by reference.
 
 ### Known issues
 

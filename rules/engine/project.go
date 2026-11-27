@@ -102,6 +102,13 @@ type ProjectOptions struct {
 	MaxHeap   uint64        // heap in use past which calls stop crossing files (default 1 GiB)
 	MaxWork   int           // work of following calls across files, all files' calls passes together (default DefaultProjectWork): checked before each file, past it calls stop crossing files (CutProjectWork)
 	MaxTime   time.Duration // a safety net for indexing and following calls (default 15 minutes), well past what MaxWork takes on an ordinary machine (CutClock)
+	// Packages: Composer packages the caller found installed and did not
+	// pass (vendor/<vendor>/<package>, lower case), for the rules' receivers.
+	Packages []string
+	// Incomplete: the caller left out files of the rules' languages (a folder
+	// it skips, a file too big or not read, its own caps): the project then
+	// holds no "never named" for the rules' receivers (Project.ownMethodOnly).
+	Incomplete bool
 }
 
 // DefaultProjectWork is ProjectOptions.MaxWork's default. Every project of E7
@@ -114,7 +121,8 @@ const DefaultProjectWork = 1_500_000_000
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
 // 10: Limited means the work cap or the token limit, no longer the 3-second
 // clock, so a file an old cache did not mark may now be cut.
-const indexVersion = "10"
+// 11: Named (receivers) and RefFuncs (not_array).
+const indexVersion = "11"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -131,6 +139,7 @@ type fileIndex struct {
 	Guarded   []string          `json:"g,omitempty"`  // PHP: "f:name" / "c:name" (lower case) declared under if (!function_exists / !class_exists)
 	Laravel   bool              `json:"lv,omitempty"` // PHP: names Illuminate (any case, any use form: use Illuminate\{...}, \Illuminate\...)
 	Named     []string          `json:"rn,omitempty"` // PHP: the rules' receivers names the file names (recvNamed), lower case
+	RefFuncs  []string          `json:"rf,omitempty"` // PHP: top-level functions with a parameter by reference, lower case (mayTakeRef)
 	Routes    []routeRef        `json:"rt,omitempty"` // registrations naming a handler, maybe in another file (routes.go)
 	Sinks     []string          `json:"s,omitempty"`  // rules some sink of which the file may hold (sinkNames): one no file holds finds nothing across files
 }
@@ -183,7 +192,10 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
 		ctx: map[string]*fileCtx{}, sums: map[ruleFile]*summaries{}, kept: map[ruleFile]*keptSums{}, costs: map[[2]string]int{}, seen: map[string]bool{},
 		incl: map[string][]string{}, fnMemo: map[[2]string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{}, sinkRules: map[string]bool{}, named: map[string]bool{}, pkgs: map[string]bool{},
-		deadline: time.Now().Add(opt.MaxTime)}
+		deadline: time.Now().Add(opt.MaxTime), gap: opt.Incomplete}
+	for _, k := range opt.Packages {
+		p.pkgs[strings.ToLower(k)] = true
+	}
 	key := e.indexKey()
 	cache := loadIndexCache(opt.CacheFile, key)
 	fresh := map[string]*fileIndex{}
@@ -332,6 +344,12 @@ func (p *Project) IndexDigest(lang string) string {
 // or changed since it was indexed) or parse in time: its result holds for
 // this audit but is not one to keep for the next.
 func (p *Project) Unsteady() bool { return p.unsteady }
+
+// NamesComplete reports whether the project knows every name its code and
+// packages give, so a rule's receivers may find a method its own (no gap, no
+// file unread, not stopped; see ownMethodOnly). cvebench counts the cases
+// where it is false.
+func (p *Project) NamesComplete() bool { return !p.gap && p.stopped == "" && len(p.unread) == 0 }
 
 // Stopped tells why calls stopped crossing files, or "" when they did not.
 func (p *Project) Stopped() string { return p.stopped }
@@ -507,6 +525,9 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 			if x.f.class == "" {
 				if !x.f.method && !x.local {
 					fi.Funcs = append(fi.Funcs, name)
+					if lang == "php" && slices.ContainsFunc(x.f.params, func(t Token) bool { return t.op("&") }) {
+						fi.RefFuncs = append(fi.RefFuncs, strings.ToLower(name))
+					}
 					if stubBody(x.f.body) && x.f.name != "" && len(infos) == 1 {
 						fi.Empty = append(fi.Empty, name)
 					}
@@ -523,6 +544,7 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 		}
 	}
 	sort.Strings(fi.Funcs)
+	fi.RefFuncs = slices.Compact(slices.Sorted(slices.Values(fi.RefFuncs)))
 	sort.Strings(fi.Empty)
 	sort.Strings(order)
 	for _, n := range order {

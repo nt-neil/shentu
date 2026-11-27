@@ -2,6 +2,7 @@ package engine
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -107,6 +108,94 @@ func TestNotArrayAcrossFiles(t *testing.T) {
 			}
 			if got != c.want {
 				t.Errorf("%s at %s: %v, want %v; all: %v", rule, c.at, got, c.want, all)
+			}
+		})
+	}
+}
+
+// An array the analysis cannot follow every write of is not trusted
+// (N-284-1): a global another file's function writes, a $$name or ${...}, a
+// method or a function of another file that takes it by reference. Each is a
+// string by the time maybe_unserialize() reads it.
+func TestNotArrayUnseenWrites(t *testing.T) {
+	e := engineForTest(t)
+	const rule = "php-deserialization-wp-maybe-unserialize"
+	ajax := func(body string) string {
+		return "<?php\nrequire 'lib.php';\nadd_action('wp_ajax_x', function () {\n" + body + "\n});\n"
+	}
+	lib := "<?php\nfunction set_x() {\n  global $x;\n  $x = $_POST['b'];\n}\n" +
+		"function fill2(&$v) {\n  $v = $_POST['b'];\n}\n" +
+		"function keep($v) {\n  return count($v);\n}\n" +
+		"function m($p) {\n  return maybe_unserialize($p);\n}\n" +
+		"class Helper {\n  static function fill(&$v) {\n    $v = $_POST['b'];\n  }\n  function put(&$v) {\n    $v = $_POST['b'];\n  }\n}\n"
+	for _, c := range []struct {
+		name, a, at string
+		want        bool
+	}{
+		{"B1 a global another file's function writes", "<?php\nrequire 'lib.php';\n$x = [$_POST['a']];\nset_x();\nmaybe_unserialize($x);\n", "a.php:5", true},
+		{"B1 a global declared in the closure", ajax("global $x;\n$x = [$_POST['a']];\nset_x();\nmaybe_unserialize($x);"), "a.php:7", true},
+		{"B2 $GLOBALS written", "<?php\nrequire 'lib.php';\nfunction g() {\n  $GLOBALS['x'] = $_POST['b'];\n}\n$x = [$_POST['a']];\ng();\nmaybe_unserialize($x);\n", "a.php:8", true},
+		{"B3 a static method of another file", ajax("$x = [$_POST['a']];\nHelper::fill($x);\nmaybe_unserialize($x);"), "a.php:6", true},
+		{"B4 a method of another file", ajax("$x = [$_POST['a']];\n$h = new Helper();\n$h->put($x);\nmaybe_unserialize($x);"), "a.php:7", true},
+		{"B5 a function of another file", ajax("$x = [$_POST['a']];\nfill2($x);\nmaybe_unserialize($x);"), "a.php:6", true},
+		{"B6 $$k", ajax("$x = [$_POST['a']];\n$k = 'x';\n$$k = $_POST['b'];\nmaybe_unserialize($x);"), "a.php:7", true},
+		{"B7 ${'x'}", ajax("$x = [$_POST['a']];\n${'x'} = $_POST['b'];\nmaybe_unserialize($x);"), "a.php:6", true},
+		{"a function of another file by reference, the sink there too", ajax("$x = [$_POST['a']];\nfill2($x);\nm($x);"), "lib.php:13", true},
+		{"settype()", ajax("$x = [$_POST['a']];\nsettype($x, 'string');\nmaybe_unserialize($x);"), "a.php:6", true},
+		{"a computed callee", ajax("$x = [$_POST['a']];\n$f = 'fill2';\n$f($x);\nmaybe_unserialize($x);"), "a.php:7", true},
+		{"a function of another file by value, the sink there", ajax("$x = [$_POST['a']];\nkeep($x);\nm($x);"), "lib.php:13", false},
+		{"count() and is_array() read it", ajax("$x = [$_POST['a']];\nif (is_array($x) && count($x)) {\n  maybe_unserialize($x);\n}"), "a.php:7", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			files := map[string]string{"a.php": c.a, "lib.php": lib}
+			paths := []string{"a.php", "lib.php"}
+			pr := e.NewProject(paths, func(p string) ([]byte, error) { return []byte(files[p]), nil }, ProjectOptions{})
+			got := false
+			var all []string
+			for _, p := range paths {
+				for _, f := range taintOnly(auditPath(t, e, pr, p, []byte(files[p]))) {
+					at := f.Path + ":" + strconv.Itoa(f.Line)
+					all = append(all, at+" "+f.RuleID)
+					got = got || at == c.at && f.RuleID == rule
+				}
+			}
+			if got != c.want {
+				t.Errorf("%s at %s: %v, want %v; all: %v", rule, c.at, got, c.want, all)
+			}
+		})
+	}
+}
+
+// The file scanned on its own (ScanTimed, no project) cannot read another
+// file's function, so passing the array to one this file does not declare
+// keeps maybe_unserialize() reported there: the pass that follows calls may
+// be cut, or not reach the file.
+func TestNotArrayFileAlone(t *testing.T) {
+	e := engineForTest(t)
+	const rule = "php-deserialization-wp-maybe-unserialize"
+	for _, c := range []struct {
+		name, body string
+		want       bool
+	}{
+		{"a function no file here declares", "$x = [$_POST['a']];\nfill2($x);\nmaybe_unserialize($x);", true},
+		{"a PHP function that takes it by value", "$x = [$_POST['a']];\ncount($x);\nmaybe_unserialize($x);", false},
+		{"a function of this file by value", "$x = [$_POST['a']];\nkeep($x);\nmaybe_unserialize($x);\n}\nfunction keep($v) {\n  return 1;", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			src := "<?php\nadd_action('wp_ajax_x', function () {\n" + c.body + "\n});\n"
+			if strings.Contains(c.body, "function keep") {
+				src = "<?php\nadd_action('wp_ajax_x', 'run');\nfunction run() {\n" + c.body + "\n}\n"
+			}
+			own, _, err := e.ScanTimed("php", "a.php", []byte(src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := false
+			for _, f := range taintOnly(own) {
+				got = got || f.RuleID == rule
+			}
+			if got != c.want {
+				t.Errorf("%s reported: %v, want %v", rule, got, c.want)
 			}
 		})
 	}
