@@ -24,6 +24,11 @@ import (
 // so a replayed macOS fixture is judged as macOS wherever it runs.
 func onMac() bool { return hostSource().Info().GOOS == "darwin" }
 
+// onWindows is whether the host the tools read is Windows, as onMac: a
+// replayed Linux or macOS fixture is read as that OS on a Windows machine,
+// and a Windows one as Windows anywhere.
+func onWindows() bool { return hostSource().Info().GOOS == "windows" }
+
 // macListeners and macProcList read the macOS listeners and processes;
 // tests replace them.
 var (

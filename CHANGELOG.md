@@ -52,6 +52,16 @@ Chinese for the zh-TW pages; keep the two in step.
   the two compared in a way that cannot tell on Windows: a file swapped for a link in between was
   opened through the link. A deduplicated file (Windows Server Data Deduplication) is still opened;
   another kind of reparse point is said, not opened.
+- Windows: site_profile, the processes, listening ports, accounts and SSH tools, log_search and the
+  Python site-packages check go by the host read (Windows or not), as the macOS ones do, not by the
+  machine running the check. Replaying a Windows host's reads, or checking one from another machine,
+  no longer gives the Linux answer, and site-packages matches a Windows venv's `RECORD` paths (without
+  case, as Windows names files, and with an old pip's `\`): a genuine `.pth` a package's `RECORD`
+  lists is no longer reported as unknown. On a Windows host where Apache shows (an `httpd.exe` process
+  or service, `C:\Apache24\conf\httpd.conf` or `C:\xampp\apache`), site_profile's `risks` list one
+  more unchecked risk, `unchecked:notyet:apache:windows`: Apache there is not checked yet, so
+  CVE-2026-119618 (HTTP/2) is not evaluated. The daily report lists it under "Not checked by this
+  release yet", not under the missing-permission heading.
 - `app_vulns` and the daily patrol check the Python packages in Docker images against OSV as PyPI,
   with the CISA KEV mark. They are read from Docker's overlay2 image store on disk; no container is
   started and the daemon is not asked. Each tagged image's layers are stacked as overlayfs stacks
