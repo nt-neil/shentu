@@ -310,7 +310,7 @@ func TestJudge(t *testing.T) {
 	if r.Caught || r.FixedFP || r.CaughtSink || r.FixedFPSink || !r.CaughtRef || !r.FixedFPRef || !r.Rules[2].Vuln || !r.Rules[2].Reference {
 		t.Errorf("reference rule: %+v", r)
 	}
-	md := markdown([]caseResult{r}, rs, time.Unix(0, 0))
+	md := markdown([]caseResult{r}, rs, time.Unix(0, 0), "")
 	if !strings.Contains(md, "| all | 1 | 0 | 0.0% | 0 | - |") || !strings.Contains(md, "| 0 (0.0%) | 0 (-) | 1 (100.0%) | 1 (100.0%) |") ||
 		!strings.Contains(md, "| php-sqli-ref | caught (reference) |") {
 		t.Errorf("reference columns:\n%s", md)
@@ -356,7 +356,7 @@ func TestKnownGapOutOfRates(t *testing.T) {
 		{Case: Case{ID: "CVE-0000-0001", Ecosystem: "composer", Class: "sqli"}, Caught: true},
 		{Case: Case{ID: "CVE-0000-0002", Ecosystem: "composer", Class: "sqli", KnownGap: "input is not a rule source"}},
 	}
-	md := markdown(results, nil, time.Unix(0, 0))
+	md := markdown(results, nil, time.Unix(0, 0), "")
 	if !strings.Contains(md, "| all | 1 | 1 | 100.0% |") {
 		t.Errorf("the gap counted in the rates:\n%s", md)
 	}
