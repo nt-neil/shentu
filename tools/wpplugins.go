@@ -193,6 +193,8 @@ func pluginsIn(src hostenv.Source, root, dir string, cutSaid bool) ([]WPPlugin, 
 					continue
 				}
 				if !f.isRegular() {
+					// a FIFO, a device, a cloud or HSM placeholder: not read, said (S-257-3)
+					failed = append(failed, f.name+": not a regular file (a FIFO, a device, a cloud or HSM placeholder), not read")
 					continue
 				}
 				if n++; n > wpMaxFilesEach {

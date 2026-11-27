@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -68,7 +69,15 @@ var skipDirs = map[string]bool{"node_modules": true, ".git": true, "vendor": tru
 // FindLockfiles walks roots (at most 6 levels deep) through the host source
 // and returns up to 100 lock files.
 func FindLockfiles(roots []string) []Lockfile {
+	out, _ := findLockfiles(roots)
+	return out
+}
+
+// findLockfiles is FindLockfiles, and the lock files skipped as no regular
+// file (S-257-3).
+func findLockfiles(roots []string) ([]Lockfile, notRegularCount) {
 	var out []Lockfile
+	var skipped notRegularCount
 	src := hostSource()
 	for _, root := range roots {
 		base := strings.Count(filepath.Clean(root), string(filepath.Separator))
@@ -84,7 +93,13 @@ func FindLockfiles(roots []string) []Lockfile {
 				return nil
 			}
 			lp, ok := lockParsers[name]
-			if !ok || !st.Mode.IsRegular() {
+			if !ok {
+				return nil
+			}
+			if !st.Mode.IsRegular() {
+				if st.Mode&fs.ModeSymlink == 0 { // a link is not followed by design
+					skipped.add(p)
+				}
 				return nil
 			}
 			b, ok := readAt(src, p, 20<<20, st) // the file the walk's lstat saw
@@ -98,7 +113,7 @@ func FindLockfiles(roots []string) []Lockfile {
 			return nil
 		})
 	}
-	return out
+	return out, skipped
 }
 
 // readAt reads, through src, the regular file at p a walk's Lstat saw (st):
@@ -154,9 +169,12 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 }
 
 func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system bool) (map[string]any, error) {
-	files := FindLockfiles(roots)
+	files, skipped := findLockfiles(roots)
 	nLock := len(files)
 	siteDirs, partial := findSitePackages(roots, system)
+	if note := skipped.note("not checked"); note != "" { // lock files no regular file (S-257-3)
+		partial = append(partial, note)
+	}
 	walked := len(partial) == 0 // every site-packages folder found
 	var pth []PthFile
 	for _, d := range siteDirs {
