@@ -38,6 +38,9 @@ func (h *fakeHost) err(op, p string) error {
 
 func (h *fakeHost) ReadFile(p string) ([]byte, error) {
 	if s, ok := h.files[p]; ok && !h.denied[p] {
+		if p == "/etc/sudoers" || strings.HasPrefix(p, "/etc/sudoers.d/") {
+			return []byte(MaskSudoers(s)), nil // as a fixture's sudoers files are (Masker)
+		}
 		return []byte(MaskSecrets(s)), nil
 	}
 	return nil, h.err("open", p)
