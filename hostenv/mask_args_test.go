@@ -34,11 +34,18 @@ func TestMaskCommandArgs(t *testing.T) {
 		// a , ; or \ in a value is masked with it; a quoted value is masked to
 		// its closing quote whatever follows; a JSON string that ends right
 		// after -p keeps its line's shape (no secret there)
-		"mysql -pab,cd;ef" + s + " shop":              "mysql -p[REDACTED] shop",
+		"mysql -pab,cd\\,ef" + s + " shop":            "mysql -p[REDACTED] shop",
 		"mysql -p\"" + s + " x\"; echo done":          "mysql -p[REDACTED]; echo done",
 		`{"msg":"mysql -p","ip":"192.0.2.9"}`:         `{"msg":"mysql -p","ip":"192.0.2.9"}`,
 		`{"msg":"tool --password ","ip":"192.0.2.9"}`: `{"msg":"tool --password ","ip":"192.0.2.9"}`,
 		"tool --password a\\,b" + s + " next":         "tool --password [REDACTED] next",
+		// a quoted value starting with JSON punctuation is still a value; a
+		// quoted segment after other characters is the same word
+		"tool --password \",ab" + s + "\" next":                       "tool --password [REDACTED] next",
+		"mysql -p\",ab" + s + "\" shop":                               "mysql -p[REDACTED] shop",
+		"mysql -pab\"" + s + " " + s + "\" shop":                      "mysql -p[REDACTED] shop",
+		dl + " -u bob:ab'" + s + " " + s + "' https://x.example.test": dl + " -u bob:[REDACTED] https://x.example.test",
+		`{"cmd":"mysql -pab` + s + `","pid":7}`:                       `{"cmd":"mysql -p[REDACTED]","pid":7}`,
 		// not secrets
 		"git push origin -u main:main":            "git push origin -u main:main",
 		"mysql -h db.example.test -P 3306 -u app": "mysql -h db.example.test -P 3306 -u app",
