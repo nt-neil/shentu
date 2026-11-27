@@ -271,6 +271,22 @@ func TestSudoRuleHostSpecs(t *testing.T) {
 			t.Errorf("%q: ok %v all %v, want %+v (%+v)", line, ok, r.All, want, r)
 		}
 	}
+	// A digest's colon is not a separator; and were one taken for it, the
+	// line read whole as well keeps ALL in (fail closed).
+	d := "sha256:" + strings.Repeat("A", 43) + "="
+	r, ok := sudoRule(sudoRaw{file: "/etc/sudoers", line: "bob ALL = NOPASSWD: " + d + " /bin/true, ALL"}, nil)
+	if !ok || !r.All {
+		t.Errorf("a digest before /bin/true, ALL: %+v", r)
+	}
+	r, ok = sudoRule(sudoRaw{file: "/etc/sudoers", line: "bob ALL = NOPASSWD: " + d + " /bin/true"}, nil)
+	if !ok || r.All || !slices.Equal(r.Cmds, []string{d + " /bin/true"}) {
+		t.Errorf("a digest before /bin/true: %+v", r)
+	}
+	// An argument with a ':' and an '=' looks like another host part: the
+	// whole-line reading keeps the ALL after it.
+	if r, ok := sudoRule(sudoRaw{file: "/etc/sudoers", line: "bob ALL = NOPASSWD: /usr/bin/printf a:b=c, ALL"}, nil); !ok || !r.All {
+		t.Errorf("an argument like a host part: %+v", r)
+	}
 	h := newFake(true)
 	h.files["/etc/sudoers"] = "bob h1 = /bin/ls : h2 = NOPASSWD: ALL\n"
 	if s := SudoNopasswd(h); len(s.Rules) != 1 || !s.Rules[0].All {
