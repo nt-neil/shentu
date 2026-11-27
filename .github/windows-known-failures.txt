@@ -1,0 +1,38 @@
+# Tools tests known to fail on Windows (first run 2026-11-27, run 45916176878), skipped by
+# windows.yml until fixed: one exact test name per line, then its class.
+#   G = product decides by runtime.GOOS, not the host source: right live, wrong when the host
+#       read is another OS (a replay of a Linux/macOS fixture on Windows) - fixed before I-8
+#   P = product wrong on a live Windows host - fixed before I-8
+#   T = the test builds a Unix-only scenario; Shentu on Windows is right - fixed after I-8
+# A name leaves this list in the PR that fixes it.
+TestMacAccountsAudit                G  system.go:333 runtime.GOOS before onMac()
+TestMacListeningPorts               G  system.go:52
+TestMacProcesses                    G  system.go:147
+TestMacProcessesWebShell            G  system.go:147
+TestMacSurveyAccountsUnreadable     G  survey.go:96
+TestMacSurveyPortsUnreadable        G  survey.go:96
+TestSSHSummaryMacLogFails           G  ssh.go:77
+TestSSHSummaryMacNotAdmin           G  ssh.go:77
+TestSSHSummaryMacUnifiedLog         G  ssh.go:77
+TestSSHSummaryMacUnreadEvents       G  ssh.go:77
+TestSiteProfileEmptyHost            G  survey.go:96
+TestSitePackagesPth                 P  sitepkgs.go recordHas: POSIX-only hostenv.Glob on a Windows path (a real .pth listed as unexplained)
+TestPHPReview1Comments              T  newPHPHost: a remapped Live reports the runner's GOOS
+TestPHPReview1ConfLimit             T  newPHPHost
+TestPHPReview1HostingLayouts        T  newPHPHost
+TestPHPReview1Includes              T  newPHPHost
+TestPHPReview1NoVersion             T  newPHPHost
+TestPHPReview1OneBranchTwice        T  newPHPHost
+TestPHPReview1PoolsByBranch         T  newPHPHost
+TestPHPReview1Scope                 T  newPHPHost
+TestPHPReview1SeveralVersions       T  newPHPHost
+TestPHPRisksCGI                     T  newPHPHost
+TestPHPRisksFPM                     T  newPHPHost
+TestPHPRisksNotCoveredNote          T  newPHPHost
+TestPHPRisksOrigins                 T  newPHPHost
+TestPHPRisksStatusPage              T  newPHPHost (statusHost)
+TestPHPReview200ConfReadCaps        T  writes a file named C:\Apache24\conf\httpd.conf
+TestApacheH2Risk                    T  POSIX Glob over Windows temp paths, uid, symlinks, Chmod(0)
+TestLoginIndexAnswers               T  mode 0600 (Windows reports 0666); journald-only index
+TestSitePackagesSystem              T  Windows temp globs as Debian's /usr/lib layout
+TestSitePackagesShadowFoldersAbove  T  same

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"runtime"
 )
 
 // windowsSupported are the tools that work on Windows. Default deny: a
@@ -43,8 +42,10 @@ func SupportedOn(name, goos string) bool {
 	return false
 }
 
-// unsupportedHere is true on Windows; tests flip it.
-var unsupportedHere = runtime.GOOS == "windows"
+// unsupportedHere is whether the platform the tools run on (HostGOOS, which
+// block_ip goes by too) is Windows: tests that run the tools as on Linux set
+// HostGOOS, and these guards follow it.
+func unsupportedHere() bool { return HostGOOS == "windows" }
 
 // errUnsupported is what such a tool returns on Windows.
 func errUnsupported(name string) error {
@@ -54,7 +55,7 @@ func errUnsupported(name string) error {
 // guardWindows replaces the Run (and Preview) of every tool not in
 // windowsSupported with an error on Windows.
 func guardWindows(ts []Tool) []Tool {
-	if !unsupportedHere {
+	if !unsupportedHere() {
 		return ts
 	}
 	for i := range ts {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -64,6 +65,9 @@ func TestBotBudgetOutWords(t *testing.T) {
 
 // R1 N: a reservations file that cannot be trusted is named, with the fix.
 func TestBotBudgetUnsureWords(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a 0644 file is untrusted by its mode on Unix; on Windows the state dir's ACL decides (trusted), so this case does not arise")
+	}
 	b, tg := testBot(t, &hostileModel{replies: []string{done}}, false)
 	pairDirectly(t, b)
 	b.cfg.Budget.MonthlyTokens = 1_000_000
