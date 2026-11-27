@@ -8,7 +8,7 @@ frameworks = ["laravel"]
 sources = ["$_GET", "$_POST", "$_COOKIE", "$_REQUEST", "$_SERVER['HTTP_", "php://input", "$request->cookie(", "$request->input(",
            "$request->query(", "$request->get(", "request()->cookie(", "request()->input(", "Cookie::get(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["unserialize("]
-sanitizers = []
+sanitizers = ["is_serialized_string("]   # a check: a serialized string unserializes to a string, never an object
 text = ["php://input"]
 fix = "Store and exchange plain data with json_encode/json_decode; if unserialize is unavoidable pass ['allowed_classes' => false] and verify an HMAC first."
 refs = ["CVE-2018-15133", "CVE-2026-10721"]

@@ -186,6 +186,8 @@ type analysis struct {
 	cproj    *Project // the project, for those classes' parents in other files, also in the pass that follows no calls
 
 	lits    map[string][]Token // values written in the code, kept for argument conditions (context.go)
+	extLits map[string]bool    // a name every value written in the code gives is an extension ('.png'): fixedExtEnd
+	wrote   map[string]bool    // names the file writes some way recordLit does not follow (writtenOtherwise)
 	atsDefs map[string][]Token // $r = shortcode_atts(<array>, ...): the array, for extract($r) (context.go)
 	arrs    map[string][]Token // x = <value with no input> in the function being analysed, for litArray (context.go)
 	locals  map[string]bool    // names of the file's own functions and methods (context.go)
@@ -1827,7 +1829,8 @@ func (a *analysis) argsTaint(st state, inner []Token, fn string) bool {
 var passFuncs = map[string]map[string]bool{
 	"php": words("trim ltrim rtrim base64_decode urldecode rawurldecode stripslashes stripcslashes strtolower strtoupper " +
 		"ucfirst ucwords lcfirst str_replace str_ireplace substr strrev str_pad hex2bin html_entity_decode " +
-		"htmlspecialchars_decode wp_unslash gzinflate gzuncompress gzdecode str_rot13 convert_uudecode strval"),
+		"htmlspecialchars_decode wp_unslash gzinflate gzuncompress gzdecode str_rot13 convert_uudecode strval " +
+		"array"), // array(...): the values themselves, as [...] holds them
 	"python": words("unquote unquote_plus b64decode urlsafe_b64decode decode str bytes"),
 	"js":     words("decodeURIComponent decodeURI unescape atob String trim from"),
 }
@@ -2039,7 +2042,7 @@ var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is
 	"wp_http_validate_url": true, "url_has_allowed_host_and_scheme": true, "is_safe_url": true,
 	"allowed_file": true, "is_string": true, "isinstance": true, "wp_check_jsonp_callback": true,
 	"isBasePath": true, "isAbsolute": true, // Symfony Path::isBasePath($base, $path), Path::isAbsolute($path)
-	"isInternal": true} // Joomla Uri::isInternal($url): the URL stays on this site
+	"isInternal": true, "is_serialized_string": true} // Joomla Uri::isInternal($url): the URL stays on this site; WordPress: a serialized string unserializes to a string
 
 // zeroIsMatch reports a call of a zeroMeansMatch function that returns an int
 // (strncmp, strcmp and their kin), not a position or false (strpos, which
@@ -2293,6 +2296,10 @@ func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 // from "found further on" (a truthy position).
 var posOrFalse = map[string]bool{"strpos": true, "stripos": true}
 
+// registryChecks are WordPress checks that a name is one the code registered
+// (register_taxonomy, register_post_type): a fixed list, as in_array's.
+var registryChecks = map[string]bool{"taxonomy_exists": true, "post_type_exists": true}
+
 // zeroIsValid are checks that return 0 for a valid value and an error code otherwise.
 var zeroIsValid = map[string]bool{"validate_file": true}
 
@@ -2369,6 +2376,22 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		args := splitTop(atom[2:n-1], isComma)
 		if len(args) >= 2 && a.allowlist(st, args[1]) && !(atom[0].word("in_array") && looseNumbers(args)) && !lossyLookup(args[0]) {
 			return a.keysOf(args[0])
+		}
+		return nil
+	}
+	// WordPress taxonomy_exists($x) and post_type_exists($x): $x is the name of
+	// a taxonomy or post type the code registered, a fixed list as in_array's.
+	if a.php && n > 2 && atom[0].Kind == Ident && registryChecks[strings.ToLower(atom[0].Text)] && atom[1].op("(") && closeOf(atom, 1) == n-1 {
+		// only the value itself, no call around it: taxonomy_exists(sanitize_key($t))
+		// says nothing of $t
+		if args := splitTop(atom[2:n-1], isComma); len(args) >= 1 {
+			arg := stripParens(args[0])
+			if slices.ContainsFunc(arg, func(t Token) bool { return t.op("(") }) {
+				return nil
+			}
+			if key, _, ok := a.pathKey(arg); ok {
+				return []keyRef{{key: key}}
+			}
 		}
 		return nil
 	}
@@ -2674,6 +2697,11 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	}
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
 		return false
+	}
+	if cond != nil && cond.fixedExt && open >= 0 {
+		if arg, ok := a.condArg(splitTop(region, isComma), cond); ok && a.fixedExtEnd(st, arg) {
+			return false // $basename . '-image' . $ext, $ext only ever '.jpg' or '.png': the stored type is fixed
+		}
 	}
 	if cond != nil && cond.notLiteral && a.literalArg(st, cond, region, open) {
 		return false // os.system("make clean"): a command written out in full

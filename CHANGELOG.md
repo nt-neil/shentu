@@ -120,7 +120,9 @@ Chinese for the zh-TW pages; keep the two in step.
   (`php-sqli-prepare-identifier`): `prepare()` quotes the value as a string, which does not protect
   an identifier. Before, `prepare()` counted as escaping every value. A `%s` between quotes, standing
   alone, after `ORDER BY` or in `LIMIT`, `%d` and `%i` are not reported.
-
+- PHP rules: input put in `array(...)` and passed to another function keeps its input, as `[...]`
+  did (`edit_status(array($_REQUEST['id']))`); before, `array(...)` read as a call the engine does
+  not know, so the input did not cross into that function's sinks.
 ### Known issues
 
 - After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:
