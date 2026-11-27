@@ -186,6 +186,12 @@ Chinese for the zh-TW pages; keep the two in step.
 - PHP rules: the editor data Elementor passes to `elementor/editor/after_save` callbacks (the second
   parameter, every element's settings, which contributors and up write) is request input. Before,
   a URL read from a widget's settings there and fetched (`getimagesize()`) was not reported.
+- cvebench scans as app_code_audit does by default (`-scanpath product`): each file on its own,
+  then the calls across files, merged. Before, it decided each flow with the calls across files
+  (`Project.Scan`, now `-scanpath project`), so a check written in another file took a finding away
+  that app_code_audit still shows. The rules are the same; the bench's fixed false positives
+  usually rise, closer to what a user sees (measured on v0.5.8's cases: nothing reported
+  fewer). The report's header names the scan path and the project caps.
 
 ### Known issues
 

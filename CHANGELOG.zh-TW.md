@@ -33,6 +33,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 新的 JavaScript 規則 `js-file-upload-client-name-write`：上傳的檔案用 `fs.createWriteStream()`、`fs.writeFile()`、`fs.writeFileSync()` 或 `fs.promises.writeFile()`，以用戶端送來的名稱（multer 的 `file.originalname`）寫入時會回報。express-fileupload 的 `.name` 不在範圍內。
 - route 模型可以指定註冊呼叫的 hook 名稱（`hooks`）：第一個參數必須是其中一個名稱、而且直接寫成一個字串，這個呼叫才算數；寫成變數、常數或串接字串的都不算。`path` 和 `hooks` 不能同時使用。
 - PHP 規則：Elementor 傳給 `elementor/editor/after_save` callback 的第二個參數（存檔時頁面上每個區塊和 widget 的設定，contributor 以上的角色就能寫入）現在當成 request 輸入。以前從這裡的 widget 設定讀出網址再去抓取（`getimagesize()`）時，不會回報。
+- cvebench 預設改用和 app_code_audit 相同的掃描方式（`-scanpath product`）：先逐檔掃描，再追蹤跨檔呼叫，兩者的結果合併。以前它直接用跨檔呼叫來判斷每條流向（`Project.Scan`，現在是 `-scanpath project`），所以檢查寫在另一個檔案時，結果會被拿掉，但 app_code_audit 仍然會顯示。規則沒有改變；bench 的修正版誤報通常會變多，數字更接近使用者實際看到的（用 v0.5.8 的案例量測，結果是少報 0）。報告最前面會寫明掃描方式和專案的上限。
 
 ### 已知問題
 
