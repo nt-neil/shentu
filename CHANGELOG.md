@@ -159,8 +159,38 @@ Chinese for the zh-TW pages; keep the two in step.
 - PHP rules: input put in `array(...)` and passed to another function keeps its input, as `[...]`
   did (`edit_status(array($_REQUEST['id']))`); before, `array(...)` read as a call the engine does
   not know, so the input did not cross into that function's sinks.
+- Python rules: Tornado request arguments (`self.get_argument()`, `self.get_query_argument()`,
+  `self.get_body_argument()`) passed to `self.redirect()` are reported; before, neither the arguments
+  nor `self.redirect()` were read by the redirect rule.
+- PHP rules: PSR-7 request input (`$request->getQueryParams()`, `->getParsedBody()`) passed to a
+  redirect response (`new RedirectResponse($url)`) is reported.
+- PHP rules: a Symfony request's body (`$request->getContent()`, `$request->toArray()`) written into
+  SQL in the same function is reported, an ORDER BY column too.
+- PHP rules: a cell read with `fgetcsv()`, as from an imported CSV file, and passed to `unserialize()`
+  without `['allowed_classes' => false]` is reported.
+- A new JavaScript rule, `js-file-upload-client-name-write`: an upload written with
+  `fs.createWriteStream()`, `fs.writeFile()`, `fs.writeFileSync()` or `fs.promises.writeFile()` under
+  the name the client sent (multer's `file.originalname`) is reported. express-fileupload's `.name` is
+  not read.
+
 ### Known issues
 
+- A redirect target checked in another file (a Tornado base class's `self.sanitize_next_url()`) is
+  still reported: app_code_audit reads each file on its own first, and that finding stays when the
+  calls across files show the check.
+- `js-file-upload-client-name-write` reads no allowlist as a check: an upload written under the
+  client's name after its extension or MIME type was checked against a list (express-cart 1.1.7) is
+  still reported.
+- Input handed to a route generator that builds a path on the site is still reported in a redirect
+  (PSR-7's `urlFor()`, Flarum's `$url->to(...)->route()`, Tornado's `reverse_url()`).
+- `fgetcsv()`: a row assigned in a `while` condition (`while (($row = fgetcsv($h)) !== false)`) is not
+  followed into the loop, so that usual way of reading a CSV file is missed. A CSV file the
+  application ships itself is reported as well.
+- A value escaped with a database library's `->escape()` and written inside quotes is still reported
+  (`php-sqli-string-concat`): the rule does not read `->escape(` as a check, as some libraries'
+  escape adds no quotes and a numeric position is left open. A Symfony body now reaches it too.
+- A Symfony body decoded with `json_decode()` and passed to another function loses its input there,
+  so a field decoded in a controller and written into SQL in another class is missed.
 - After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:
   `extract()` of request data sets strings and arrays. `extract((array) json_decode($in))` and
   `extract(get_object_vars(json_decode($in)))` can set objects whose properties are input, and these
