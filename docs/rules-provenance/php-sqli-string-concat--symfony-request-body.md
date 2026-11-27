@@ -21,7 +21,9 @@
   function loses its taint in the engine (see the probes).
 
 ## Design
-- Sources: `$request->getContent(`, `$request->toArray(`.
+- Sources: `$request->getContent(`, `$request->toArray(`, here and in
+  `php-sqli-orderby-identifier`, which this rule hands an ORDER BY column to:
+  the two rules read the same sources (`TestUnlessAfterOwnerReads`).
 - `$request->` and not any receiver: Symfony HttpClient responses have
   `getContent()` too, and that is a remote server's data.
 - Not chosen:
@@ -29,6 +31,10 @@
     entities but protects no numeric position; left as it is.
   - an engine change so a `json_decode()` result keeps its taint across a call:
     out of scope for a rule change; scheduled separately in the engine lane.
+- Known limits:
+  - `$this->db->quote($d['w'])` is still reported: `quote(` is no sanitizer here;
+  - `->query(` also takes search clients' `->query([...])` (Elasticsearch,
+    Algolia). Both were there before; the body now reaches them too.
 - Expected effect on this case: +0, because of the engine gap. The source works
   for flows inside one function.
 - The fix's `->escape(` is not one of this rule's sanitizers on purpose (an
@@ -57,10 +63,15 @@ vulnerable and one safe Symfony sample.
 ## Process
 - Rule lane: miss triage, design, probes (the probes found the engine gap, handed to the commander).
 - Commander: approved the batch; scheduled the engine gap; the measurement gate.
-- Reviewer: pending.
+- Reviewer: round 1 (see Review).
 
 ## Review
-Pending.
+Round 1 at 759e1c87: B1 N3 S6, not mergeable. CI red (TestUnlessAfterOwnerReads,
+TestHeldOut); the site was not regenerated and there was no CHANGELOG entry. Lines,
+diffs and the single-case numbers were checked against the releases and the run.
+No other tool or model is named, and no private path appears.
+For this rule: the ORDER BY hand-over lacked the two sources in
+`php-sqli-orderby-identifier` (fixed, with a sample).
 
 ## Measurement
 Single case, base faac5b02, rules at e99a52e5: missed → missed, as expected.

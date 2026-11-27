@@ -723,6 +723,8 @@ func TestHeldOut(t *testing.T) {
 		{"r32 REF CVE-2026-52840 CI controller Guzzle", "php", "<?php\nclass Caldav extends EA_Controller { public function connect() {\n  $url = request('caldav_url');\n  $client = new Client();\n  $r = $client->request('REPORT', $url, ['headers' => ['Depth' => 1]]);\n} }\n", true, "the bare request() helper is not a source: a pattern for it would also match ->request( of an HTTP client (engine)"},
 		{"r32 REF CVE-2026-52840 CI input->post", "php", "<?php\nclass Caldav extends CI_Controller { public function connect() {\n  $url = $this->input->post('caldav_url');\n  $client = new Client();\n  $r = $client->request('REPORT', $url);\n} }\n", true, ""},
 		{"r32 REF CVE-2025-50383 CI order_by from post", "php", "<?php\nclass Appointments extends EA_Controller { public function search() {\n  $order_by = request('order_by', 'update_datetime DESC');\n  $rows = $this->appointments_model->search($k, $limit, $offset, $order_by);\n} }\nclass Appointments_model extends EA_Model { public function search($k, $limit, $offset, $order_by) {\n  return $this->db->select()->from('appointments')->order_by($order_by)->get()->result_array();\n} }\n", true, "input passed to a model method of another class is not followed"},
+		// Cases from the review of #277.
+		{"r277 fgetcsv row assigned in a while condition", "php", "<?php\nwhile (($row = fgetcsv($h, 1000, ',')) !== false) {\n    update_post_meta($id, $row[0], unserialize($row[1]));\n}\n", true, "a variable assigned inside a while condition is not followed into the loop body"},
 	}
 	pass := 0
 	for _, c := range cases {

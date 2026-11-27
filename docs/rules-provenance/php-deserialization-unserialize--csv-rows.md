@@ -9,7 +9,8 @@
 - `SingleImportExport.php:86` moves `$_FILES['file']['tmp_name']` to `$csv_file`;
   `:89` `$headers = fgetcsv($handle, 1000, ',')`, `:90` the rows, `:91`
   `array_combine($headers, $row)`, then `:116` `@unserialize($value)`.
-- The fix stops unserializing those meta fields and decodes JSON instead:
+- The fix stops unserializing those meta fields and decodes JSON instead
+  (summarized; a comment added between the lines is left out):
   ```
   -            $maybe_array = @unserialize($value);
   +            $decoded_value = json_decode($value, true);
@@ -26,9 +27,16 @@
     the engine does not follow a handle back to its `fopen()`;
   - `fgets(`, `file(`, `file_get_contents(`: they would take every local file
     read, configuration included.
-- Known limits and false-positive risk (medium): a local CSV file unserialized
-  is reported as well. Unserializing CSV cells is risky in itself, so this is
-  accepted; E7 shows how many such findings it adds.
+- Known limits:
+  - a row assigned in a `while` condition
+    (`while (($row = fgetcsv($h)) !== false)`) is not followed into the loop: an
+    engine gap, held out as a known gap (`r277 fgetcsv row assigned in a while
+    condition`). It is the usual way of reading a CSV file, so the source misses
+    most of them for now. The case is caught through `$headers = fgetcsv(...)`
+    above the loop, joined to the row by `array_combine()`;
+  - false-positive risk (medium): a CSV file the application ships, unserialized,
+    is reported as well, as critical. Unserializing CSV cells is risky in itself,
+    so this is accepted; E7 shows how many such findings it adds.
 
 ## Probes
 | fixture | base faac5b02 | new build | expected |
@@ -37,17 +45,23 @@
 | `is_serialized_string()` check before `unserialize` | - | - | not reported |
 | `json_decode` instead | - | - | not reported |
 | a local CSV, `$row = fgetcsv($h)`, `unserialize($row[1])` | - | reported | known false positive |
-| a local CSV read in a `while` condition, `$opts[$row[0]] = unserialize($row[1])` | - | - | not reported (cause not traced) |
+| a local CSV read in a `while` condition, `$opts[$row[0]] = unserialize($row[1])` | - | - | not reported: the `while` gap |
 
-The rule gained one vulnerable and one safe sample (`allowed_classes => false`).
+The rule gained one vulnerable and one safe sample, both with the row read
+above any loop, so the safe one tests `allowed_classes => false` and nothing else.
 
 ## Process
 - Rule lane: miss triage, design, probes.
 - Commander: approved the batch; the measurement gate.
-- Reviewer: pending.
+- Reviewer: round 1 (see Review).
 
 ## Review
-Pending.
+Round 1 at 759e1c87: B1 N3 S6, not mergeable. CI red (TestUnlessAfterOwnerReads,
+TestHeldOut); the site was not regenerated and there was no CHANGELOG entry. Lines,
+diffs and the single-case numbers were checked against the releases and the run.
+No other tool or model is named, and no private path appears.
+For this rule: the first samples read the row in a `while` condition, so the
+safe one was clean for that reason and did not test `allowed_classes`.
 
 ## Measurement
 Single case, base faac5b02, rules at e99a52e5: missed → caught; the fixed

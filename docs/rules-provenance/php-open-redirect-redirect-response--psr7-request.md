@@ -27,7 +27,11 @@
 - Not chosen:
   - `->getCookieParams(`, `->getUploadedFiles(`: no case needed them yet.
   - `->getAttribute(`: set by routing or middleware, not always client input.
-- Known limits: none found beyond those.
+- Known limits:
+  - the query parameters handed to a route generator
+    (`$this->router->urlFor('list', [], $request->getQueryParams())`) are reported,
+    though it builds a path on the site;
+  - a host checked with `parse_url(..., PHP_URL_HOST)` is not read as a check.
 
 ## Probes
 | fixture | base faac5b02 | new build | expected |
@@ -43,10 +47,13 @@ The rule's samples gained one vulnerable and one safe PSR-7 sample.
 ## Process
 - Rule lane: miss triage, design, probes.
 - Commander: approved the batch; the measurement gate.
-- Reviewer: pending.
+- Reviewer: round 1 (see Review).
 
 ## Review
-Pending.
+Round 1 at 759e1c87: B1 N3 S6, not mergeable. CI red (TestUnlessAfterOwnerReads,
+TestHeldOut); the site was not regenerated and there was no CHANGELOG entry. Lines,
+diffs and the single-case numbers were checked against the releases and the run.
+No other tool or model is named, and no private path appears.
 
 ## Measurement
 Single case, base faac5b02, rules at e99a52e5: missed → caught; the fixed

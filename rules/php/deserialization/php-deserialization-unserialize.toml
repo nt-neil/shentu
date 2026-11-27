@@ -58,21 +58,18 @@ note = "a cell of an imported CSV file unserialized"
 code = '''
 <?php
 if (move_uploaded_file($_FILES['file']['tmp_name'], $csv_file) && ($handle = fopen($csv_file, 'r')) !== false) {
-    $headers = fgetcsv($handle, 1000, ',');
-    while (($row = fgetcsv($handle, 1000, ',')) !== false) {
-        $data = array_combine($headers, $row);
-        foreach ($data as $key => $value) {
-            update_post_meta($post_id, $key, @unserialize($value));
-        }
-    }
+    $row = fgetcsv($handle, 1000, ',');
+    update_post_meta($post_id, $row[0], @unserialize($row[1]));
 }
 '''
 
 [[samples]]
 kind = "safe"
+note = "the same cell, unserialized without objects"
 code = '''
 <?php
-while (($row = fgetcsv($handle, 1000, ',')) !== false) {
-    update_post_meta($post_id, $row[0], unserialize($row[1], ['allowed_classes' => false]));
+if (move_uploaded_file($_FILES['file']['tmp_name'], $csv_file) && ($handle = fopen($csv_file, 'r')) !== false) {
+    $row = fgetcsv($handle, 1000, ',');
+    update_post_meta($post_id, $row[0], @unserialize($row[1], ['allowed_classes' => false]));
 }
 '''

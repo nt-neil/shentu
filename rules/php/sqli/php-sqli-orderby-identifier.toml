@@ -15,7 +15,8 @@ sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_
            "->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(",
            "->getRequest()->get(", "->getRequest()->post(", "->getRequest()->getParam(", "$request->post(", "$request->getQueryParam(", "$request->getBodyParam(",
            "$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
-           "$this->request->getVar(", "$this->request->getJSON(", "$request->query(", "$request->all(", "$request->string(", "request()->input(", "Request::input(", "Request::query(", "Request::get(", "filter_input(", "->filterInput(", "->filter_input("]
+           "$this->request->getVar(", "$this->request->getJSON(", "$request->query(", "$request->all(", "$request->string(", "request()->input(", "Request::input(", "Request::query(", "Request::get(", "filter_input(", "->filterInput(", "->filter_input(",
+           "$request->getContent(", "$request->toArray("]
 sinks = ["->orderByRaw(", "::orderByRaw(", "DB::raw", "->orderBy(", "::orderBy(", "ORDER BY"]
 # DB::raw(...) inside one of laravel-raw's calls (DB::select(DB::raw("... WHERE
 # id = $id"))) is laravel-raw's: both read the same call (yields.go).
@@ -209,3 +210,15 @@ class PostController extends Controller
 sources = ["filter_input(", "->filterInput(", "->filter_input("]
 arg = 1
 values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]
+
+[[samples]]
+kind = "vulnerable"
+note = "Symfony: the sort column from the JSON body, handed over by php-sqli-string-concat"
+code = '''
+<?php
+public function list(Request $request): JsonResponse {
+    $p = $request->toArray();
+    $rows = $this->db->query("SELECT id, word FROM faq_stopwords ORDER BY " . $p['sort']);
+    return $this->json($rows);
+}
+'''

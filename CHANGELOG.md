@@ -148,8 +148,24 @@ Chinese for the zh-TW pages; keep the two in step.
 - PHP rules: input put in `array(...)` and passed to another function keeps its input, as `[...]`
   did (`edit_status(array($_REQUEST['id']))`); before, `array(...)` read as a call the engine does
   not know, so the input did not cross into that function's sinks.
+- PHP rules: PSR-7 request input (`$request->getQueryParams()`, `->getParsedBody()`) passed to a
+  redirect response (`new RedirectResponse($url)`) is reported.
+- PHP rules: a Symfony request's body (`$request->getContent()`, `$request->toArray()`) written into
+  SQL in the same function is reported, an ORDER BY column too.
+- PHP rules: a cell read with `fgetcsv()`, as from an imported CSV file, and passed to `unserialize()`
+  without `['allowed_classes' => false]` is reported.
+- A new JavaScript rule, `js-file-upload-client-name-write`: an upload written with
+  `fs.createWriteStream()`, `fs.writeFile()`, `fs.writeFileSync()` or `fs.promises.writeFile()` under
+  the name the client sent (multer's `file.originalname`) is reported. express-fileupload's `.name` is
+  not read.
+
 ### Known issues
 
+- `fgetcsv()`: a row assigned in a `while` condition (`while (($row = fgetcsv($h)) !== false)`) is not
+  followed into the loop, so that usual way of reading a CSV file is missed. A CSV file the
+  application ships itself is reported as well.
+- A Symfony body decoded with `json_decode()` and passed to another function loses its input there,
+  so a field decoded in a controller and written into SQL in another class is missed.
 - After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:
   `extract()` of request data sets strings and arrays. `extract((array) json_decode($in))` and
   `extract(get_object_vars(json_decode($in)))` can set objects whose properties are input, and these

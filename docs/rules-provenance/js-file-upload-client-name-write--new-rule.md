@@ -36,7 +36,13 @@
   - a source list per sink: the rule format has none;
   - `unless` on `req.file.path`: it drops a call only when that is a whole
     argument, so `req.file.path + '.copy'` would still count.
-- Known limits: express-fileupload's `req.files.<field>.name` is not a source here.
+- Known limits:
+  - express-fileupload's `req.files.<field>.name` is not a source here;
+  - a write after an extension or MIME allowlist check
+    (`allowedMimeType.includes(mime.lookup(name))`) is still reported: the rule
+    reads no allowlist as a check. This is the fixed release's false positive;
+  - `path.basename()` and `uuidv4() + path.extname(name)` are reported: the
+    extension is still the client's.
 
 ## Probes
 | fixture | base faac5b02 | new build | expected |
@@ -53,10 +59,13 @@ The rule has two vulnerable and two safe samples.
 ## Process
 - Rule lane: miss triage, design, probes (the probes moved the sinks out into a new rule).
 - Commander: approved the new rule and the `refs` citation; the measurement gate.
-- Reviewer: pending.
+- Reviewer: round 1 (see Review).
 
 ## Review
-Pending.
+Round 1 at 759e1c87: B1 N3 S6, not mergeable. CI red (TestUnlessAfterOwnerReads,
+TestHeldOut); the site was not regenerated and there was no CHANGELOG entry. Lines,
+diffs and the single-case numbers were checked against the releases and the run.
+No other tool or model is named, and no private path appears.
 
 ## Measurement
 Single case, base faac5b02, rules at e99a52e5: missed → caught, and the fixed
