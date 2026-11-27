@@ -152,7 +152,7 @@ func TestDailyReportChinese(t *testing.T) {
 	parts = append(parts, dispatchSection(nil, 0, errors.New("讀取錯誤"), true), autoArchiveLine(&Config{StateDir: filepath.Join(state, "missing", "x")}, now, true))
 
 	risks := []tools.Risk{{Key: "unchecked:shadow", Summary: "/etc/shadow is not readable"}}
-	parts = append(parts, uncheckedSection(risks, true), notCheckedSection([]string{"C:\\inetpub ACL"}, true), uncheckedConfigs([]string{"/etc/nginx/nginx.conf"}, true), referenceSection(3, true))
+	parts = append(parts, uncheckedSection(risks, true), notYetSection([]tools.Risk{{Key: "unchecked:notyet:apache:windows", Summary: "Apache on Windows is not checked yet"}}, true), notCheckedSection([]string{"C:\\inetpub ACL"}, true), uncheckedConfigs([]string{"/etc/nginx/nginx.conf"}, true), referenceSection(3, true))
 	var files []tools.AppResult
 	for i := range uncheckedFiles + 2 {
 		files = append(files, tools.AppResult{Path: "/srv/app" + string(rune('a'+i)) + "/package-lock.json", Error: "osv down"})
