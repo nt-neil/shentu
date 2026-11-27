@@ -75,7 +75,7 @@ func callStateFile(roots []string) string {
 	}
 	rs := make([]string, len(roots))
 	for i, r := range roots {
-		rs[i] = filepath.Clean(r)
+		rs[i] = hostPaths().Clean(r) // the host's spelling (S-280-1)
 	}
 	sort.Strings(rs)
 	sum := sha256.Sum256([]byte(strings.Join(rs, "\x00")))
@@ -356,24 +356,25 @@ func saveWalkPos(name string, p *walkPos) {
 }
 
 // walkHolds says folder dir holds path ("/" holds every absolute path).
-func walkHolds(dir, path string) bool {
-	sep := string(filepath.Separator)
+// sep is the host's separator (S-280-1).
+func walkHolds(dir, path, sep string) bool {
 	return strings.HasPrefix(path, strings.TrimSuffix(dir, sep)+sep)
 }
 
-// cleanRoots is roots with filepath.Clean applied, in a new slice.
+// cleanRoots is roots cleaned as the host spells them, in a new slice.
 func cleanRoots(roots []string) []string {
+	clean := hostPaths().Clean // a Linux host read on Windows keeps "/" (S-280-1)
 	out := make([]string, len(roots))
 	for i, r := range roots {
-		out[i] = filepath.Clean(r)
+		out[i] = clean(r)
 	}
 	return out
 }
 
 // pathCmp orders paths the way filepath.WalkDir visits them: name by name,
-// a folder before what it holds (split at the OS separator, \ on Windows).
-func pathCmp(a, b string) int {
-	sep := string(filepath.Separator)
+// a folder before what it holds (split at the host's separator: \ for a
+// Windows host).
+func pathCmp(a, b, sep string) int {
 	as, bs := strings.Split(a, sep), strings.Split(b, sep)
 	for i := 0; i < len(as) && i < len(bs); i++ {
 		if c := strings.Compare(as[i], bs[i]); c != 0 {

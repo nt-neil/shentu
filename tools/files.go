@@ -210,6 +210,16 @@ func insideAny(p string, roots []string) bool {
 // own separator and, on Windows, compares without case, so C:\inetpub and
 // c:\INETPUB\wwwroot agree and "/var/www-old" is not inside "/var/www".
 func inside(p, root string) bool {
+	if hp := hostPaths(); hp.Sep == "/" {
+		// A Linux or macOS host's paths, on any machine: cleaned and held
+		// by "/", as the walk and the path argument's Clean read them
+		// (S-280-1), never by the machine's own rules.
+		r, c := hp.Clean(root), hp.Clean(p)
+		if hp.Dir(r) == r {
+			return c == r // "/" contains only itself
+		}
+		return c == r || strings.HasPrefix(c, r+"/")
+	}
 	// A filesystem root (/, C:\) contains only itself, as in v0.2.5: a
 	// path list of "/" must not open the whole machine.
 	if r := filepath.Clean(root); filepath.Dir(r) == r {
