@@ -132,3 +132,33 @@ func TestAuditResumePathsLinuxHost(t *testing.T) {
 		t.Error("walkHolds with a Linux host's paths")
 	}
 }
+
+// A Linux host read's path argument is checked by the same rules it is
+// cleaned and walked by, on any machine: ".." out of an allowed folder is
+// refused, a "\" is a name's character (inside), "/var/www-old" is not in
+// "/var/www", "/" holds only itself.
+func TestInsideLinuxHostPaths(t *testing.T) {
+	withHost(t, treeHost{files: map[string]string{"/srv/app/a.php": ""}})
+	for p, want := range map[string]bool{
+		"/srv/app":                  true,
+		"/srv/app/a.php":            true,
+		"/srv/app/../../etc/passwd": false,
+		"/srv/app/x/../../etc":      false,
+		`/srv/app/x\..\..\etc`:      true, // one name under /srv/app on a Linux host
+		"/srv/app-old/x":            false,
+		"/etc/passwd":               false,
+	} {
+		if got := insideAny(hostPaths().Clean(p), []string{"/srv/app/"}); got != want {
+			t.Errorf("insideAny(%q) = %v, want %v", p, got, want)
+		}
+	}
+	if !inside("/", "/") || inside("/etc", "/") {
+		t.Error("/ holds only itself")
+	}
+	env := &Env{AppPaths: []string{"/srv/app"}}
+	for _, tool := range []Tool{appVulns, appCodeAudit} {
+		if _, err := tool.Run(context.Background(), env, []byte(`{"path":"/srv/app/../../etc"}`)); err == nil {
+			t.Errorf("%s: a path out of the allowed folders accepted", tool.Name)
+		}
+	}
+}
