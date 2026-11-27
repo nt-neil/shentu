@@ -28,16 +28,20 @@ var maskRules = []struct {
 	// mysql's -p<secret>, --password/--passwd then the next argument, and
 	// curl's or wget's -u/-U/--user/--proxy-user user:<secret> (attached,
 	// with =, or an empty user). A ; | & later on the line does not end the
-	// command (it may be quoted). A bare value stops where the key=value
-	// rule's does (a quote, \ , ;), so masked JSON or a log line keeps its
-	// shape for the parsers after; a quoted value is masked whole only when
-	// it ends at a space or the line's end, and curl's to its closing quote.
-	{regexp.MustCompile(`(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin)\b[^\n]*?\s-p)(?:"[^"\n]*"|'[^'\n]*')(\s|$)`), "${1}[REDACTED]${2}"},
-	{regexp.MustCompile(`(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin)\b[^\n]*?\s-p)[^\s"'\\,;]+`), "${1}[REDACTED]"},
-	{regexp.MustCompile(`(--pass(?:word|wd)\s+)(?:"[^"\n]*"|'[^'\n]*')(\s|$)`), "${1}[REDACTED]${2}"},
-	{regexp.MustCompile(`(--pass(?:word|wd)\s+)[^-\s"'\\,;][^\s"'\\,;]*`), "${1}[REDACTED]"},
+	// command (it may be quoted). A bare value runs to a space or a quote
+	// not escaped (\x taken whole), so a , or ; in it is masked too and a
+	// JSON log line's closing quote is kept; a quoted value is masked to its
+	// closing quote, unless what it holds starts with , : } or ] (the "
+	// was a JSON string's end, not an opening quote: the line keeps its
+	// shape for the parsers after). The bare rule runs first: a
+	// bare value never starts with a quote, and after it [REDACTED] is not
+	// taken again for a value eating what follows.
+	{regexp.MustCompile(`(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin)\b[^\n]*?\s-p)(?:\\.|[^\s"'\\])+`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin)\b[^\n]*?\s-p)(?:"(?:[^",:}\]\n][^"\n]*)?"|'[^'\n]*')`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(--pass(?:word|wd)\s+)(?:\\.|[^-\s"'\\])(?:\\.|[^\s"'\\])*`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(--pass(?:word|wd)\s+)(?:"(?:[^",:}\]\n][^"\n]*)?"|'[^'\n]*')`), "${1}[REDACTED]"},
 	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])(?:"[^\s:"]*:|'[^\s:']*:))[^"'\n]*`), "${1}[REDACTED]"},
-	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])[^\s:"'\\,;]*:)[^\s"'\\,;]+`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])[^\s:"'\\]*:)(?:\\.|[^\s"'\\])+`), "${1}[REDACTED]"},
 }
 
 // mask removes secrets. sudoers' NOPASSWD: and PASSWD: tags in sudoers

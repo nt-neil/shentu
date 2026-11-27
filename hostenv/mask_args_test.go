@@ -31,6 +31,14 @@ func TestMaskCommandArgs(t *testing.T) {
 		`{"cmd":"` + dl + ` -u bob:` + s + `","pid":7}`:             `{"cmd":"` + dl + ` -u bob:[REDACTED]","pid":7}`,
 		dl + " -u 'bob:" + s + " " + s + "' https://x.example.test": dl + " -u 'bob:[REDACTED]' https://x.example.test",
 		dl + ` --user "bob:` + s + `" https://x.example.test`:       dl + ` --user "bob:[REDACTED]" https://x.example.test`,
+		// a , ; or \ in a value is masked with it; a quoted value is masked to
+		// its closing quote whatever follows; a JSON string that ends right
+		// after -p keeps its line's shape (no secret there)
+		"mysql -pab,cd;ef" + s + " shop":              "mysql -p[REDACTED] shop",
+		"mysql -p\"" + s + " x\"; echo done":          "mysql -p[REDACTED]; echo done",
+		`{"msg":"mysql -p","ip":"192.0.2.9"}`:         `{"msg":"mysql -p","ip":"192.0.2.9"}`,
+		`{"msg":"tool --password ","ip":"192.0.2.9"}`: `{"msg":"tool --password ","ip":"192.0.2.9"}`,
+		"tool --password a\\,b" + s + " next":         "tool --password [REDACTED] next",
 		// not secrets
 		"git push origin -u main:main":            "git push origin -u main:main",
 		"mysql -h db.example.test -P 3306 -u app": "mysql -h db.example.test -P 3306 -u app",
