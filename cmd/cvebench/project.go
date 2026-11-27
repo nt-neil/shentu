@@ -100,10 +100,7 @@ func projectScanner(eng *engine.Engine, files []string, read func(string) ([]byt
 		c := calls.Call([]reflect.Value{reflect.ValueOf(rel), reflect.ValueOf(src), noSkip})
 		part, _ := c[0].Interface().(engine.CallsPart)
 		err, _ = c[1].Interface().(error)
-		if err == nil && part.Cut {
-			err = engine.ErrCalls // a cap cut a rule's calls short
-		}
-		s.errs = append(s.errs, err)
+		s.errs = append(s.errs, callsErr(part, err))
 		s.timed = s.timed || part.Timed
 		// merged as app_code_audit does: once per rule, path and line
 		seen := map[string]bool{}
@@ -116,4 +113,13 @@ func projectScanner(eng *engine.Engine, files []string, read func(string) ([]byt
 		}
 		return s
 	}, true
+}
+
+// callsErr is the error a calls pass counts as: a cap that cut a rule's calls
+// short (part.Cut) counts as ErrCalls when the pass returned no error of its own.
+func callsErr(part engine.CallsPart, err error) error {
+	if err == nil && part.Cut {
+		return engine.ErrCalls
+	}
+	return err
 }

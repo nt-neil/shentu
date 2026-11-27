@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/nt-neil/shentu/rules"
 	"github.com/nt-neil/shentu/rules/engine"
@@ -56,5 +59,105 @@ func TestScanPathCheckInAnotherFile(t *testing.T) {
 	}
 	if !reported(pathPerFile) {
 		t.Error("per-file path: the redirect is not reported")
+	}
+}
+
+// writeTree writes files (path from dir → content) under dir.
+func writeTree(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for p, src := range files {
+		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(p)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, p), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// acrossFiles has a request read in app/views.py and the shell command in
+// app/run.py: no file shows the flow on its own.
+var acrossFiles = map[string]string{
+	"app/views.py": "from flask import Flask, request\nfrom .run import run_tool\n\napp = Flask(__name__)\n\n\n" +
+		"@app.route(\"/tool\")\ndef tool():\n    return run_tool(request.args.get(\"name\", \"\"))\n",
+	"app/run.py": "import os\n\n\ndef run_tool(name):\n    os.system(\"tool --name \" + name)\n    return \"ok\"\n",
+}
+
+func testEngine(t *testing.T) *engine.Engine {
+	t.Helper()
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng, err := engine.New(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return eng
+}
+
+// A flow found only by following the call into another file: the product path
+// keeps the calls-across-files half (as app_code_audit merges it), so it
+// reports, as the project path does; the per-file path cannot.
+func TestScanPathCallsAcrossFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeTree(t, dir, acrossFiles)
+	eng := testEngine(t)
+	reported := func(path string) bool {
+		for _, f := range scan(eng, dir, path).Findings {
+			if f.RuleID == "python-cmdi-shell" && f.Path == "app/run.py" && f.Line == 5 {
+				return true
+			}
+		}
+		return false
+	}
+	if !reported(pathProduct) {
+		t.Error("product path: the command built in another file is not reported")
+	}
+	if !reported(pathProject) {
+		t.Error("project path: the command built in another file is not reported")
+	}
+	if reported(pathPerFile) {
+		t.Error("per-file path: reported a flow it cannot see")
+	}
+}
+
+// The product path counts a file whose calls a cap cut short (calls cut) and
+// one a clock cut short (Clock, listed in the report).
+func TestScanPathCutCounts(t *testing.T) {
+	dir := t.TempDir()
+	writeTree(t, dir, acrossFiles)
+	eng := testEngine(t)
+	saved := projectOptions
+	defer func() { projectOptions = saved }()
+
+	projectOptions.MaxHeap = 1 // the heap cap stops following the calls
+	if r := scan(eng, dir, pathProduct); r.CallsCut == 0 {
+		t.Errorf("MaxHeap 1: no file counted as calls cut: %+v", r)
+	}
+
+	projectOptions = saved
+	projectOptions.MaxTime = time.Nanosecond
+	r := scan(eng, dir, pathProduct)
+	if r.Clock == 0 {
+		t.Fatalf("MaxTime 1ns: no file counted as cut by a clock: %+v", r)
+	}
+	md := markdown([]caseResult{{Case: Case{ID: "CVE-2000-0001"}, Vuln: r}}, nil, time.Unix(0, 0), "")
+	if !strings.Contains(md, "## Cut by a clock") || !strings.Contains(md, "| CVE-2000-0001 | ") {
+		t.Errorf("the report does not list the clocked case:\n%s", md)
+	}
+}
+
+// A calls pass that a cap cut short without an error of its own counts as calls
+// cut; its own error is kept.
+func TestCallsErr(t *testing.T) {
+	if err := callsErr(engine.CallsPart{Cut: true}, nil); !errors.Is(err, engine.ErrCalls) {
+		t.Errorf("cut, no error: got %v, want ErrCalls", err)
+	}
+	if err := callsErr(engine.CallsPart{}, nil); err != nil {
+		t.Errorf("not cut: got %v", err)
+	}
+	if err := callsErr(engine.CallsPart{Cut: true}, engine.ErrLimit); !errors.Is(err, engine.ErrLimit) {
+		t.Errorf("cut with ErrLimit: got %v", err)
 	}
 }
