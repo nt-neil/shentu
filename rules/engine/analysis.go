@@ -2040,7 +2040,7 @@ var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is
 	"wp_http_validate_url": true, "url_has_allowed_host_and_scheme": true, "is_safe_url": true,
 	"allowed_file": true, "is_string": true, "isinstance": true, "wp_check_jsonp_callback": true,
 	"isBasePath": true, "isAbsolute": true, // Symfony Path::isBasePath($base, $path), Path::isAbsolute($path)
-	"isInternal": true} // Joomla Uri::isInternal($url): the URL stays on this site
+	"isInternal": true, "is_serialized_string": true} // Joomla Uri::isInternal($url): the URL stays on this site; WordPress: a serialized string unserializes to a string
 
 // zeroIsMatch reports a call of a zeroMeansMatch function that returns an int
 // (strncmp, strcmp and their kin), not a position or false (strpos, which
@@ -2294,6 +2294,10 @@ func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 // from "found further on" (a truthy position).
 var posOrFalse = map[string]bool{"strpos": true, "stripos": true}
 
+// registryChecks are WordPress checks that a name is one the code registered
+// (register_taxonomy, register_post_type): a fixed list, as in_array's.
+var registryChecks = map[string]bool{"taxonomy_exists": true, "post_type_exists": true}
+
 // zeroIsValid are checks that return 0 for a valid value and an error code otherwise.
 var zeroIsValid = map[string]bool{"validate_file": true}
 
@@ -2369,6 +2373,14 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		atom[1].op("(") && closeOf(atom, 1) == n-1 {
 		args := splitTop(atom[2:n-1], isComma)
 		if len(args) >= 2 && a.allowlist(st, args[1]) && !(atom[0].word("in_array") && looseNumbers(args)) && !lossyLookup(args[0]) {
+			return a.keysOf(args[0])
+		}
+		return nil
+	}
+	// WordPress taxonomy_exists($x) and post_type_exists($x): $x is the name of
+	// a taxonomy or post type the code registered, a fixed list as in_array's.
+	if a.php && n > 2 && atom[0].Kind == Ident && registryChecks[strings.ToLower(atom[0].Text)] && atom[1].op("(") && closeOf(atom, 1) == n-1 {
+		if args := splitTop(atom[2:n-1], isComma); len(args) >= 1 {
 			return a.keysOf(args[0])
 		}
 		return nil
