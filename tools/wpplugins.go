@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -72,10 +71,10 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 					continue
 				}
 				for _, e := range ents {
-					p := filepath.Join(d, e.name)
+					p := hostPaths().Join(d, e.name)
 					switch {
 					case e.isLink():
-						if st, err := hostenv.Stat(src, filepath.Join(p, "wp-content")); err == nil && st.Mode.IsDir() {
+						if st, err := hostenv.Stat(src, hostPaths().Join(p, "wp-content")); err == nil && st.Mode.IsDir() {
 							unread = append(unread, p+" (a link to a WordPress, not followed)")
 						}
 					case e.isDir():
@@ -92,7 +91,7 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 			cands, level = append(cands, next...), next
 		}
 		for _, root := range cands {
-			dir := filepath.Join(root, "wp-content", "plugins")
+			dir := hostPaths().Join(root, "wp-content", "plugins")
 			if rootUnread && root == r {
 				continue // the root itself not read: said once
 			}
@@ -149,7 +148,7 @@ func readDirMax(src hostenv.Source, dir string, n int) ([]dirEnt, error) {
 	}
 	ents := make([]dirEnt, 0, len(names))
 	for _, nm := range names {
-		st, err := hostenv.Lstat(src, filepath.Join(dir, nm))
+		st, err := hostenv.Lstat(src, hostPaths().Join(dir, nm))
 		ents = append(ents, dirEnt{nm, st, err})
 	}
 	return ents, more
@@ -172,7 +171,7 @@ func pluginsIn(src hostenv.Source, root, dir string, cutSaid bool) ([]WPPlugin, 
 			unread = append(unread, dir+" (more than "+strconv.Itoa(wpMaxPlugins)+" plugins)")
 			break
 		}
-		p := filepath.Join(dir, e.name)
+		p := hostPaths().Join(dir, e.name)
 		switch {
 		case e.isLink():
 			unread = append(unread, p+" (a link, not followed)")
@@ -201,7 +200,7 @@ func pluginsIn(src hostenv.Source, root, dir string, cutSaid bool) ([]WPPlugin, 
 					failed = append(failed, "more than "+strconv.Itoa(wpMaxFilesEach)+" .php files: the rest not read")
 					break
 				}
-				pl, ok, err := pluginHeader(src, filepath.Join(p, f.name))
+				pl, ok, err := pluginHeader(src, hostPaths().Join(p, f.name))
 				if err != nil {
 					failed = append(failed, f.name+": "+err.Error())
 				}
@@ -224,7 +223,7 @@ func pluginsIn(src hostenv.Source, root, dir string, cutSaid bool) ([]WPPlugin, 
 				unread = append(unread, p+" ("+err.Error()+")")
 			}
 			if ok {
-				pl.Root, pl.Slug = root, strings.TrimSuffix(e.name, filepath.Ext(e.name))
+				pl.Root, pl.Slug = root, strings.TrimSuffix(e.name, hostPaths().Ext(e.name))
 				out = append(out, pl)
 			}
 		}

@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"sort"
 	"strings"
+	"testing"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
@@ -104,4 +105,30 @@ func (h treeHost) Stat(p string) (hostenv.FileStat, error) {
 		return h.Stat(t)
 	}
 	return h.Lstat(p)
+}
+
+// S-280-1: a Linux host read's resumed audit orders and holds its paths by
+// its own "/" on any machine: a Windows one split them at "\" and cleaned
+// "/srv/www/" to "\srv\www", so the walk resumed in the wrong place.
+func TestAuditResumePathsLinuxHost(t *testing.T) {
+	withHost(t, treeHost{files: map[string]string{"/srv/www/a.php": ""}})
+	if got := cleanRoots([]string{"/srv/www/", "/srv/app"}); got[0] != "/srv/www" || got[1] != "/srv/app" {
+		t.Errorf("cleanRoots %q", got)
+	}
+	sep := hostPaths().Sep
+	for _, c := range []struct {
+		a, b string
+		want int // sign
+	}{
+		{"/srv/www", "/srv/www/a.php", -1}, // a folder before what it holds
+		{"/srv/www/b", "/srv/www-old", -1}, // name by name: "www" < "www-old"
+		{"/srv/www/a.php", "/srv/www/a.php", 0},
+	} {
+		if got := pathCmp(c.a, c.b, sep); got < 0 != (c.want < 0) || got == 0 != (c.want == 0) {
+			t.Errorf("pathCmp(%q, %q) = %d, want sign %d", c.a, c.b, got, c.want)
+		}
+	}
+	if !walkHolds("/srv/www", "/srv/www/x/y.php", sep) || walkHolds("/srv/www", "/srv/www-old/x", sep) {
+		t.Error("walkHolds with a Linux host's paths")
+	}
 }
