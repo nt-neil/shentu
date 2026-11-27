@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -32,6 +33,9 @@ func realWinFiles(t *testing.T, files map[string]string) {
 // and what is left of the total, and what was read counts. On 5cba7db
 // each file was read whole (up to 64 MiB) and only files kept counted.
 func TestPHPReview200ConfReadCaps(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip(`realWinFiles names files C:\Apache24\... in a temporary folder, which only Unix takes as a name: on Windows it is the machine's own C:\`)
+	}
 	max := phpApacheMax
 	t.Cleanup(func() { phpApacheMax = max })
 	phpApacheMax = 1 << 20

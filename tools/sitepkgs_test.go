@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -422,6 +423,9 @@ func TestSitePackagesBounds(t *testing.T) {
 // too: only a package pip (or its like) wrote INSTALLER for is read there;
 // /usr/local's are all read. A path asked about leaves the system's out.
 func TestSitePackagesSystem(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Debian's Python layout (/usr/lib/python3*/dist-packages, a folder only root writes) built in a temporary folder: Unix's")
+	}
 	sys := t.TempDir()
 	managed := filepath.Join(sys, "usr", "lib", "python3.12", "dist-packages")
 	local := filepath.Join(sys, "usr", "local", "lib", "python3.12", "dist-packages")
@@ -562,6 +566,9 @@ func TestSitePackagesSystem(t *testing.T) {
 // only with every folder above it root's alone: else it may shadow
 // setuptools' own, and no distutils-precedence.pth is known.
 func TestSitePackagesShadowFoldersAbove(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Debian's Python layout (/usr/lib/python3*/dist-packages, a folder only root writes) built in a temporary folder: Unix's")
+	}
 	sys := t.TempDir()
 	managed := filepath.Join(sys, "usr", "lib", "python3.12", "dist-packages")
 	local := filepath.Join(sys, "usr", "local", "lib", "python3.12", "dist-packages")
