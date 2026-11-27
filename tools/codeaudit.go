@@ -721,6 +721,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	// where it stopped in the next audit, to the end and round from the start
 	// again, so a few audits cover every file.
 	var walkEntry func(root string, base int, p string, st hostenv.FileStat, err error) error
+	var notRegular notRegularCount // files the audit would read that are no regular file (S-257-3)
 	posFile := walkPosFile(roots)
 	pos, resumed := loadWalkPos(posFile)
 	posRoot := slices.Index(roots, pos.Root)
@@ -796,6 +797,12 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			return nil
 		}
 		if !st.Mode.IsRegular() {
+			// a FIFO, a device, a cloud or HSM placeholder (ModeIrregular)
+			// is not read: said when it is a file the audit reads, never a
+			// quiet gap; a link is not followed by design
+			if st.Mode&fs.ModeSymlink == 0 && auditable(name) {
+				notRegular.add(p)
+			}
 			return nil
 		}
 		web := served(p, webRoots)
@@ -818,7 +825,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				"check the file, delete it if it is not yours, and remove script and execute permission from the upload folder in IIS"))
 		}
 		lang := engine.LangOf(name)
-		if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" && !aspPage(name) {
+		if !auditable(name) {
 			return nil
 		}
 		if res.Files >= auditMaxFiles {
@@ -849,6 +856,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	walkPass(false)
 	if resumed && cut == nil {
 		walkPass(true)
+	}
+	if note := notRegular.note("not audited"); note != "" {
+		res.NotChecked = append(res.NotChecked, note)
 	}
 	if cut == nil {
 		saveWalkPos(posFile, nil) // a full round: the next one starts at the start
@@ -1256,3 +1266,48 @@ func commented(line string) bool {
 }
 
 func lineAt(b []byte, off int) int { return bytes.Count(b[:off], []byte("\n")) + 1 }
+
+// auditable: a file name the audit reads (by its extension or name).
+func auditable(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	return auditExt[ext] || auditExt[name] || strings.HasPrefix(name, ".env") || name == "settings.py" || engine.LangOf(name) != "" || aspPage(name)
+}
+
+// notRegularCount counts files skipped as no regular file (a FIFO, a
+// device, a cloud or HSM placeholder), the first three kept by name.
+type notRegularCount struct {
+	n     int
+	shown []string
+}
+
+func (c *notRegularCount) add(p string) {
+	if c.n++; len(c.shown) < 3 {
+		c.shown = append(c.shown, p)
+	}
+}
+
+// note is what not_checked says of them ("" for none): what, then the
+// first three named.
+func (c *notRegularCount) note(what string) string {
+	if c.n == 0 {
+		return ""
+	}
+	more := ""
+	if c.n > len(c.shown) {
+		more = fmt.Sprintf(" and %d more", c.n-len(c.shown))
+	}
+	return fmt.Sprintf("%d file(s) are not regular files (a FIFO, a device, a cloud or HSM placeholder), %s: %s%s", c.n, what, strings.Join(c.shown, ", "), more)
+}
+
+// noteZh is note in Chinese, as app_vulns' partial says the rest
+// (S-279-2).
+func (c *notRegularCount) noteZh(what string) string {
+	if c.n == 0 {
+		return ""
+	}
+	more := ""
+	if c.n > len(c.shown) {
+		more = fmt.Sprintf("，另外還有 %d 個", c.n-len(c.shown))
+	}
+	return fmt.Sprintf("%d 個檔案不是一般檔案（FIFO、裝置檔，或 cloud、HSM 的 placeholder），%s：%s%s", c.n, what, strings.Join(c.shown, "、"), more)
+}

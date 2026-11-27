@@ -54,7 +54,7 @@ func openRead(path string, noFollow bool) (*os.File, error) {
 		return nil, fmt.Errorf("%w: %s", ErrSymlink, path)
 	case kind != "":
 		windows.CloseHandle(h)
-		return nil, &os.PathError{Op: "open", Path: path, Err: fmt.Errorf("%w: %s", ErrNotRegular, kind)}
+		return nil, &os.PathError{Op: "open", Path: path, Err: notRegular(kind)} // kind says "not a regular file" once
 	case ti.FileAttributes&osutil.FileAttributeReparsePoint == 0:
 		return os.NewFile(uintptr(h), path), nil
 	}
