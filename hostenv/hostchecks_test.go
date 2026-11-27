@@ -33,28 +33,21 @@ func TestSudoNopasswd(t *testing.T) {
 	if !slices.Equal(got, want) || !all || len(s.Unread) != 0 {
 		t.Errorf("rules %q all %v unread %q", got, all, s.Unread)
 	}
-	// Who each is for, and which file cloud-init wrote.
-	if r := s.Rules[0]; r.Who != "admin" || !r.All || !r.CloudInit || !r.OneUser() {
+	// Who each is for, what it runs, as whom; no cloud.cfg: no default user.
+	if r := s.Rules[0]; r.Who != "admin" || !r.All || r.CloudDefault || !r.OneUser() || !slices.Equal(r.Runas, []string{"ALL"}) {
 		t.Errorf("cloud-init's rule: %+v", r)
 	}
-	if r := s.Rules[2]; r.Who != "deploy" || r.All || r.CloudInit {
+	if r := s.Rules[2]; r.Who != "deploy" || r.All || !slices.Equal(r.Cmds, []string{"/usr/bin/systemctl restart app", "/usr/bin/systemctl reload app"}) || !slices.Equal(r.Runas, []string{"root"}) {
 		t.Errorf("deploy's rule: %+v", r)
 	}
-	if r := s.Rules[3]; !r.Defaults || !r.All || r.OneUser() {
+	if r := s.Rules[3]; !r.Defaults || !r.All || r.OneUser() || r.Who != "backup" {
 		t.Errorf("!authenticate: %+v", r)
 	}
-	for who, one := range map[string]bool{"admin": true, "%sudo": false, "ALL": false, "OPS": false, "a,b": false, "+netgrp": false} {
+	for who, one := range map[string]bool{"admin": true, "%sudo": false, "ALL": false, "OPS": false, "a,b": false, "+netgrp": false, "#1000": false} {
 		if (SudoRule{Who: who}).OneUser() != one {
 			t.Errorf("OneUser(%q) != %v", who, one)
 		}
 	}
-	hdr := newFake(true)
-	hdr.files["/etc/sudoers"] = "#includedir /etc/sudoers.d\n"
-	hdr.files["/etc/sudoers.d/cloud"] = "\n# Created by cloud-init v. 24.1 on Thu, 01 Jan 2026 00:00:00 +0000\n\n# User rules for ubuntu\nubuntu ALL=(ALL) NOPASSWD:ALL\n"
-	if s := SudoNopasswd(hdr); len(s.Rules) != 1 || !s.Rules[0].CloudInit {
-		t.Errorf("cloud-init's header: %+v", s)
-	}
-
 	some := newFake(true)
 	some.files["/etc/sudoers"] = "deploy ALL=(root) NOPASSWD: SETENV: /usr/bin/systemctl restart app\nweb ALL=(ALL) PASSWD: ALL\n"
 	if s := SudoNopasswd(some); len(s.Rules) != 1 || s.Rules[0].All {
@@ -128,5 +121,132 @@ func TestReboot(t *testing.T) {
 	boot.denied["/boot"] = true
 	if r := Reboot(boot, "rhel", "1"); r.Unread != "/boot (permission denied)" {
 		t.Errorf("/boot unread: %+v", r)
+	}
+}
+
+// N-274-1: NOPASSWD holds for every command after it up to a PASSWD tag;
+// a command alias is expanded, and one not told is every command.
+func TestSudoNopasswdCommandList(t *testing.T) {
+	for line, all := range map[string]bool{
+		"bob ALL=(ALL) NOPASSWD: /bin/true, ALL":            true,
+		"bob ALL=(ALL) NOPASSWD: /bin/ls, (root) ALL":       true,
+		"Cmnd_Alias ANY = ALL\nbob ALL=(ALL) NOPASSWD: ANY": true,
+		"bob ALL=(ALL) NOPASSWD: UNDEFINED":                 true,
+		"bob ALL=(ALL) NOPASSWD: /bin/ls, PASSWD: ALL":      false,
+		// MaskSecrets (every Source) masks what follows a NOPASSWD: tag when
+		// it is an alias or an option: not told, so every command.
+		"Cmnd_Alias SVC = /bin/systemctl restart a, /bin/systemctl restart b\nbob ALL=(ALL) NOPASSWD: SVC": true,
+		"bob ALL=(ALL) NOPASSWD: CWD=/tmp /bin/ls":                                                         true,
+		// After another tag the alias is not masked, and is expanded.
+		"Cmnd_Alias SVC = /bin/systemctl restart a, /bin/systemctl restart b\nbob ALL=(ALL) NOPASSWD: SETENV: SVC": false,
+		"Cmnd_Alias ANY = /bin/ls, ALL\nbob ALL=(ALL) NOPASSWD: SETENV: ANY":                                       true,
+		"bob ALL=(ALL) NOPASSWD: SETENV: UNDEFINED":                                                                true,
+		"bob ALL=(ALL) NOPASSWD: SETENV: /bin/ls":                                                                  false,
+	} {
+		h := newFake(true)
+		h.files["/etc/sudoers"] = line + "\n"
+		s := SudoNopasswd(h)
+		if len(s.Rules) != 1 || s.Rules[0].All != all {
+			t.Errorf("%q: want all=%v, got %+v", line, all, s.Rules)
+		}
+	}
+	h := newFake(true)
+	h.files["/etc/sudoers"] = "bob ALL=(ALL) PASSWD: ALL, /bin/ls\n"
+	if s := SudoNopasswd(h); len(s.Rules) != 0 {
+		t.Errorf("no NOPASSWD in force: %+v", s.Rules)
+	}
+	// S-274-1: spaces around a comma are a list, not one user.
+	h.files["/etc/sudoers"] = "ubuntu , eve ALL=(ALL) NOPASSWD:ALL\n"
+	if s := SudoNopasswd(h); len(s.Rules) != 1 || s.Rules[0].OneUser() || s.Rules[0].Who != "ubuntu,eve" {
+		t.Errorf("a list with spaces: %+v", s.Rules)
+	}
+	// S-274-3: Defaults for some commands is those commands.
+	h.files["/etc/sudoers"] = "Defaults!/bin/ls, /bin/cat !authenticate\nDefaults>deploy !authenticate\n"
+	s := SudoNopasswd(h)
+	if len(s.Rules) != 2 || s.Rules[0].All || !slices.Equal(s.Rules[0].Cmds, []string{"/bin/ls", "/bin/cat"}) || !s.Rules[1].All || !slices.Equal(s.Rules[1].Runas, []string{"deploy"}) {
+		t.Errorf("Defaults for commands / a run-as: %+v", s.Rules)
+	}
+}
+
+// N-274-2: cloud-init's default only for its default_user in its file, by
+// its full path.
+func TestSudoCloudDefault(t *testing.T) {
+	cfg := "users:\n  - default\nsystem_info:\n  distro: ubuntu\n  default_user:\n    name: ubuntu\n    lock_passwd: True\n"
+	for name, c := range map[string]struct {
+		files map[string]string
+		want  []bool // CloudDefault of each rule, in order
+	}{
+		"the real file, default user": {map[string]string{"/etc/sudoers.d/90-cloud-init-users": "ubuntu ALL=(ALL) NOPASSWD:ALL\n"}, []bool{true}},
+		"the real file, eve added":    {map[string]string{"/etc/sudoers.d/90-cloud-init-users": "ubuntu ALL=(ALL) NOPASSWD:ALL\neve ALL=(ALL) NOPASSWD:ALL\n"}, []bool{true, false}},
+		"99-custom with the header":   {map[string]string{"/etc/sudoers.d/99-custom": "# Created by cloud-init v. 24.1\nubuntu ALL=(ALL) NOPASSWD:ALL\n"}, []bool{false}},
+		"copied to 91-deploy":         {map[string]string{"/etc/sudoers.d/91-deploy": "# Created by cloud-init v. 24.1\nubuntu ALL=(ALL) NOPASSWD:ALL\n"}, []bool{false}},
+		"included from elsewhere":     {map[string]string{"/etc/sudoers": "#include /opt/x/90-cloud-init-users\n", "/opt/x/90-cloud-init-users": "ubuntu ALL=(ALL) NOPASSWD:ALL\n"}, []bool{false}},
+		"sudoers with the header":     {map[string]string{"/etc/sudoers": "# Created by cloud-init v. 24.1\nubuntu ALL=(ALL) NOPASSWD:ALL\n"}, []bool{false}},
+	} {
+		h := newFake(true)
+		h.files["/etc/sudoers"] = "@includedir /etc/sudoers.d\n"
+		h.files["/etc/cloud/cloud.cfg"] = cfg
+		for p, s := range c.files {
+			h.files[p] = s
+		}
+		var got []bool
+		for _, r := range SudoNopasswd(h).Rules {
+			got = append(got, r.CloudDefault)
+		}
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
+	}
+	// No cloud.cfg, or not the default user, or not read: never the default.
+	h := newFake(true)
+	h.files["/etc/sudoers"] = "@includedir /etc/sudoers.d\n"
+	h.files["/etc/sudoers.d/90-cloud-init-users"] = "ubuntu ALL=(ALL) NOPASSWD:ALL\n"
+	if s := SudoNopasswd(h); s.Rules[0].CloudDefault {
+		t.Errorf("no cloud.cfg: %+v", s.Rules)
+	}
+	h.files["/etc/cloud/cloud.cfg"] = cfg
+	h.files["/etc/cloud/cloud.cfg.d/90-mine.cfg"] = "system_info:\n  default_user:\n    name: \"admin\"\n"
+	if CloudDefaultUser(h) != "admin" || SudoNopasswd(h).Rules[0].CloudDefault {
+		t.Errorf("cloud.cfg.d sets another default user: %q", CloudDefaultUser(h))
+	}
+	h.denied["/etc/cloud/cloud.cfg.d/90-mine.cfg"] = true
+	if CloudDefaultUser(h) != "" {
+		t.Errorf("a cfg not read: %q", CloudDefaultUser(h))
+	}
+	if got := cfgDefaultUser("default_user:\n  name: ec2-user\n"); got != "ec2-user" {
+		t.Errorf("top-level default_user: %q", got)
+	}
+	if got := cfgDefaultUser("other:\n  default_user:\n    name: eve\n"); got != "" {
+		t.Errorf("default_user under another key: %q", got)
+	}
+	if got := cfgDefaultUser("users:\n  - name: bob\n"); got != "" {
+		t.Errorf("a user that is not default_user: %q", got)
+	}
+}
+
+// N-274-3: a kernel is compared with its own flavor only (+debug, UEK and
+// RHCK apart).
+func TestRebootKernelFlavor(t *testing.T) {
+	boot := func(running string, kernels ...string) RebootPending {
+		h := newFake(true)
+		for _, k := range kernels {
+			h.files["/boot/vmlinuz-"+k] = ""
+		}
+		return Reboot(h, "rhel", running)
+	}
+	for name, r := range map[string]RebootPending{
+		"+debug of the same release": boot("5.14.0-503.el9.x86_64", "5.14.0-503.el9.x86_64", "5.14.0-503.el9.x86_64+debug"),
+		"UEK newer, RHCK running":    boot("5.14.0-427.el9.x86_64", "5.14.0-427.el9.x86_64", "5.15.0-200.131.27.el9uek.x86_64"),
+		"RHCK newer, UEK running":    boot("5.15.0-200.131.27.el9uek.x86_64", "5.15.0-200.131.27.el9uek.x86_64", "5.14.0-503.el9.x86_64"),
+	} {
+		if r.Pending {
+			t.Errorf("%s: %+v", name, r)
+		}
+	}
+	if r := boot("5.15.0-200.131.27.el9uek.x86_64", "5.15.0-200.131.27.el9uek.x86_64", "5.15.0-300.163.18.el9uek.x86_64", "5.14.0-503.el9.x86_64"); !r.Pending || !strings.Contains(r.Why, "5.15.0-300.163.18.el9uek") {
+		t.Errorf("a newer UEK, UEK running: %+v", r)
+	}
+	if r := boot("5.14.0-427.el9.x86_64+debug", "5.14.0-427.el9.x86_64+debug", "5.14.0-503.el9.x86_64+debug"); !r.Pending {
+		t.Errorf("a newer +debug, +debug running: %+v", r)
 	}
 }

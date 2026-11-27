@@ -8,31 +8,33 @@ import (
 	"github.com/nt-neil/shentu/hostenv"
 )
 
-// sudoRisks: sudo runs commands with no password. For every command, one
-// way into such an account is root at once: a warning; except a rule for
-// one user in the file cloud-init writes (the cloud image's default user,
-// safe only when that user logs in with keys alone), and a rule for some
-// commands only: info. sudoers not read in full is said, never taken for
-// no such rule.
+// sudoRisks: sudo runs commands with no password. Every command for
+// someone (ALL among the commands, an alias not told, Defaults
+// !authenticate for all) means one way into that account is the run-as
+// account's power at once: a warning; except a rule for cloud-init's
+// default_user alone in the file cloud-init writes (the cloud image's
+// default, safe only when that user logs in with keys alone), and rules
+// for some commands only: info. sudoers not read in full is said, never
+// taken for no such rule.
 func sudoRisks(s hostenv.SudoNoPass) []Risk {
 	var warn, cloud, some []string
 	for _, r := range s.Rules {
 		switch {
 		case !r.All:
-			some = append(some, r.String())
-		case r.CloudInit && r.OneUser():
-			cloud = append(cloud, r.String())
+			some = append(some, sudoRuleText(r))
+		case r.CloudDefault && r.OneUser():
+			cloud = append(cloud, sudoRuleText(r))
 		default:
-			warn = append(warn, r.String())
+			warn = append(warn, sudoRuleText(r))
 		}
 	}
 	var out []Risk
 	if len(warn) > 0 {
-		out = append(out, Risk{"sudo:nopasswd", "warning", "sudo runs every command as root with no password: " + ruleList(warn) +
-			"; whoever gets into one of these accounts is root at once: require the password, or limit NOPASSWD to the commands needed"})
+		out = append(out, Risk{"sudo:nopasswd", "warning", "sudo runs every command with no password: " + ruleList(warn) +
+			"; whoever gets into one of these accounts has the run-as account's power at once: require the password, or limit NOPASSWD to the commands needed"})
 	}
 	if len(cloud) > 0 {
-		out = append(out, Risk{"sudo:nopasswd:cloud-init", "info", "sudo runs every command as root with no password for the cloud image's default user, as cloud-init sets it up: " + ruleList(cloud) +
+		out = append(out, Risk{"sudo:nopasswd:cloud-init", "info", "sudo runs every command with no password for cloud-init's default user, as the cloud image sets it up: " + ruleList(cloud) +
 			"; safe only while that user can log in with a key alone, never a password"})
 	}
 	if len(some) > 0 {
@@ -49,12 +51,34 @@ func sudoRisks(s hostenv.SudoNoPass) []Risk {
 	return out
 }
 
+// sudoRuleText is a rule as read, then what it runs and as whom, as it
+// says (S-274-3): "every command" or the commands; root when no run-as
+// list is given, any user for ALL.
+func sudoRuleText(r hostenv.SudoRule) string {
+	what := "every command"
+	if !r.All {
+		what = "only " + Cut(strings.Join(r.Cmds, ", "), 120)
+	}
+	var as []string
+	for _, a := range r.Runas {
+		switch u, _, _ := strings.Cut(a, ":"); {
+		case u == "":
+			as = append(as, "root")
+		case u == "ALL":
+			as = append(as, "any user")
+		default:
+			as = append(as, u)
+		}
+	}
+	if len(as) == 0 {
+		as = []string{"root"} // Defaults: sudo's default run-as
+	}
+	return Cut(r.String(), 160) + " (" + what + ", as " + strings.Join(slices.Compact(as), ", ") + ")"
+}
+
 // ruleList is the first three rules, each cut, and how many more.
 func ruleList(rules []string) string {
-	shown := slices.Clone(rules[:min(3, len(rules))])
-	for i := range shown {
-		shown[i] = Cut(shown[i], 160)
-	}
+	shown := rules[:min(3, len(rules))]
 	more := ""
 	if len(rules) > 3 {
 		more = fmt.Sprintf(" (and %d more)", len(rules)-3)

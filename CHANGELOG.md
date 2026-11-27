@@ -87,18 +87,22 @@ Chinese for the zh-TW pages; keep the two in step.
   advisory to tell, and `fix_note` says that unconfirmed is not "no fix". Until now the count
   mixed them; `package` set still gives each one's `fixed_version`, without the counts.
 - site_profile on Linux and macOS says two more risks. `sudo:nopasswd` (a warning): sudoers lets
-  every command run as root with no password (`NOPASSWD: ALL`, or `Defaults !authenticate`), in
-  any sudoers file, or for a group or ALL. The one exception is the cloud image's default user:
-  such a rule for one user by name in the file cloud-init writes (`90-cloud-init-users`, or its
-  "Created by cloud-init" header) is `sudo:nopasswd:cloud-init` (info, in the report only), whose
-  text says it is safe only while that user logs in with a key alone. A NOPASSWD rule for some
-  commands only is `sudo:nopasswd:some` (info). The rules are read through
-  every `#include`/`@include` and `includedir` as sudo reads them (names with a dot or ending in
-  `~` skipped). A file not read, or sudoers from sss or ldap, is said as `unchecked:sudoers`, never
-  taken for no such rule. `reboot:pending` (a warning): an update waits for a reboot, its old kernel
-  or libraries still running. On Debian and Ubuntu it is `/run/reboot-required` (with the packages
-  it names); elsewhere a kernel in `/boot` newer than the running one. A running kernel not in
-  `/boot` (a container) is not compared.
+  someone run every command with no password: `ALL` anywhere among the commands a NOPASSWD tag
+  covers (it holds up to a PASSWD tag), a command alias that is ALL or cannot be told, or
+  `Defaults !authenticate` for everyone, a user or a run-as account; in any sudoers file, for a
+  group or ALL. The one exception is the cloud image's default user: such a rule in
+  `/etc/sudoers.d/90-cloud-init-users` (that path only) for cloud-init's `default_user` (read from
+  `/etc/cloud/cloud.cfg` and `cloud.cfg.d/*.cfg`, not user-data) alone is `sudo:nopasswd:cloud-init`
+  (info, in the report only), whose text says it is safe only while that user logs in with a key
+  alone. NOPASSWD for some commands only, or `Defaults!cmd !authenticate` for some, is
+  `sudo:nopasswd:some` (info). Each rule is listed with what it runs and the account it runs as.
+  The rules are read through every `#include`/`@include` and `includedir` as sudo reads them (names
+  with a dot or ending in `~` skipped). A file not read, or sudoers from sss or ldap, is said as
+  `unchecked:sudoers`, never taken for no such rule. `reboot:pending` (a warning): an update waits
+  for a reboot, its old kernel or libraries still running. On Debian and Ubuntu it is
+  `/run/reboot-required` (with the packages it names); elsewhere a kernel in `/boot` newer than the
+  running one of the same flavor (`+debug`, UEK and the distribution's own kernel compared apart).
+  A running kernel not in `/boot` (a container) is not compared.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the

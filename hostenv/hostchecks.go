@@ -14,40 +14,46 @@ type SudoNoPass struct {
 	Unread []string // files, folders and sources not read: whether more rules are there is not known
 }
 
-// SudoRule is one rule that runs commands with no password: a NOPASSWD
-// tag, or Defaults !authenticate.
+// SudoRule is one rule that runs commands with no password: commands under
+// a NOPASSWD tag (up to a PASSWD tag), or Defaults !authenticate.
 type SudoRule struct {
 	File, Line string
-	Who        string // the user specification's first field: a user, %group, an alias, ALL
-	All        bool   // every command (NOPASSWD: ALL, or !authenticate)
-	Defaults   bool   // Defaults !authenticate
-	CloudInit  bool   // in the file cloud-init writes (90-cloud-init-users, or its header)
+	Who        string   // the user list, spaces around commas dropped: a user, %group, an alias, ALL, a list
+	Runas      []string // the accounts they run as ("" for root, sudo's default)
+	Cmds       []string // the commands with no password, aliases expanded; nil for every command
+	All        bool     // every command: ALL among them, an alias not told, or a Defaults !authenticate for all
+	Defaults   bool     // a Defaults !authenticate
+	// CloudDefault: in /etc/sudoers.d/90-cloud-init-users, for cloud-init's
+	// default_user (cloud.cfg, cloud.cfg.d/*.cfg).
+	CloudDefault bool
 }
 
 // OneUser: the rule is for one user by name, not a %group, a +netgroup,
 // a User_Alias (upper case), ALL or a list.
 func (r SudoRule) OneUser() bool {
 	w := r.Who
-	return !r.Defaults && w != "" && w != "ALL" && !strings.ContainsAny(w, "%+,:!") && w != strings.ToUpper(w)
+	return !r.Defaults && w != "" && w != "ALL" && !strings.ContainsAny(w, "%+,:!#") && w != strings.ToUpper(w)
 }
 
 func (r SudoRule) String() string { return r.File + ": " + r.Line }
 
-// cloudInitSudoers: the file cloud-init writes for the image's default
-// user: by its name, or its header ("Created by cloud-init").
-func cloudInitSudoers(p string, b []byte) bool {
-	if path.Base(p) == "90-cloud-init-users" {
-		return true
-	}
-	head := string(b[:min(len(b), 512)])
-	return strings.Contains(head, "# Created by cloud-init")
-}
+// cloudInitSudoers is the file cloud-init writes for the image's default
+// user; only this path (a file of the same name included from elsewhere is
+// not it).
+const cloudInitSudoers = "/etc/sudoers.d/90-cloud-init-users"
 
 var (
-	reNoPass    = regexp.MustCompile(`\bNOPASSWD\s*:`)
-	reNoPassAll = regexp.MustCompile(`\bNOPASSWD\s*:\s*(?:[A-Z_]+\s*:\s*)*ALL\b`)
-	reNoAuth    = regexp.MustCompile(`(^|[\s,])!\s*authenticate\b`)
+	reCommaSpace = regexp.MustCompile(`\s*,\s*`)
+	reNoAuth     = regexp.MustCompile(`(^|[\s,])!\s*authenticate\b`)
+	reCmndAlias  = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	reSudoOption = regexp.MustCompile(`^[A-Z_]+=\S*\s*`)
 )
+
+// sudoRaw is a rule as read, told once every file (and Cmnd_Alias) is read.
+type sudoRaw struct {
+	file, line string
+	defaults   bool
+}
 
 // SudoNopasswd reads /etc/sudoers and what it includes (#include, @include,
 // #includedir, @includedir; at most 8 deep and maxRunAsFiles files) for
@@ -71,6 +77,8 @@ func SudoNopasswd(src Source) SudoNoPass {
 			}
 		}
 	}
+	aliases := map[string][]string{}
+	var raws []sudoRaw
 	seen := map[string]bool{}
 	var read func(p string, depth int)
 	read = func(p string, depth int) {
@@ -89,7 +97,6 @@ func SudoNopasswd(src Source) SudoNoPass {
 			}
 			return
 		}
-		cloud := cloudInitSudoers(p, b)
 		for _, ln := range sudoersLines(string(b)) {
 			f := strings.Fields(ln)
 			if len(f) == 0 {
@@ -121,18 +128,233 @@ func SudoNopasswd(src Source) SudoNoPass {
 				}
 			case strings.HasPrefix(f[0], "Defaults"):
 				if reNoAuth.MatchString(ln) {
-					s.Rules = append(s.Rules, SudoRule{File: p, Line: ln, All: true, Defaults: true, CloudInit: cloud})
+					raws = append(raws, sudoRaw{p, ln, true})
 				}
-			case f[0] == "User_Alias" || f[0] == "Host_Alias" || f[0] == "Cmnd_Alias" || f[0] == "Cmd_Alias" || f[0] == "Runas_Alias":
+			case f[0] == "Cmnd_Alias" || f[0] == "Cmd_Alias":
+				for _, def := range strings.Split(strings.TrimSpace(strings.TrimPrefix(ln, f[0])), ":") {
+					if name, list, ok := strings.Cut(def, "="); ok {
+						aliases[strings.TrimSpace(name)] = splitSudoList(list)
+					}
+				}
+			case f[0] == "User_Alias" || f[0] == "Host_Alias" || f[0] == "Runas_Alias":
 			default:
-				if reNoPass.MatchString(ln) {
-					s.Rules = append(s.Rules, SudoRule{File: p, Line: ln, Who: f[0], All: reNoPassAll.MatchString(ln), CloudInit: cloud})
+				if strings.Contains(ln, "NOPASSWD") {
+					raws = append(raws, sudoRaw{p, ln, false})
 				}
 			}
 		}
 	}
 	read("/etc/sudoers", 0)
+	def := ""
+	for _, r := range raws {
+		if r.file == cloudInitSudoers && def == "" {
+			def = CloudDefaultUser(src)
+			break
+		}
+	}
+	for _, r := range raws {
+		if rule, ok := sudoRule(r, aliases); ok {
+			rule.CloudDefault = r.file == cloudInitSudoers && def != "" && rule.Who == def
+			s.Rules = append(s.Rules, rule)
+		}
+	}
 	return s
+}
+
+// sudoRule tells a rule's commands with no password. A user
+// specification's commands carry the run-as list and the tags before
+// them (NOPASSWD up to a PASSWD); a command alias is expanded, and one not
+// told (not defined, too deep) counts as every command.
+func sudoRule(r sudoRaw, aliases map[string][]string) (SudoRule, bool) {
+	rule := SudoRule{File: r.file, Line: r.line, Defaults: r.defaults}
+	ln := reCommaSpace.ReplaceAllString(r.line, ",")
+	f := strings.Fields(ln)
+	if r.defaults {
+		// Defaults:user, Defaults>runas, Defaults!cmnd, or for everyone
+		kw := f[0]
+		switch {
+		case strings.HasPrefix(kw, "Defaults!"):
+			rule.Cmds, rule.All = expandCmds(splitSudoList(strings.TrimPrefix(kw, "Defaults!")), aliases, 0)
+		case strings.HasPrefix(kw, "Defaults:"):
+			rule.Who, rule.All = strings.TrimPrefix(kw, "Defaults:"), true
+		case strings.HasPrefix(kw, "Defaults>"):
+			rule.Runas, rule.All = splitSudoList(strings.TrimPrefix(kw, "Defaults>")), true
+		default:
+			rule.All = true
+		}
+		if rule.All {
+			rule.Cmds = nil
+		}
+		return rule, true
+	}
+	if len(f) > 0 {
+		rule.Who = f[0]
+	}
+	_, rest, ok := strings.Cut(r.line, "=")
+	if !ok {
+		rule.All = true // not told: every command
+		return rule, true
+	}
+	nopass, runas := false, ""
+	var cmds []string
+	for _, item := range splitSudoList(rest) {
+		if strings.HasPrefix(item, "(") {
+			end := strings.IndexByte(item, ')')
+			if end < 0 {
+				rule.All = true
+				return rule, true
+			}
+			runas, item = strings.TrimSpace(item[1:end]), strings.TrimSpace(item[end+1:])
+		}
+		for {
+			if m := reSudoOption.FindString(item); m != "" {
+				item = strings.TrimSpace(item[len(m):])
+				continue
+			}
+			i := strings.IndexByte(item, ':')
+			if i < 0 || !sudoTags[strings.TrimSpace(item[:i])] {
+				break
+			}
+			switch strings.TrimSpace(item[:i]) {
+			case "NOPASSWD":
+				nopass = true
+			case "PASSWD":
+				nopass = false
+			}
+			item = strings.TrimSpace(item[i+1:])
+		}
+		if nopass && item != "" {
+			cmds = append(cmds, item)
+			if !slices.Contains(rule.Runas, runas) {
+				rule.Runas = append(rule.Runas, runas)
+			}
+		}
+	}
+	if len(cmds) == 0 {
+		return rule, false
+	}
+	rule.Cmds, rule.All = expandCmds(cmds, aliases, 0)
+	if rule.All {
+		rule.Cmds = nil
+	}
+	return rule, true
+}
+
+// expandCmds expands command aliases; all: ALL among them, an alias not
+// told, or a command masked. A negated command (!cmd) takes nothing away here.
+func expandCmds(cmds []string, aliases map[string][]string, depth int) ([]string, bool) {
+	var out []string
+	for _, c := range cmds {
+		c = strings.TrimSpace(c)
+		if strings.HasPrefix(c, "!") {
+			continue
+		}
+		name := strings.Fields(c)
+		switch {
+		case c == "ALL":
+			return nil, true
+		case strings.Contains(c, "[REDACTED"):
+			// MaskSecrets keeps a NOPASSWD: tag before ALL, a path, ! or a
+			// tag; before an alias or an option it masks what follows as a
+			// password would be: not told, so every command
+			return nil, true
+		case len(name) == 1 && reCmndAlias.MatchString(c):
+			list, ok := aliases[c]
+			if !ok || depth > 8 {
+				return nil, true
+			}
+			sub, all := expandCmds(list, aliases, depth+1)
+			if all {
+				return nil, true
+			}
+			out = append(out, sub...)
+		default:
+			out = append(out, c)
+		}
+	}
+	return out, false
+}
+
+// splitSudoList splits a sudoers list at commas not escaped (\,).
+func splitSudoList(s string) []string {
+	var out []string
+	cur := strings.Builder{}
+	for i := 0; i < len(s); i++ {
+		switch {
+		case s[i] == '\\' && i+1 < len(s):
+			cur.WriteByte(s[i])
+			cur.WriteByte(s[i+1])
+			i++
+		case s[i] == ',':
+			out = append(out, strings.TrimSpace(cur.String()))
+			cur.Reset()
+		default:
+			cur.WriteByte(s[i])
+		}
+	}
+	if t := strings.TrimSpace(cur.String()); t != "" || len(out) > 0 {
+		out = append(out, t)
+	}
+	return out
+}
+
+// CloudDefaultUser is the name of cloud-init's default_user (system_info's,
+// or top-level) in /etc/cloud/cloud.cfg and /etc/cloud/cloud.cfg.d/*.cfg,
+// the last one read winning as cloud-init merges them; "" when none is
+// set or a file could not be read. user-data is not read.
+func CloudDefaultUser(src Source) string {
+	files := []string{"/etc/cloud/cloud.cfg"}
+	names, err := src.ReadDir("/etc/cloud/cloud.cfg.d")
+	if err != nil && !gone(err) {
+		return ""
+	}
+	for _, n := range names {
+		if strings.HasSuffix(n, ".cfg") {
+			files = append(files, "/etc/cloud/cloud.cfg.d/"+n)
+		}
+	}
+	name := ""
+	for _, p := range files {
+		b, err := src.ReadFile(p)
+		if err != nil {
+			if gone(err) {
+				continue
+			}
+			return ""
+		}
+		if n := cfgDefaultUser(string(b)); n != "" {
+			name = n
+		}
+	}
+	return name
+}
+
+// cfgDefaultUser finds default_user's name in one cloud-init YAML file:
+// default_user: (top level or under system_info:), then name: inside it.
+func cfgDefaultUser(s string) string {
+	indent := func(l string) int { return len(l) - len(strings.TrimLeft(l, " ")) }
+	in, at, parent := false, 0, ""
+	for _, l := range strings.Split(s, "\n") {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		d := indent(l)
+		if in {
+			if d <= at {
+				in = false
+			} else if v, ok := strings.CutPrefix(t, "name:"); ok {
+				return strings.Trim(strings.TrimSpace(v), `"'`)
+			}
+		}
+		if d == 0 {
+			parent = strings.TrimSuffix(t, ":")
+		}
+		if t == "default_user:" && (d == 0 || parent == "system_info") {
+			in, at = true, d
+		}
+	}
+	return ""
 }
 
 // RebootPending is whether the host waits for a reboot to run what an
@@ -143,10 +365,18 @@ type RebootPending struct {
 	Unread  string // what could not be read: pending or not is not known
 }
 
+var reLetters = regexp.MustCompile(`[a-z]+`)
+
+// kernelFlavor is a kernel release's letters (el, uek, x, debug, default...):
+// one flavor's releases differ in their numbers only.
+func kernelFlavor(v string) string {
+	return strings.Join(reLetters.FindAllString(strings.ToLower(v), -1), ",")
+}
+
 // Reboot tells a pending reboot: on Debian and Ubuntu /run/reboot-required
 // (its .pkgs names the packages); elsewhere, a kernel in /boot newer than
-// the running one (kernel, Platform.Kernel). A running kernel not in /boot
-// (a container, a kernel from outside) is not compared.
+// the running one (kernel, Platform.Kernel) of the same flavor. A running
+// kernel not in /boot (a container, a kernel from outside) is not compared.
 func Reboot(src Source, family, kernel string) RebootPending {
 	if family == "debian" {
 		for _, p := range []string{"/run/reboot-required", "/var/run/reboot-required"} {
@@ -193,8 +423,10 @@ func Reboot(src Source, family, kernel string) RebootPending {
 		if !ok || strings.Contains(v, "rescue") || strings.HasSuffix(v, ".hmac") || v == "" {
 			continue
 		}
-		kernels = append(kernels, v)
 		running = running || v == kernel
+		if kernelFlavor(v) == kernelFlavor(kernel) { // +debug, uek, RHCK, -default, -64kb apart (N-274-3)
+			kernels = append(kernels, v)
+		}
 	}
 	if !running {
 		return RebootPending{}
