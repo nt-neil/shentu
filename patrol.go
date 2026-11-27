@@ -185,7 +185,7 @@ func dnsHint(err error, zh bool) string {
 func uncheckedSection(risks []tools.Risk, zh bool) string {
 	var b strings.Builder
 	for _, r := range risks {
-		if tools.Unchecked(r) {
+		if tools.Unchecked(r) && !tools.NotYet(r) {
 			fmt.Fprintf(&b, "- %q\n", mask(r.Summary))
 		}
 	}
@@ -197,6 +197,22 @@ func uncheckedSection(risks []tools.Risk, zh bool) string {
 		as = dt(zh, "perm_win")
 	}
 	return fmt.Sprintf(dt(zh, "perm_head"), as) + b.String()
+}
+
+// notYetSection lists the parts this release does not check yet (Apache on
+// Windows): apart from the permission heading, whose cause is not theirs.
+// "" when none.
+func notYetSection(risks []tools.Risk, zh bool) string {
+	var b strings.Builder
+	for _, r := range risks {
+		if tools.NotYet(r) {
+			fmt.Fprintf(&b, "- %q\n", mask(r.Summary))
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return dt(zh, "notyet_head") + b.String()
 }
 
 // referenceSection is the daily report's reference block: one line counting
@@ -551,7 +567,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	}()
 	zh := isZh(cfg)
 	all, sshUnchecked := checks(ctx, cfg, env, st, daily)
-	unchecked := uncheckedSection(st.Profile.Risks, zh) + sshUnchecked // listed in every report, never pushed
+	unchecked := uncheckedSection(st.Profile.Risks, zh) + notYetSection(st.Profile.Risks, zh) + sshUnchecked // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
 		r, osSurface, err := tools.PackageVulnsSurface(ctx, env.HTTP)

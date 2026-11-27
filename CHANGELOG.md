@@ -55,10 +55,13 @@ Chinese for the zh-TW pages; keep the two in step.
 - Windows: site_profile, the processes, listening ports, accounts and SSH tools, log_search and the
   Python site-packages check go by the host read (Windows or not), as the macOS ones do, not by the
   machine running the check. Replaying a Windows host's reads, or checking one from another machine,
-  no longer gives the Linux answer, and site-packages matches a Windows venv's `RECORD` paths: a
-  genuine `.pth` a package's `RECORD` lists is no longer reported as unknown. On Windows, site_profile
-  says in `not_checked` that Apache (C:\Apache24, XAMPP and the like) is not checked yet, so
-  CVE-2026-119618 (HTTP/2) is not evaluated there.
+  no longer gives the Linux answer, and site-packages matches a Windows venv's `RECORD` paths (without
+  case, as Windows names files, and with an old pip's `\`): a genuine `.pth` a package's `RECORD`
+  lists is no longer reported as unknown. On a Windows host where Apache shows (an `httpd.exe` process
+  or service, `C:\Apache24\conf\httpd.conf` or `C:\xampp\apache`), site_profile's `risks` list one
+  more unchecked risk, `unchecked:notyet:apache:windows`: Apache there is not checked yet, so
+  CVE-2026-119618 (HTTP/2) is not evaluated. The daily report lists it under "Not checked by this
+  release yet", not under the missing-permission heading.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the

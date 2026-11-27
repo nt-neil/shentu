@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +30,7 @@ import (
 type winRead struct {
 	files map[string]string
 	calls *[]string
+	procs []hostenv.WinProcess // more processes than the two every read has
 }
 
 func newWinRead() winRead {
@@ -97,10 +100,10 @@ func (w winRead) Services() ([]hostenv.WinService, error) {
 }
 func (w winRead) Processes() ([]hostenv.WinProcess, error) {
 	w.log("Processes")
-	return []hostenv.WinProcess{
+	return append([]hostenv.WinProcess{
 		{PID: 812, PPID: 600, Name: "w3wp.exe", Exe: `C:\Windows\System32\inetsrv\w3wp.exe`, User: `IIS APPPOOL\example`},
 		{PID: 4242, PPID: 812, Name: "cmd.exe", Exe: `C:\Windows\System32\cmd.exe`, User: `IIS APPPOOL\example`, Cmdline: "cmd.exe /c whoami"},
-	}, nil
+	}, w.procs...), nil
 }
 func (w winRead) Sockets() ([]hostenv.WinSocket, error) { w.log("Sockets"); return nil, nil }
 func (w winRead) Users() ([]hostenv.WinUser, error) {
@@ -340,9 +343,74 @@ func TestWinAdminKeysUnreadSaid(t *testing.T) {
 // (onWindows goes by the host source), and its profile says Apache there
 // is not checked rather than skipping it quietly.
 func TestSurveyWindowsApacheUnchecked(t *testing.T) {
-	withHost(t, newWinRead())
-	p := Survey(context.Background(), &Env{})
-	if !slices.ContainsFunc(p.Risks, func(r Risk) bool { return r.Key == "unchecked:apache:windows" && strings.Contains(r.Summary, "CVE-2026-119618") }) {
-		t.Errorf("risks %+v: no Apache-on-Windows not-checked line", p.Risks)
+	apache := func(w winRead) []Risk {
+		withHost(t, winLstatRead{w})
+		var out []Risk
+		for _, r := range Survey(context.Background(), &Env{}).Risks {
+			if strings.Contains(r.Key, "apache:windows") {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	if got := apache(newWinRead()); len(got) != 0 {
+		t.Errorf("no Apache on the host: %+v", got)
+	}
+	conf := newWinRead()
+	conf.files[`C:\Apache24\conf\httpd.conf`] = "Listen 80\n"
+	proc := newWinRead()
+	proc.procs = []hostenv.WinProcess{{PID: 900, PPID: 600, Name: "httpd.exe", Exe: `D:\web\bin\httpd.exe`, User: `NT AUTHORITY\SYSTEM`}}
+	old := phpWinServiceBins
+	t.Cleanup(func() { phpWinServiceBins = old })
+	for name, w := range map[string]winRead{"httpd.conf": conf, "httpd.exe process": proc} {
+		got := apache(w)
+		if len(got) != 1 || got[0].Key != "unchecked:notyet:apache:windows" || !NotYet(got[0]) || !Unchecked(got[0]) || !strings.Contains(got[0].Summary, "CVE-2026-119618") {
+			t.Errorf("%s: %+v", name, got)
+		}
+	}
+	phpWinServiceBins = func() []string { return []string{`"E:\Apache\bin\httpd.exe" -k runservice`} }
+	if got := apache(newWinRead()); len(got) != 1 {
+		t.Errorf("httpd.exe service: %+v", got)
+	}
+}
+
+// winLstatRead is winRead with Lstat (no links: what Stat says), as Live
+// and Replay have it.
+type winLstatRead struct{ winRead }
+
+func (w winLstatRead) Lstat(p string) (hostenv.FileStat, error) { return w.Stat(p) }
+
+// winDirRead is winRead with folders listed.
+type winDirRead struct {
+	winRead
+	dirs map[string][]string
+}
+
+func (w winDirRead) ReadDir(p string) ([]string, error) {
+	if d, ok := w.dirs[p]; ok {
+		return d, nil
+	}
+	return nil, os.ErrNotExist
+}
+
+// On a Windows host RECORD is matched as Windows names files: without case
+// (the dist-info folder, RECORD's path), and with RECORD's \ (an old pip's)
+// read as /; a POSIX host still tells case apart (S-272-1).
+func TestRecordHasWindowsCaseAndBackslash(t *testing.T) {
+	sp := `C:\v\Lib\site-packages`
+	body := "import os\n"
+	sum := sha256.Sum256([]byte(body))
+	h := base64.RawURLEncoding.EncodeToString(sum[:])
+	for name, c := range map[string]struct{ folder, line, file, rel string }{
+		"folder case":  {"Setuptools-69.0.0.dist-info", "distutils-precedence.pth", `distutils-precedence.pth`, "distutils-precedence.pth"},
+		"record case":  {"setuptools-69.0.0.dist-info", "Distutils-Precedence.pth", `distutils-precedence.pth`, "distutils-precedence.pth"},
+		"record slash": {"setuptools-69.0.0.dist-info", `_distutils_hack\__init__.py`, `_distutils_hack\__init__.py`, "_distutils_hack/__init__.py"},
+	} {
+		w := winDirRead{newWinRead(), map[string][]string{sp: {c.folder}}}
+		w.files[sp+`\`+c.folder+`\RECORD`] = c.line + ",sha256=" + h + ",10\r\n"
+		w.files[sp+`\`+c.file] = body
+		if _, ok := recordHas(w, sp, "setuptools-*.dist-info", c.rel); !ok {
+			t.Errorf("%s: not found", name)
+		}
 	}
 }

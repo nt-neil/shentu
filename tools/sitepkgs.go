@@ -529,9 +529,18 @@ func recordHas(src hostenv.Source, dir, glob, rel string) (rec string, ok bool) 
 	// so the host's path form does not matter (hostenv.Glob is POSIX-only:
 	// on a Windows host no RECORD was found, and a setuptools .pth was
 	// listed as one to look at).
+	// On Windows, whose file names are matched without case, the name and
+	// RECORD's path are too, and RECORD's \ (an old pip's) is read as /.
+	win := src.Info().GOOS == "windows"
+	fold := func(s string) string {
+		if win {
+			return strings.ToLower(s)
+		}
+		return s
+	}
 	names, _ := src.ReadDir(dir)
 	for _, n := range names {
-		if m, _ := path.Match(glob, n); !m {
+		if m, _ := path.Match(fold(glob), fold(n)); !m {
 			continue
 		}
 		recp := hostJoin(src, dir, n, "RECORD")
@@ -540,8 +549,12 @@ func recordHas(src hostenv.Source, dir, glob, rel string) (rec string, ok bool) 
 			continue
 		}
 		for _, l := range strings.Split(string(b), "\n") {
-			want, ok := strings.CutPrefix(strings.TrimRight(l, "\r"), rel+",sha256=")
-			if !ok {
+			l = strings.TrimRight(l, "\r")
+			p, want, ok := strings.Cut(l, ",sha256=")
+			if win {
+				p = strings.ReplaceAll(p, `\`, "/")
+			}
+			if !ok || fold(p) != fold(rel) {
 				continue
 			}
 			want, _, _ = strings.Cut(want, ",")

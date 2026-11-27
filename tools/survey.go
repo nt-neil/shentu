@@ -7,7 +7,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"regexp"
 	"slices"
@@ -56,6 +58,14 @@ func Unchecked(r Risk) bool {
 	return uncheckedRisks[r.Key] || strings.HasPrefix(r.Key, uncheckedPrefix)
 }
 
+// notYetPrefix marks an unchecked risk for a part this release does not
+// check yet (not a permission missing): reports list it under its own
+// heading.
+const notYetPrefix = uncheckedPrefix + "notyet:"
+
+// NotYet reports whether r is a part this release does not check yet.
+func NotYet(r Risk) bool { return strings.HasPrefix(r.Key, notYetPrefix) }
+
 // SiteProfile is the survey result. It is stored by patrol as the baseline.
 type SiteProfile struct {
 	Time          time.Time         `json:"time"`
@@ -92,16 +102,20 @@ var riskyIfPublic = map[string]bool{"mysqld": true, "mariadbd": true, "postgres"
 
 // apacheWindowsUnchecked says what Windows does not check yet: an Apache
 // there (C:\Apache24, XAMPP) is not evaluated for CVE-2026-119618, so it is
-// said every time rather than skipped quietly.
-var apacheWindowsUnchecked = Risk{uncheckedPrefix + "apache:windows", "info",
+// said whenever Apache shows on the host (winApacheSeen) rather than
+// skipped quietly.
+var apacheWindowsUnchecked = Risk{notYetPrefix + "apache:windows", "info",
 	"Apache on Windows (C:\\Apache24, XAMPP and the like) is not checked yet: if it runs here, CVE-2026-119618 (HTTP/2) is not evaluated; check its version and whether it serves HTTP/2 by hand"}
 
 // Survey builds the profile. It only reads; nothing is changed.
 func Survey(ctx context.Context, env *Env) SiteProfile {
 	if onWindows() {
-		p := surveyFromFacts(windowsFacts(ctx), env)
+		f := windowsFacts(ctx)
+		p := surveyFromFacts(f, env)
 		p.Risks = append(p.Risks, phpRisks(ctx)...)
-		p.Risks = append(p.Risks, apacheWindowsUnchecked)
+		if winApacheSeen(f) {
+			p.Risks = append(p.Risks, apacheWindowsUnchecked)
+		}
 		return p
 	}
 	p := SiteProfile{Time: time.Now().UTC(), Firewall: firewall(ctx)}
@@ -358,4 +372,32 @@ func diff(now, old []string) []string {
 		}
 	}
 	return out
+}
+
+// winApacheSeen: Apache shows on this Windows host: an httpd.exe process or
+// service, C:\Apache24\conf\httpd.conf, or C:\xampp\apache. A path whose
+// being there could not be told counts as seen.
+func winApacheSeen(f *hostenv.Facts) bool {
+	if f != nil {
+		for _, p := range f.Processes.Value {
+			if strings.EqualFold(p.Name, "httpd.exe") || strings.EqualFold(winBase(p.Exe), "httpd.exe") {
+				return true
+			}
+		}
+	}
+	for _, b := range phpWinServiceBins() {
+		if strings.Contains(strings.ToLower(b), "httpd.exe") {
+			return true
+		}
+	}
+	for _, p := range []string{`C:\Apache24\conf\httpd.conf`, `C:\xampp\apache`} {
+		r, err := phpWinLocal(p)
+		if err == nil {
+			_, err = hostenv.Lstat(hostSource(), r)
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return true
+		}
+	}
+	return false
 }
