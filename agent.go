@@ -358,8 +358,11 @@ func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 	return text
 }
 
+// errText is a tool's error as the model is given it: masked, as every
+// tool result is (S-281-2: a tool's error carried a secret as it was,
+// only the log's copy masked).
 func errText(msg string) string {
-	b, _ := json.Marshal(map[string]string{"error": msg})
+	b, _ := json.Marshal(map[string]string{"error": mask(msg)})
 	return string(b)
 }
 
