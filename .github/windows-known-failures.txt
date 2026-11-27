@@ -5,20 +5,6 @@
 #   P = product wrong on a live Windows host - fixed before I-8
 #   T = the test builds a Unix-only scenario; Shentu on Windows is right - fixed after I-8
 # A name leaves this list in the PR that fixes it.
-TestPHPReview1Comments              T  newPHPHost: a remapped Live reports the runner's GOOS
-TestPHPReview1ConfLimit             T  newPHPHost
-TestPHPReview1HostingLayouts        T  newPHPHost
-TestPHPReview1Includes              T  newPHPHost
-TestPHPReview1NoVersion             T  newPHPHost
-TestPHPReview1OneBranchTwice        T  newPHPHost
-TestPHPReview1PoolsByBranch         T  newPHPHost
-TestPHPReview1Scope                 T  newPHPHost
-TestPHPReview1SeveralVersions       T  newPHPHost
-TestPHPRisksCGI                     T  newPHPHost
-TestPHPRisksFPM                     T  newPHPHost
-TestPHPRisksNotCoveredNote          T  newPHPHost
-TestPHPRisksOrigins                 T  newPHPHost
-TestPHPRisksStatusPage              T  newPHPHost (statusHost)
 TestPHPReview200ConfReadCaps        T  writes a file named C:\Apache24\conf\httpd.conf
 TestApacheH2Risk                    T  POSIX Glob over Windows temp paths, uid, symlinks, Chmod(0)
 TestLoginIndexAnswers               T  mode 0600 (Windows reports 0666); journald-only index
