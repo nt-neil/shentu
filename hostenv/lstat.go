@@ -30,7 +30,7 @@ func (l *Live) Lstat(path string) (FileStat, error) {
 	// A regular file's ID, as Stat gives it: ReadFileIfSame compares the
 	// file read with the one a walk saw. Only a regular file is read, and a
 	// walk lstats every entry: on Windows the ID costs an open.
-	fst := FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st)}
+	fst := withStatExtra(FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st)}, st)
 	if st.Mode().IsRegular() {
 		fst.ID = pathFileID(l.path(path), st)
 	}
