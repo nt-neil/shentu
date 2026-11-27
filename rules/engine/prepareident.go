@@ -1,6 +1,9 @@
 package engine
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // identArgs is the ident_placeholder condition of a prepare()-style call
 // ($wpdb->prepare($format, ...)): the indexes in args of the values whose
@@ -21,8 +24,34 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 		return nil
 	}
 	f := a.formatText(st, splitArgs[0])
+	// -- then a part not written out may start a comment or not: each such
+	// place is read both ways, every combination of them, and what any finds
+	// is kept. Past maxDashUnknown of them, every %s counts.
+	k := strings.Count(f, "--\x00")
+	if k > maxDashUnknown {
+		return identScan(f, len(splitArgs), 0, true)
+	}
 	var out []int
-	seq := 0
+	for mask := uint(0); mask < 1<<k; mask++ {
+		for _, n := range identScan(f, len(splitArgs), mask, false) {
+			if !slices.Contains(out, n) {
+				out = append(out, n)
+			}
+		}
+	}
+	return out
+}
+
+// maxDashUnknown bounds the -- before a part not written out read both ways
+// (2^n readings of the format).
+const maxDashUnknown = 6
+
+// identScan is identArgs over the format text f, for a call of nargs
+// arguments. The n-th -- before a part not written out (0) starts a comment
+// when bit n of mask is set; all takes every %s for an identifier.
+func identScan(f string, nargs int, mask uint, all bool) []int {
+	var out []int
+	seq, dash := 0, 0
 	var quote byte
 	// placeholder reads the one at f[i] ('%') and returns where it ends; one
 	// in backticks (ident) whose value is a request's is listed.
@@ -32,7 +61,7 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 		}
 		j, n, numbered := i+1, 0, false
 		for j < len(f) && f[j] >= '0' && f[j] <= '9' {
-			if n <= len(splitArgs) { // past the values the number names none: it stops growing (no overflow)
+			if n <= nargs { // past the values the number names none: it stops growing (no overflow)
 				n = n*10 + int(f[j]-'0')
 			}
 			j++
@@ -52,7 +81,7 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 			seq++
 			n = seq
 		}
-		if ident && f[j] == 's' && n >= 1 && n < len(splitArgs) { // %0$s names no value
+		if (ident || all) && f[j] == 's' && n >= 1 && n < nargs { // %0$s names no value
 			out = append(out, n)
 		}
 		return j
@@ -66,6 +95,11 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 			}
 			continue
 		}
+		dashUnknown := false
+		if quote == 0 && c == '-' && i+2 < len(f) && f[i+1] == '-' && f[i+2] == 0 {
+			dashUnknown = mask>>dash&1 == 1
+			dash++
+		}
 		switch {
 		case quote == 0 && c == '/' && i+1 < len(f) && f[i+1] == '*' && !(i+2 < len(f) && f[i+2] == '!'):
 			comment = len(f)
@@ -73,7 +107,9 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 				comment = i + 2 + end + 2
 			}
 			i++
-		case quote == 0 && (c == '#' || c == '-' && i+1 < len(f) && f[i+1] == '-' && (i+2 == len(f) || f[i+2] == ' ' || f[i+2] == '\t' || f[i+2] == '\n')):
+		case quote == 0 && (c == '#' || c == '-' && i+1 < len(f) && f[i+1] == '-' && (i+2 == len(f) || f[i+2] == 0 && dashUnknown || f[i+2] != 0 && f[i+2] <= ' ' || f[i+2] == 0x7f)):
+			// MySQL: -- then a space or control character starts a comment; a part
+			// not written out (0) may be anything: read both ways (identArgs)
 			comment = len(f)
 			if end := strings.IndexByte(f[i:], '\n'); end >= 0 {
 				comment = i + end
@@ -169,7 +205,20 @@ func (a *analysis) unescapeStr(b []byte, s string, flags uint16) []byte {
 		case 'u':
 			if i+2 < len(s) && s[i+2] == '{' {
 				if end := strings.IndexByte(s[i+3:], '}'); end >= 0 {
-					b, i = append(b, 0), i+3+end // a code point: no quote of SQL's
+					cp, ok := 0, end > 0
+					for _, h := range []byte(s[i+3 : i+3+end]) {
+						if !isHexDigit(h) || cp > 0x10ffff {
+							ok = false
+							break
+						}
+						cp = cp*16 + hexVal(h)
+					}
+					if ok && cp < 0x80 {
+						b = append(b, byte(cp)) // \u{60} is a backtick
+					} else {
+						b = append(b, 0) // past ASCII: no quote of SQL's
+					}
+					i += 3 + end
 					continue
 				}
 			}
