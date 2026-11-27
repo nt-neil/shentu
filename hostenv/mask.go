@@ -26,12 +26,18 @@ var secretRules = []struct {
 	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\\?"?\s*[=:]\s*\\?"?)[^\s"\\,;]{3,}`), "${1}[REDACTED]"},
 	// S-281-1: a password as a command's own argument, not key=value:
 	// mysql's -p<secret>, --password/--passwd then the next argument, and
-	// curl's or wget's -u/--user/-U/--proxy-user user:<secret> (attached,
-	// with =, or an empty user); a quoted value is one token, and a ; | &
-	// on the line does not end the command (it may be quoted).
-	{regexp.MustCompile(`(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin)\b[^\n]*?\s-p)(?:"[^"\n]*"|'[^'\n]*'|\S+)`), "${1}[REDACTED]"},
-	{regexp.MustCompile(`(--pass(?:word|wd)\s+)(?:"[^"\n]*"|'[^'\n]*'|[^-\s]\S*)`), "${1}[REDACTED]"},
-	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])['"]?[^\s:'"]*:)[^\s'"]+`), "${1}[REDACTED]"},
+	// curl's or wget's -u/-U/--user/--proxy-user user:<secret> (attached,
+	// with =, or an empty user). A ; | & later on the line does not end the
+	// command (it may be quoted). A bare value stops where the key=value
+	// rule's does (a quote, \ , ;), so masked JSON or a log line keeps its
+	// shape for the parsers after; a quoted value is masked whole only when
+	// it ends at a space or the line's end, and curl's to its closing quote.
+	{regexp.MustCompile(`(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin)\b[^\n]*?\s-p)(?:"[^"\n]*"|'[^'\n]*')(\s|$)`), "${1}[REDACTED]${2}"},
+	{regexp.MustCompile(`(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin)\b[^\n]*?\s-p)[^\s"'\\,;]+`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(--pass(?:word|wd)\s+)(?:"[^"\n]*"|'[^'\n]*')(\s|$)`), "${1}[REDACTED]${2}"},
+	{regexp.MustCompile(`(--pass(?:word|wd)\s+)[^-\s"'\\,;][^\s"'\\,;]*`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])(?:"[^\s:"]*:|'[^\s:']*:))[^"'\n]*`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])[^\s:"'\\,;]*:)[^\s"'\\,;]+`), "${1}[REDACTED]"},
 }
 
 // MaskSecrets removes credentials from text that came off the host. Every

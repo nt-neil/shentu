@@ -24,6 +24,13 @@ func TestMaskCommandArgs(t *testing.T) {
 		"tool --password \"" + s + " " + s + "\" next":           "tool --password [REDACTED] next",
 		"mysql -e \"select 1;\" -p" + s + " shop":                "mysql -e \"select 1;\" -p[REDACTED] shop",
 		"mysql -p'" + s + " " + s + "' shop":                     "mysql -p[REDACTED] shop",
+		// a JSON log line keeps its shape (the parsers read it after), and a
+		// quoted user:password with a space is masked to its closing quote
+		`{"cmd":"mysql -p` + s + `","pid":7}`:                       `{"cmd":"mysql -p[REDACTED]","pid":7}`,
+		`{"cmd":"tool --password ` + s + `","pid":7}`:               `{"cmd":"tool --password [REDACTED]","pid":7}`,
+		`{"cmd":"` + dl + ` -u bob:` + s + `","pid":7}`:             `{"cmd":"` + dl + ` -u bob:[REDACTED]","pid":7}`,
+		dl + " -u 'bob:" + s + " " + s + "' https://x.example.test": dl + " -u 'bob:[REDACTED]' https://x.example.test",
+		dl + ` --user "bob:` + s + `" https://x.example.test`:       dl + ` --user "bob:[REDACTED]" https://x.example.test`,
 		// not secrets
 		"git push origin -u main:main":            "git push origin -u main:main",
 		"mysql -h db.example.test -P 3306 -u app": "mysql -h db.example.test -P 3306 -u app",
