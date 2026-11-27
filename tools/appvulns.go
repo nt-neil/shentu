@@ -169,10 +169,9 @@ func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system boo
 	}
 	var img imageScan
 	if system { // the host's Docker images: the whole host's check, not a path asked about
-		img = scanImages(hostSource())
+		img = scanImages(ctx, hostSource())
 		files = append(files, img.files...)
 		pth = append(pth, img.pth...)
-		partial = append(partial, img.partial...)
 	}
 	if unverifiedDistutilsHack(siteDirs, walked) {
 		for i := range pth {
@@ -234,7 +233,18 @@ func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system boo
 	if len(pth) > 0 {
 		out["pth"] = pth // .pth files that run code at every Python start; Known: a tool's own
 	}
-	if len(partial) > 0 {
+	if img.containerd != "" {
+		out["docker_images_containerd"] = img.containerd
+	}
+	if len(img.partial) > 0 {
+		out["docker_images_partial"] = img.partial // one line each in the daily report, never cut with the rest
+	}
+	// partial says all of it: what was found in part, containerd's store,
+	// then the images'.
+	if img.containerd != "" {
+		partial = append(partial, img.containerd)
+	}
+	if partial = append(partial, img.partial...); len(partial) > 0 {
 		out["partial"] = strings.Join(partial, "；")
 	}
 	if len(files) == 0 {

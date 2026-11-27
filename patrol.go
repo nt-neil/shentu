@@ -251,7 +251,23 @@ func uncheckedVulns(what string, r map[string]any, err error, zh bool) string {
 	}
 	var lines []string
 	if p, ok := r["partial"]; ok {
-		lines = append(lines, fmt.Sprintf(dt(zh, "vuln_partly"), cutLine(mask(fmt.Sprint(p)))))
+		// The images' lines are each their own, never cut away behind the
+		// site-packages' (N-244-1); containerd's store is under what this
+		// release does not check yet (the survey's).
+		rest := fmt.Sprint(p)
+		imgs, _ := r["docker_images_partial"].([]string)
+		tail := imgs
+		if c, _ := r["docker_images_containerd"].(string); c != "" {
+			tail = append([]string{c}, imgs...)
+		}
+		if len(tail) > 0 {
+			rest = strings.TrimSuffix(strings.TrimSuffix(rest, strings.Join(tail, "；")), "；")
+		}
+		for _, l := range append([]string{rest}, imgs...) {
+			if l != "" {
+				lines = append(lines, fmt.Sprintf(dt(zh, "vuln_partly"), cutLine(mask(l))))
+			}
+		}
 	}
 	// With no vulnerability found there is nothing to look up in KEV.
 	if n, _ := r["total_vulns"].(int); n > 0 {

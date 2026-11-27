@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // fakeDocker is Docker's overlay2 image store, made at run time.
@@ -316,8 +318,19 @@ func TestImagePackagesContainerdStore(t *testing.T) {
 	os.Rename(img, filepath.Join(t.TempDir(), "image"))
 	os.MkdirAll(filepath.Join(containerdRoot, "io.containerd.content.v1.content", "blobs", "sha256"), 0o700)
 	out, _ := imageResults(t, feeds)
-	if p := partial(out); !strings.Contains(p, "Docker 映像在 containerd 存放區") || !strings.Contains(p, "這版沒有檢查") || out["docker_images_note"] != nil || out["docker_images"] != 0 {
+	if p := partial(out); !strings.Contains(p, "containerd 存放區裡的映像") || !strings.Contains(p, "這版沒有檢查") || out["docker_images_note"] != nil || out["docker_images"] != 0 {
 		t.Errorf("containerd content store: partial %q, note %v, images %v", p, out["docker_images_note"], out["docker_images"])
+	}
+	// N-244-1 (a): its own field, and the survey's risk under what this
+	// release does not check yet, never cut with the rest of partial.
+	if c, _ := out["docker_images_containerd"].(string); !strings.Contains(c, "containerd 存放區裡的映像") {
+		t.Errorf("docker_images_containerd %q", c)
+	}
+	if r := ContainerdNotYet(&hostenv.Live{}); len(r) != 1 || r[0].Key != "unchecked:notyet:containerd" || !NotYet(r[0]) || r[0].Severity != "info" || !strings.Contains(r[0].Summary, "這版沒有檢查") {
+		t.Errorf("survey risk: %+v", r)
+	}
+	if r := ContainerdNotYet(memHost{}); r != nil {
+		t.Errorf("a replay's survey said this machine's store: %+v", r)
 	}
 
 	d = withDocker(t)
@@ -337,5 +350,64 @@ func TestImagePackagesContainerdStore(t *testing.T) {
 	out, _ = imageResults(t, f)
 	if p := partial(out); !strings.Contains(p, "這次讀的不是這台機器本身") || len(f.queries) != 0 {
 		t.Errorf("replay read this machine's images: partial %q, queries %q", p, f.queries)
+	}
+}
+
+// N-244-1 (b): the images' lines are their own (docker_images_partial),
+// and partial ends with containerd's and theirs, as the daily report
+// takes them off it.
+func TestImagePackagesPartialLines(t *testing.T) {
+	noSystemSitePackages(t)
+	d := withDocker(t)
+	os.MkdirAll(filepath.Join(containerdRoot, "io.containerd.content.v1.content"), 0o700)
+	old := imgMaxImages
+	imgMaxImages = 1
+	t.Cleanup(func() { imgMaxImages = old })
+	d.image([]map[string]string{{sp312 + "a-1.0.dist-info/METADATA": meta("a", "1.0")}}, "a:1")
+	d.image([]map[string]string{{sp312 + "b-1.0.dist-info/METADATA": meta("b", "1.0")}}, "b:1")
+	out, _ := imageResults(t, &pypiFeeds{})
+	imgs, _ := out["docker_images_partial"].([]string)
+	c, _ := out["docker_images_containerd"].(string)
+	p, _ := out["partial"].(string)
+	if len(imgs) != 1 || !strings.Contains(imgs[0], "Docker 映像超過 1 個，其餘 1 個沒有檢查") || c == "" || !strings.HasSuffix(p, c+"；"+imgs[0]) {
+		t.Errorf("images' lines %q, containerd %q, partial %q", imgs, c, p)
+	}
+}
+
+// S-244-1: the store's overlay2, layerdb and imagedb folders are not
+// followed when they are symlinks: said, not read.
+func TestImagePackagesStoreSymlinks(t *testing.T) {
+	noSystemSitePackages(t)
+	for _, rel := range []string{"overlay2", "image/overlay2/layerdb", "image/overlay2/imagedb"} {
+		d := withDocker(t)
+		d.image([]map[string]string{{sp312 + "a-1.0.dist-info/METADATA": meta("a", "1.0")}}, "a:1")
+		p := filepath.Join(d.root, filepath.FromSlash(rel))
+		moved := filepath.Join(t.TempDir(), "moved")
+		if err := os.Rename(p, moved); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(moved, p); err != nil {
+			t.Skip("no symlinks here:", err)
+		}
+		f := &pypiFeeds{}
+		out, _ := imageResults(t, f)
+		if s, _ := out["partial"].(string); !strings.Contains(s, p+" 存在但讀不到（是 symlink）") || len(f.queries) != 0 {
+			t.Errorf("%s a symlink: partial %q, queries %q", rel, s, f.queries)
+		}
+	}
+}
+
+// S-244-2: when the run stops, the images left are said not checked.
+func TestImagePackagesDeadline(t *testing.T) {
+	d := withDocker(t)
+	d.image([]map[string]string{{sp312 + "a-1.0.dist-info/METADATA": meta("a", "1.0")}}, "a:1")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s := scanImages(ctx, hostSource())
+	if len(s.files) != 0 || len(s.partial) != 1 || s.partial[0] != "檢查中止了，其餘 1 個 Docker 映像沒有檢查" {
+		t.Errorf("files %d, partial %q", len(s.files), s.partial)
+	}
+	if _, err := mergeLayers(ctx, []string{t.TempDir()}); err == nil {
+		t.Error("mergeLayers went on after ctx ended")
 	}
 }

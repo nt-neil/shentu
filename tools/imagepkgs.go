@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -46,14 +47,17 @@ var (
 var hex64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // imageScan is what the image store gave: an image's packages (as a lock
-// file of kind "image"), its .pth files, what was not checked (partial),
-// and a note when there is nothing to check (no Docker image store).
+// file of kind "image"), its .pth files, what was not checked (partial,
+// one line each), containerd's store when it is there (containerd: its
+// images are not read by this release), and a note when there is nothing
+// to check (no Docker image store).
 type imageScan struct {
-	files   []Lockfile
-	pth     []PthFile
-	partial []string
-	none    string
-	images  int
+	files      []Lockfile
+	pth        []PthFile
+	partial    []string
+	containerd string
+	none       string
+	images     int
 }
 
 // dockerDataRoot is where Docker keeps its data: daemon.json's data-root
@@ -92,11 +96,11 @@ func containerdStore(snapshotter bool) string {
 	_, err := os.Lstat(content)
 	switch {
 	case snapshotter:
-		return "Docker 映像在 containerd 存放區（" + dockerDaemonJSON + " 開了 containerd-snapshotter），這版沒有檢查"
+		return "containerd 存放區裡的映像（" + dockerDaemonJSON + " 開了 containerd-snapshotter，Docker 映像放在這裡），這版沒有檢查"
 	case err == nil:
-		return "Docker 映像在 containerd 存放區（" + content + "），這版沒有檢查"
+		return "containerd 存放區裡的映像（" + content + "），這版沒有檢查"
 	case !errors.Is(err, fs.ErrNotExist):
-		return "containerd 存放區 " + content + " 讀不到（" + errText(err) + "），裡面若有 Docker 映像，這版沒有檢查"
+		return "containerd 存放區 " + content + " 讀不到（" + errText(err) + "），裡面若有映像，這版沒有檢查"
 	}
 	return ""
 }
@@ -116,12 +120,35 @@ func realDir(p string) error {
 	return nil
 }
 
+// onThisMachine: the host read is this machine itself (not a replay, not
+// another host's read): the image stores are read from its disk.
+func onThisMachine(src hostenv.Source) bool {
+	l, ok := src.(*hostenv.Live)
+	return ok && len(l.Remap) == 0
+}
+
+// ContainerdNotYet is the survey's risk for containerd's image store (its
+// images not read by this release), listed under what this release does
+// not check yet; none when the store is not there or the host read is not
+// this machine (app_vulns says the images were not checked then).
+func ContainerdNotYet(src hostenv.Source) []Risk {
+	if !onThisMachine(src) {
+		return nil
+	}
+	_, snapshotter, _ := dockerDataRoot(src)
+	if c := containerdStore(snapshotter); c != "" {
+		return []Risk{{notYetPrefix + "containerd", "info", c}}
+	}
+	return nil
+}
+
 // scanImages reads the tagged images of Docker's overlay2 image store. The
 // store is read from this machine's disk (overlayfs' marks are a device
-// and an xattr), so only when the host read is this machine itself.
-func scanImages(src hostenv.Source) imageScan {
+// and an xattr), so only when the host read is this machine itself. When ctx
+// ends (the run stopped) the images left are said not checked.
+func scanImages(ctx context.Context, src hostenv.Source) imageScan {
 	var s imageScan
-	if l, ok := src.(*hostenv.Live); !ok || len(l.Remap) > 0 {
+	if !onThisMachine(src) {
 		s.partial = append(s.partial, "Docker 映像沒有檢查：這次讀的不是這台機器本身（replay 或另一台主機的讀取），映像庫只從這台機器的磁碟讀")
 		return s
 	}
@@ -131,9 +158,7 @@ func scanImages(src hostenv.Source) imageScan {
 		return s
 	}
 	ctrd := containerdStore(snapshotter)
-	if ctrd != "" {
-		s.partial = append(s.partial, ctrd)
-	}
+	s.containerd = ctrd
 	none := func(note string) imageScan { // nothing in overlay2: said apart only when containerd's store is not there
 		if ctrd == "" {
 			s.none = note
@@ -160,6 +185,14 @@ func scanImages(src hostenv.Source) imageScan {
 			return s
 		}
 	}
+	// The store's other folders are not followed out of the data root
+	// either; one not there fails each image that needs it.
+	for _, d := range []string{filepath.Join(root, "overlay2"), filepath.Join(store, "layerdb"), filepath.Join(store, "imagedb")} {
+		if err := realDir(d); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			s.partial = append(s.partial, "Docker 映像庫 "+d+" 存在但讀不到（"+errText(err)+"），裡面的映像沒有檢查")
+			return s
+		}
+	}
 	tags, err := imageTags(src, store)
 	if err != nil {
 		s.partial = append(s.partial, "Docker 映像庫的 repositories.json 存在但讀不到（"+err.Error()+"），裡面的映像沒有檢查")
@@ -178,10 +211,14 @@ func scanImages(src hostenv.Source) imageScan {
 		s.partial = append(s.partial, fmt.Sprintf("Docker 映像超過 %d 個，其餘 %d 個沒有檢查", imgMaxImages, len(ids)-imgMaxImages))
 		ids = ids[:imgMaxImages]
 	}
-	for _, id := range ids {
+	for i, id := range ids {
+		if ctx.Err() != nil {
+			s.partial = append(s.partial, fmt.Sprintf("檢查中止了，其餘 %d 個 Docker 映像沒有檢查", len(ids)-i))
+			break
+		}
 		sort.Strings(byID[id])
 		name := "docker-image:" + byID[id][0]
-		pkgs, pth, notes := readImage(src, root, store, id, name)
+		pkgs, pth, notes := readImage(ctx, src, root, store, id, name)
 		s.images++
 		s.pth = append(s.pth, pth...)
 		s.partial = append(s.partial, notes...)
@@ -295,10 +332,13 @@ var (
 // .wh.<name> as a layer tar has it) deletes <name> in its own folder and
 // what is under it, in the lower layers; an opaque folder (overlayfs'
 // xattr, or .wh..wh..opq in it) hides what the lower layers have in it.
-func mergeLayers(dirs []string) (map[string]layerEntry, error) {
+func mergeLayers(ctx context.Context, dirs []string) (map[string]layerEntry, error) {
 	merged := map[string]layerEntry{}
 	walked := 0
 	for li, d := range dirs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		adds := map[string]layerEntry{}
 		gone := map[string]bool{}   // a whiteout: the path and all under it
 		hidden := map[string]bool{} // an opaque folder: all under it
@@ -339,6 +379,9 @@ func mergeLayers(dirs []string) (map[string]layerEntry, error) {
 			return nil, err
 		}
 		for p := range merged {
+			if len(gone) == 0 && len(hidden) == 0 { // nothing this layer deletes: no lower path to look at
+				break
+			}
 			for q := p; q != "."; q = path.Dir(q) {
 				if gone[q] || hidden[q] && q != p {
 					delete(merged, p)
@@ -356,14 +399,17 @@ func mergeLayers(dirs []string) (map[string]layerEntry, error) {
 var errWalkCap = errors.New("walk cap")
 
 // readImage reads one image's site-packages from its merged tree.
-func readImage(src hostenv.Source, root, store, id, name string) (pkgs []pkg, pth []PthFile, notes []string) {
+func readImage(ctx context.Context, src hostenv.Source, root, store, id, name string) (pkgs []pkg, pth []PthFile, notes []string) {
 	dirs, err := imageLayers(src, root, store, id)
 	if err != nil {
 		return nil, nil, []string{name + " 沒有檢查：" + err.Error()}
 	}
-	merged, err := mergeLayers(dirs)
+	merged, err := mergeLayers(ctx, dirs)
 	if errors.Is(err, errWalkCap) {
 		return nil, nil, []string{fmt.Sprintf("%s 的檔案超過 %d 個，沒有檢查", name, imgMaxEntries)}
+	}
+	if ctx.Err() != nil {
+		return nil, nil, []string{name + " 沒有檢查：檢查中止了"}
 	}
 	if err != nil {
 		return nil, nil, []string{name + " 的一層讀不到（" + errText(err) + "），沒有檢查"}
