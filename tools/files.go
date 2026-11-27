@@ -86,7 +86,7 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 		// A root that is a link is walked where it leads (N-183-2: macOS's
 		// /etc is a link to /private/etc, and a walk does not follow a
 		// link given as its root), the paths shown under the root as set.
-		real, err := hostenv.EvalSymlinks(src, root)
+		real, err := watchRoot(src, root)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			missing = append(missing, root) // not on this host: not "unread" (S-183-1)
@@ -169,6 +169,23 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 		res["missing"] = missing // watched paths this host does not have
 	}
 	return res, nil
+}
+
+// watchRoot is where root leads on the host read: its links resolved
+// through the source. hostenv.EvalSymlinks reads POSIX paths; a Windows
+// host's (C:\inetpub) are resolved as filepath does when it is this
+// machine, and taken as they are (there or not) when it is a recording.
+func watchRoot(src hostenv.Source, root string) (string, error) {
+	if !onWindows() {
+		return hostenv.EvalSymlinks(src, root)
+	}
+	if onThisMachine(src) {
+		return filepath.EvalSymlinks(root)
+	}
+	if _, err := hostenv.Lstat(src, root); err != nil {
+		return "", err
+	}
+	return root, nil
 }
 
 // maxUnread bounds the unreadable paths file_changes lists.
