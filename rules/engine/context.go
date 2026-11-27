@@ -950,7 +950,12 @@ func (a *analysis) recordLit(st state, t []Token) {
 		t = t[1:]
 	}
 	if len(t) >= 2 && (t[0].Kind == Var || t[0].Kind == Ident) && t[1].Kind == Op && t[1].Text != "=" && phpAssignOps[t[1].Text] {
-		delete(st, extKey+t[0].Text) // $name .= ...: its end is no longer known
+		// $name .= ...: its end, or its value, is no longer known
+		delete(st, extKey+t[0].Text)
+		delete(st, litKey+t[0].Text)
+		if a.extLits != nil {
+			a.extLits[t[0].Text] = false
+		}
 	}
 	if len(t) < 3 || !(t[0].Kind == Var || t[0].Kind == Ident && !a.kw[t[0].Text]) || !t[1].op("=") {
 		return
@@ -998,8 +1003,10 @@ func (a *analysis) recordLit(st state, t []Token) {
 	st[litKey+name] = entry{san: true}
 }
 
-// fixedExtRe is an extension written out at the end of a name: '.png', '-a.tar'.
-var fixedExtRe = regexp.MustCompile(`\.[A-Za-z0-9]{1,8}$`)
+// fixedExtRe is an extension written out at the end of a name, of a type a web
+// server serves as data: '.png', '-a.pdf'. One it may run or treat as markup
+// (.php, .phtml, .phar, .html, .svg, .htaccess) is not one.
+var fixedExtRe = regexp.MustCompile(`(?i)\.(jpe?g|png|gif|webp|avif|bmp|ico|tiff?|txt|csv|tsv|json|pdf|zip|gz|tgz|7z|mp3|mp4|m4a|ogg|oga|wav|webm|mov|avi|docx?|xlsx?|pptx?|odt|ods|rtf|epub)$`)
 
 // fixedExtEnd reports whether a name built in arg ends with a fixed
 // extension: its last operand is a string written out ending in one, or a
@@ -1022,11 +1029,60 @@ func (a *analysis) fixedExtEnd(st state, arg []Token) bool {
 	case tk.Kind == Str:
 		return len(tk.Parts) == 0 && fixedExtRe.MatchString(tk.Text)
 	case tk.Kind == Var || tk.Kind == Ident:
+		if a.writtenOtherwise(tk.Text) {
+			return false // foreach (... as $ext), &$ext, list($ext) = ..., extract(): not read
+		}
 		if e, ok := st[extKey+tk.Text]; ok && e.san {
 			return true // assigned a name ending with one on every path
 		}
 		e, ok := st[litKey+tk.Text]
 		return ok && e.san && a.extLits[tk.Text]
+	}
+	return false
+}
+
+// writtenOtherwise reports whether the file writes name some way recordLit
+// does not follow: a foreach target, a reference, a destructuring, or any
+// extract() (which may set it). Worked out once per name.
+func (a *analysis) writtenOtherwise(name string) bool {
+	if v, ok := a.wrote[name]; ok {
+		return v
+	}
+	if a.wrote == nil {
+		a.wrote = map[string]bool{}
+	}
+	t := a.ftoks
+	w := false
+	for i := 0; i < len(t) && !w; i++ {
+		switch {
+		case t[i].word("extract") && i+1 < len(t) && t[i+1].op("("):
+			w = true
+		case t[i].Text == name && (t[i].Kind == Var || t[i].Kind == Ident) && i > 0:
+			p := t[i-1]
+			w = p.op("&") || p.word("as") || (p.op("[") || p.op(",") || p.op("(")) && destructuredAt(t, i)
+		}
+	}
+	a.wrote[name] = w
+	return w
+}
+
+// destructuredAt reports whether the name at t[i] is an item of a [...] or
+// list(...) that is assigned to.
+func destructuredAt(t []Token, i int) bool {
+	depth := 0
+	for j := i - 1; j >= 0 && i-j < 256; j-- {
+		switch {
+		case isClose(t[j]):
+			depth++
+		case isOpen(t[j]) && depth > 0:
+			depth--
+		case isOpen(t[j]):
+			if t[j].op("[") && j > 0 && (t[j-1].Kind == Var || t[j-1].Kind == Ident || t[j-1].op("]") || t[j-1].op(")")) {
+				return false // $a[$ext]: an index, read
+			}
+			c := closeOf(t, j)
+			return c+1 < len(t) && t[c+1].op("=") && (t[j].op("[") || t[j].op("(") && j > 0 && t[j-1].word("list"))
+		}
 	}
 	return false
 }

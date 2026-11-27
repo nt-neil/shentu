@@ -30,6 +30,11 @@ func TestWordPressChecks(t *testing.T) {
 		{"$ext given request input on a path", "<?php\n$ext = '.jpg';\nif (isset($_POST['e'])) {\n  $ext = $_POST['e'];\n}\n$basename = 'a' . $ext;\nwp_upload_bits($basename, '', 'x');\n", "file-upload", 7, true},
 		{"a name ending with an extension, then appended to", "<?php\n$basename = $_FILES['f']['name'] . '.png';\n$basename .= $_POST['x'];\nwp_upload_bits($basename, '', 'x');\n", "file-upload", 4, true},
 		{"the extension taken from the client's name", "<?php\n$ext = pathinfo($_FILES['f']['name'], PATHINFO_EXTENSION);\nwp_upload_bits('a.' . $ext, '', 'x');\n", "file-upload", 3, true},
+		{"a name ending with .php is no fixed type", "<?php\n$n = $_FILES['f']['name'];\nwp_upload_bits($n . '.php', null, 'x');\n", "file-upload", 3, true},
+		{"$ext given .png, then appended to", "<?php\n$ext = '.png';\n$ext .= $_POST['x'];\nwp_upload_bits($_FILES['f']['name'] . $ext, '', 'x');\n", "file-upload", 4, true},
+		{"$ext a foreach target", "<?php\n$ext = '.png';\nforeach ($_POST['e'] as $ext) {}\nwp_upload_bits($_FILES['f']['name'] . $ext, '', 'x');\n", "file-upload", 4, true},
+		{"$ext set by extract()", "<?php\n$ext = '.png';\nextract($_POST);\nwp_upload_bits($_FILES['f']['name'] . $ext, '', 'x');\n", "file-upload", 4, true},
+		{"$basename destructured from the request", "<?php\n$basename = 'a.png';\n[$basename] = $_POST['n'];\nwp_upload_bits($basename, '', 'x');\n", "file-upload", 4, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			pr := e.NewProject([]string{"a.php"}, func(string) ([]byte, error) { return []byte(c.src), nil }, ProjectOptions{})
