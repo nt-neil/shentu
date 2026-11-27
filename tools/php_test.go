@@ -58,7 +58,9 @@ func newPHPHost(t *testing.T) *phpHost {
 	run, procs, win := phpRun, phpProcs, phpWindows
 	t.Cleanup(func() { phpRun, phpProcs, phpWindows = run, procs, win })
 	phpWindows = false
-	withHost(t, &hostenv.Live{Remap: map[string]string{"/": h.root}}) // the host's files are under h.root
+	// the host's files are under h.root; a Linux host read on any runner
+	// (a remapped Live reports the runner's GOOS: Windows' paths otherwise)
+	withHost(t, linuxLive{&hostenv.Live{Remap: map[string]string{"/": h.root}}})
 	phpRun = func(_ context.Context, argv []string) ([]byte, error) {
 		if out, ok := h.run[strings.Join(argv, " ")]; ok {
 			return []byte(out), nil

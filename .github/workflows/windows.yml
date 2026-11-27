@@ -58,11 +58,12 @@ jobs:
           # Known Windows failures, by exact name and class: .github/windows-known-failures.txt.
           # Each name must still be a test (a renamed or removed one fails the job, S-269-1).
           all=$(go test -list '.*' ./tools/)
-          for n in $(grep -v '^#' .github/windows-known-failures.txt | awk 'NF {print $1}'); do
+          names=$(grep -v '^#' .github/windows-known-failures.txt | awk 'NF {print $1}' || true) # none left: grep finds no line
+          for n in ${names}; do
             echo "${all}" | grep -qx "${n}" || { echo "windows-known-failures.txt: ${n} is not a test in ./tools"; exit 1; }
           done
-          skip=$(grep -v '^#' .github/windows-known-failures.txt | awk 'NF {print $1}' | paste -sd'|' -)
-          go test -skip "^(${skip})$" ./tools/
+          skip=$(echo "${names}" | awk 'NF' | paste -sd'|' -)
+          if [ -n "${skip}" ]; then go test -skip "^(${skip})$" ./tools/; else go test ./tools/; fi
       - name: fuzz VARIANT / SAFEARRAY decoding
         if: ${{ !cancelled() }}
         run: |
