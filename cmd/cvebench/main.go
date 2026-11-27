@@ -87,7 +87,11 @@ func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, 
 		}
 	}
 	f := &fetcher{dir: cacheDir, client: newClient()}
-	cited := ruleSource(rs)
+	routes, err := rules.LoadRoutes()
+	if err != nil {
+		return err
+	}
+	cited := ruleSource(rs, routes)
 
 	results := make([]caseResult, len(cases))
 	next := make(chan int)

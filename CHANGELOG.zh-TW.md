@@ -31,6 +31,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - PHP 規則：Symfony request 的 body（`$request->getContent()`、`$request->toArray()`）在同一個函式裡寫進 SQL 時會回報，當成 ORDER BY 欄位也會。
 - PHP 規則：用 `fgetcsv()` 讀出的欄位（例如使用者上傳的 CSV 檔）沒加 `['allowed_classes' => false]` 就傳給 `unserialize()` 時會回報。
 - 新的 JavaScript 規則 `js-file-upload-client-name-write`：上傳的檔案用 `fs.createWriteStream()`、`fs.writeFile()`、`fs.writeFileSync()` 或 `fs.promises.writeFile()`，以用戶端送來的名稱（multer 的 `file.originalname`）寫入時會回報。express-fileupload 的 `.name` 不在範圍內。
+- route 模型可以指定註冊呼叫的 hook 名稱（`hooks`）：第一個參數必須是其中一個名稱、而且直接寫成一個字串，這個呼叫才算數；寫成變數、常數或串接字串的都不算。`path` 和 `hooks` 不能同時使用。
+- PHP 規則：Elementor 傳給 `elementor/editor/after_save` callback 的第二個參數（存檔時頁面上每個區塊和 widget 的設定，contributor 以上的角色就能寫入）現在當成 request 輸入。以前從這裡的 widget 設定讀出網址再去抓取（`getimagesize()`）時，不會回報。
 
 ### 已知問題
 

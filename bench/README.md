@@ -48,7 +48,7 @@ commit), and check the line numbers against the released files: a fix made on
 trunk can sit at other lines in the tagged release. The tool fails a case
 whose file or range is not in the release.
 
-A case whose id a rule cites in `refs` counts in the "rule source" group, the
+A case whose id a rule or a route model (`rules/routes/`) cites in `refs` counts in the "rule source" group, the
 rest in "independent", so rules are not graded on the advisories they were
 written from. A rule designed from a case of `cves/` (its miss read in the
 vulnerable release and the fix) cites that case in `refs`, so the case moves to

@@ -148,10 +148,16 @@ type caseResult struct {
 	vulnDir, fixedDir string
 }
 
-// ruleSource returns the ids that rules cite in refs.
-func ruleSource(rs []rules.Rule) map[string]bool {
+// ruleSource returns the ids that rules and route models cite in refs.
+func ruleSource(rs []rules.Rule, routes []rules.Route) map[string]bool {
 	out := map[string]bool{}
 	for _, r := range rs {
+		for _, ref := range r.Refs {
+			out[ref] = true
+		}
+	}
+	// A route model designed from a case cites it as a rule does.
+	for _, r := range routes {
 		for _, ref := range r.Refs {
 			out[ref] = true
 		}

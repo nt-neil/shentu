@@ -295,6 +295,154 @@ class Box_Admin {
 '''
 
 [[route]]
+id = "elementor-editor-after-save"
+lang = "php"
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
+framework = "wordpress"
+title = "Elementor's after-save hook gets the editor data a contributor saved (every element's settings)"
+register = ["add_action"]
+hooks = ["elementor/editor/after_save"]
+handler = 2
+params = [2]
+note = "Elementor fires elementor/editor/after_save($post_id, $editor_data) when a post built with it is saved; $editor_data is the element tree the editor sent, settings included, which contributors and up write. Any plugin can hook it, so it is Elementor's interface, not one plugin's name."
+refs = ["CVE-2025-13393"]
+
+[[route.samples]]
+kind = "vulnerable"
+note = "a widget setting is fetched as a URL"
+code = '''<?php
+function gallery_walk($elements, $post_id) {
+	foreach ($elements as $el) {
+		if (isset($el['settings']['cover_url'])) {
+			$url = $el['settings']['cover_url'];
+			if ($url && filter_var($url, FILTER_VALIDATE_URL) === false) {
+				$url = '';
+			}
+			if ($url) {
+				update_post_meta($post_id, 'cover_size', getimagesize($url));
+			}
+		}
+		if (!empty($el['elements'])) {
+			gallery_walk($el['elements'], $post_id);
+		}
+	}
+}
+function gallery_after_save($post_id, $editor_data) {
+	gallery_walk($editor_data, $post_id);
+}
+add_action('elementor/editor/after_save', 'gallery_after_save', 10, 2);
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "the URL is checked with wp_http_validate_url first"
+code = '''<?php
+function gallery_walk($elements, $post_id) {
+	foreach ($elements as $el) {
+		if (isset($el['settings']['cover_url'])) {
+			$url = $el['settings']['cover_url'];
+			if ($url && filter_var($url, FILTER_VALIDATE_URL) === false) {
+				$url = '';
+			}
+			if ($url) {
+				$url = wp_http_validate_url($url);
+				if ($url === false) {
+					continue;
+				}
+				update_post_meta($post_id, 'cover_size', getimagesize($url));
+			}
+		}
+		if (!empty($el['elements'])) {
+			gallery_walk($el['elements'], $post_id);
+		}
+	}
+}
+function gallery_after_save($post_id, $editor_data) {
+	gallery_walk($editor_data, $post_id);
+}
+add_action('elementor/editor/after_save', 'gallery_after_save', 10, 2);
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "another hook: its second parameter is not the editor data"
+code = '''<?php
+function gallery_walk($elements, $post_id) {
+	foreach ($elements as $el) {
+		if (isset($el['settings']['cover_url'])) {
+			$url = $el['settings']['cover_url'];
+			if ($url && filter_var($url, FILTER_VALIDATE_URL) === false) {
+				$url = '';
+			}
+			if ($url) {
+				update_post_meta($post_id, 'cover_size', getimagesize($url));
+			}
+		}
+		if (!empty($el['elements'])) {
+			gallery_walk($el['elements'], $post_id);
+		}
+	}
+}
+function gallery_after_save($post_id, $editor_data) {
+	gallery_walk($editor_data, $post_id);
+}
+add_action('save_post', 'gallery_after_save', 10, 2);
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "the hook name is a variable: which hook it is is not known"
+code = '''<?php
+function gallery_walk($elements, $post_id) {
+	foreach ($elements as $el) {
+		if (isset($el['settings']['cover_url'])) {
+			$url = $el['settings']['cover_url'];
+			if ($url && filter_var($url, FILTER_VALIDATE_URL) === false) {
+				$url = '';
+			}
+			if ($url) {
+				update_post_meta($post_id, 'cover_size', getimagesize($url));
+			}
+		}
+		if (!empty($el['elements'])) {
+			gallery_walk($el['elements'], $post_id);
+		}
+	}
+}
+function gallery_after_save($post_id, $editor_data) {
+	gallery_walk($editor_data, $post_id);
+}
+$hook = get_option('gallery_hook');
+add_action($hook, 'gallery_after_save', 10, 2);
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "a hook name one character off is another hook"
+code = '''<?php
+function gallery_walk($elements, $post_id) {
+	foreach ($elements as $el) {
+		if (isset($el['settings']['cover_url'])) {
+			$url = $el['settings']['cover_url'];
+			if ($url && filter_var($url, FILTER_VALIDATE_URL) === false) {
+				$url = '';
+			}
+			if ($url) {
+				update_post_meta($post_id, 'cover_size', getimagesize($url));
+			}
+		}
+		if (!empty($el['elements'])) {
+			gallery_walk($el['elements'], $post_id);
+		}
+	}
+}
+function gallery_after_save($post_id, $editor_data) {
+	gallery_walk($editor_data, $post_id);
+}
+add_action('elementor/editor/after_saves', 'gallery_after_save', 10, 2);
+'''
+
+[[route]]
 id = "wp-stored-lookups"
 lang = "php"
 framework = "wordpress"

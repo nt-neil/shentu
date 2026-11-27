@@ -180,6 +180,12 @@ Chinese for the zh-TW pages; keep the two in step.
   `fs.createWriteStream()`, `fs.writeFile()`, `fs.writeFileSync()` or `fs.promises.writeFile()` under
   the name the client sent (multer's `file.originalname`) is reported. express-fileupload's `.name` is
   not read.
+- Route models can name the hook a call registers (`hooks`): the call counts only when its first
+  argument is one of those names, written out as one string; a variable, a constant or a joined
+  string there does not count. `path` and `hooks` cannot be used together.
+- PHP rules: the editor data Elementor passes to `elementor/editor/after_save` callbacks (the second
+  parameter, every element's settings, which contributors and up write) is request input. Before,
+  a URL read from a widget's settings there and fetched (`getimagesize()`) was not reported.
 
 ### Known issues
 
