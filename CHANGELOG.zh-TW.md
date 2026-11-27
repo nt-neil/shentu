@@ -32,6 +32,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ### 已知問題
 
 - 轉址目標的檢查寫在另一個檔案時（例如 Tornado base class 的 `self.sanitize_next_url()`），仍然會回報：app_code_audit 先逐檔讀，跨檔追蹤看到檢查之後，那筆結果也不會拿掉。
+- `js-file-upload-client-name-write` 不會把 allowlist 當成檢查：檔名結尾或 MIME 類型已經對照清單檢查過，再用用戶端的名稱寫入時，仍然會回報（express-cart 1.1.7）。
+- PSR-7 的查詢參數交給路由產生器時（`$router->urlFor('list', [], $request->getQueryParams())`）會回報，但它產生的其實是站內的路徑。
 - `fgetcsv()`：在 `while` 條件裡指派的列（`while (($row = fgetcsv($h)) !== false)`）不會被追進 `while` 的內容裡，所以這種最常見的 CSV 讀法會漏掉。應用程式自己附的 CSV 檔也會回報。
 - 用 `json_decode()` 解開的 Symfony body 傳給別的函式時，輸入會在那裡斷掉，所以在 controller 解開、在另一個類別寫進 SQL 的欄位會漏掉。
 - 對輸入 `extract()` 之後，它設定的變數讀屬性（`$cfg->path`）不算輸入，因為 request 資料只會設定字串和 array。`extract((array) json_decode($in))` 和 `extract(get_object_vars(json_decode($in)))` 可能設定物件，它的屬性是輸入，這兩種會漏報。

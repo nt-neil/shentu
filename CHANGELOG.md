@@ -173,6 +173,11 @@ Chinese for the zh-TW pages; keep the two in step.
 - A redirect target checked in another file (a Tornado base class's `self.sanitize_next_url()`) is
   still reported: app_code_audit reads each file on its own first, and that finding stays when the
   calls across files show the check.
+- `js-file-upload-client-name-write` reads no allowlist as a check: an upload written under the
+  client's name after its extension or MIME type was checked against a list (express-cart 1.1.7) is
+  still reported.
+- PSR-7 query parameters handed to a route generator (`$router->urlFor('list', [], $request->getQueryParams())`)
+  are reported, though it builds a path on the site.
 - `fgetcsv()`: a row assigned in a `while` condition (`while (($row = fgetcsv($h)) !== false)`) is not
   followed into the loop, so that usual way of reading a CSV file is missed. A CSV file the
   application ships itself is reported as well.

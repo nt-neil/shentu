@@ -13,8 +13,8 @@ import (
 // existing rule (the file name up to "--") and, in its Case section, the
 // bench/cves case the change was designed from. That rule cites the case in
 // refs, the case is in bench/cves and not in bench/holdout, and no record names
-// another analysis tool (the rules are designed from the vulnerability and its
-// fix alone).
+// another analysis tool or a model (the rules are designed from the
+// vulnerability and its fix alone); nor does any rule file.
 func TestProvenance(t *testing.T) {
 	dir := filepath.Join("..", "docs", "rules-provenance")
 	files, err := filepath.Glob(filepath.Join(dir, "*.md"))
@@ -30,7 +30,7 @@ func TestProvenance(t *testing.T) {
 		byID[r.ID] = r
 	}
 	caseRe := regexp.MustCompile("`bench/cves/((?:CVE|GHSA)-[A-Za-z0-9-]+)\\.toml`")
-	tools := regexp.MustCompile(`(?i)\b(semgrep|opengrep|codeql|snyk|sonar\w*|bandit|psalm|phpstan|nuclei|brakeman|gosec)\b`)
+	tools := regexp.MustCompile(`(?i)\b(semgrep|opengrep|codeql|snyk|sonar\w*|bandit|psalm|phpstan|nuclei|brakeman|gosec|gpt[\w.-]*|chatgpt|claude|gemini|llms?|copilot|openai|anthropic)\b`)
 	n := 0
 	for _, f := range files {
 		base := filepath.Base(f)
@@ -76,5 +76,19 @@ func TestProvenance(t *testing.T) {
 	}
 	if n == 0 {
 		t.Fatal("no provenance records read")
+	}
+	// The rule files themselves name no other tool or model either.
+	tomls, err := filepath.Glob(filepath.Join("*", "*", "*.toml"))
+	if err != nil || len(tomls) == 0 {
+		t.Fatalf("no rule files read: %v", err)
+	}
+	for _, f := range tomls {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m := tools.FindString(string(b)); m != "" {
+			t.Errorf("%s: names another tool or a model (%q)", f, m)
+		}
 	}
 }
