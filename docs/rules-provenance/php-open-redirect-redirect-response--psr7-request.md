@@ -1,0 +1,54 @@
+# php-open-redirect-redirect-response: PSR-7 request parameters as sources
+
+## Case
+- CVE-2024-21641 (`bench/cves/CVE-2024-21641.toml`): composer flarum/flarum-core v1.8.4 → v1.8.5, open-redirect.
+- Cited in `refs` from this change, so it counts as "rule source".
+- Missed because the source was not known.
+
+## Root cause
+- `src/Forum/Controller/LogOutController.php:85`
+  `$url = Arr::get($request->getQueryParams(), 'return', ...)` reaches
+  `new RedirectResponse($url)` at `:89` and `:106`.
+- The fix routes the value through a new check:
+  ```
+  +        $return = $this->sanitizeReturnUrl((string) $returnUrl, $base);
+  ```
+  `sanitizeReturnUrl()` parses the URL and keeps it only when its host is in
+  `getAllowedRedirectDomains()`.
+- The rule's sources were Symfony and Laravel request getters; PSR-7's
+  `getQueryParams()` was not one. The sink `RedirectResponse(` was known.
+
+## Design
+- Sources: `->getQueryParams(`, `->getParsedBody(`.
+- A source, because the sink was known and the input's entry was missing.
+- Any receiver (`->`), not `$request->`: a PSR-7 handler names its parameter as
+  it likes (`$request`, `$req`, `$serverRequest`), and the two method names
+  belong to `ServerRequestInterface`.
+- Not chosen:
+  - `->getCookieParams(`, `->getUploadedFiles(`: no case needed them yet.
+  - `->getAttribute(`: set by routing or middleware, not always client input.
+- Known limits: none found beyond those.
+
+## Probes
+| fixture | base faac5b02 | new build | expected |
+|---|---|---|---|
+| `Arr::get(getQueryParams())` → `RedirectResponse`, two calls | - | reported, both | reported |
+| `getParsedBody()['next']` → `RedirectResponse` | - | reported | reported |
+| `in_array($t, [...], true)` allowlist before the redirect | - | - | not reported |
+| input read, a fixed URL redirected to | - | - | not reported |
+| the fix's form in one file (`sanitizeReturnUrl` not defined there) | - | reported | reported in a single file |
+
+The rule's samples gained one vulnerable and one safe PSR-7 sample.
+
+## Process
+- Rule lane: miss triage, design, probes.
+- Commander: approved the batch; the measurement gate.
+- Reviewer: pending.
+
+## Review
+Pending.
+
+## Measurement
+Single case, base faac5b02, rules at e99a52e5: missed → caught; the fixed
+release is not reported. Load (1-minute) 12.0 at the start, 13.3 at the peak
+sampled, no segment voided. The full runs are pending.
