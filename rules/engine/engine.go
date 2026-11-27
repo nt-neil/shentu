@@ -102,6 +102,7 @@ type argCond struct {
 	exclude        []*regexp.Regexp
 	unlessAt       string   // where unless looks: "" anywhere, "start", "top" (rules.Args.UnlessAt)
 	receiver       []*pat   // a method sink counts only on a receiver these name (receiver.go)
+	handle         int      // with receiver, for a function sink: the argument (from 1) holding the handle (handle.go)
 	notReceiver    []*pat   // nor on an object surely of one of these classes (receiver.go)
 	recvFrom       []*pat   // only on a receiver made by one of these, or of one of recvNames (recvMadeBy)
 	recvNames      []string // the names recvFrom takes when the file does not show what made the receiver
@@ -259,7 +260,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 	foldMembers(c.sanitizers)
 	for _, a := range r.Args {
 		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, fixedExt: a.FixedExt, recvNames: a.ReceiverNames, identPh: a.IdentPlaceholder, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
-			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
+			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup, handle: a.Handle}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":
 			return nil, fmt.Errorf("args: unless_at %q is not start or top", a.UnlessAt)
@@ -269,6 +270,10 @@ func compileRule(r rules.Rule) (*crule, error) {
 			return nil, fmt.Errorf("args: unless_imports_not needs unless_imports")
 		case a.Markup && len(a.Context) == 0:
 			return nil, fmt.Errorf("args: markup needs context")
+		case a.Handle < 0:
+			return nil, fmt.Errorf("args: handle %d is not an argument", a.Handle)
+		case a.Handle > 0 && len(a.Receiver) == 0:
+			return nil, fmt.Errorf("args: handle needs receiver")
 		}
 		for _, ct := range a.UnlessContentType {
 			ac.unlessCT = append(ac.unlessCT, strings.ToLower(ct))
@@ -482,7 +487,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	mws := koaMiddleware(base, toks, tree, ff, proj) // Koa's app.use(fn): fn's context is followed as a handler's (reqalias.go)
 	defs := phpDefines(base, toks)
 	if proj != nil {
-		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), rcls: fileRecvClasses(base, toks), ifacts: e.importFacts(base, toks), defs: defs})
+		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), hdefs: fileHandleDefs(base, toks), rcls: fileRecvClasses(base, toks), ifacts: e.importFacts(base, toks), defs: defs})
 	}
 	var out []Finding
 	add := func(r *crule, lines ...[]loc) {

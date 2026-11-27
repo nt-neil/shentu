@@ -32,6 +32,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - PHP 規則：用 `fgetcsv()` 讀出的欄位（例如使用者上傳的 CSV 檔）沒加 `['allowed_classes' => false]` 就傳給 `unserialize()` 時會回報。
 - 新的 JavaScript 規則 `js-file-upload-client-name-write`：上傳的檔案用 `fs.createWriteStream()`、`fs.writeFile()`、`fs.writeFileSync()` 或 `fs.promises.writeFile()`，以用戶端送來的名稱（multer 的 `file.originalname`）寫入時會回報。express-fileupload 的 `.name` 不在範圍內。
 
+- 規則：函式 sink 的 `[[args]]` 可以指定哪個參數是 handle（`handle`，要和 `receiver` 一起用）。這樣 `fwrite($fp, ...)` 只有在檔案裡看得到 `$fp`（或在別的方法、另一個檔案的 class 裡設定的 `$this->fp`）是 `receiver` 列的函式（例如 `fsockopen()`）產生的，才算數；看不出來源的 handle 不算。目前還沒有規則用到它。
 ### 已知問題
 
 - 轉址目標的檢查寫在另一個檔案時（例如 Tornado base class 的 `self.sanitize_next_url()`），仍然會回報：app_code_audit 先逐檔讀，跨檔追蹤看到檢查之後，那筆結果也不會拿掉。

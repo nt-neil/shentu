@@ -200,6 +200,7 @@ type analysis struct {
 
 	ftoks  []Token              // the file's tokens, for the receiver condition (receiver.go)
 	rdefs  map[string][][]Token // what names of the file are assigned or annotated with, built on first use
+	hdefs  map[string][][]Token // what the file assigns to $x and $this->x (PHP) or as rdefs, for the handle condition (handle.go)
 	rcls   map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
 	colls  map[string]bool      // names the file binds once, at the top, to a collection (urlguard.go collectionName), built on use
 	fregs  *fnRegions           // the file's function literals (urlcapture.go), built on use
@@ -2747,6 +2748,12 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	}
 	if !s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, nil, t[i:open]) {
 		return false // md5(x) of a function the file does not import from hashlib
+	}
+	if !s.member && cond != nil && cond.handle > 0 {
+		args := splitTop(region, isComma)
+		if open < 0 || cond.handle > len(args) || !a.handleIs(cond.receiver, args[cond.handle-1]) {
+			return false // fwrite($fp, ...) on a file fopen() opened, or a handle the file does not show the origin of
+		}
 	}
 	whole := cond != nil && cond.whole
 	emb := false

@@ -181,6 +181,10 @@ Chinese for the zh-TW pages; keep the two in step.
   the name the client sent (multer's `file.originalname`) is reported. express-fileupload's `.name` is
   not read.
 
+- Rules: a function sink's `[[args]]` can name the argument holding a handle (`handle`, with
+  `receiver`): `fwrite($fp, ...)` then counts only when the file shows `$fp` (or `$this->fp`, set in
+  another method or in a class in another file) made by one of `receiver`, `fsockopen()` say. A
+  handle the file does not show the origin of does not count. No shipped rule uses it yet.
 ### Known issues
 
 - A redirect target checked in another file (a Tornado base class's `self.sanitize_next_url()`) is
