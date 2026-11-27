@@ -74,21 +74,23 @@ func TestAppCodeAuditWalkCut(t *testing.T) {
 func TestAppCodeAuditStopsBeforeCtx(t *testing.T) {
 	isolateAudit(t)
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
-	// Each file takes 20ms, well under the 150ms the rules leave (a tenth of
+	// Each file takes 40ms, well under the 500ms the rules leave (a tenth of
 	// the caller's time), so a file begun just before their time is up still
-	// ends in time on a busy machine. All of them take 20s over the workers,
-	// so the rules do run out of time, and an audit that did not stop would
-	// be seconds late.
+	// ends in time on a busy machine; the wrap-up after them takes 120-160ms
+	// here. All of them take 40s over the workers (10s over 4), so the rules
+	// do run out of time, and an audit that did not stop would be seconds
+	// late. 5s, not 1.5s: a shared CI runner missed 1.5s once (#270) with the
+	// same code that keeps it locally.
 	for i := range 1000 {
 		os.WriteFile(filepath.Join(dir, fmt.Sprintf("a%03d.php", i)), []byte("<?php\nsystem($_GET['a']);\n"), 0o644)
 	}
 	scan := engineScan
 	defer func() { engineScan = scan }()
 	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, bool, error) {
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(40 * time.Millisecond)
 		return scan(e, lang, p, b)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	res := AppCodeAudit(ctx, []string{dir}, nil)
 	if ctx.Err() != nil {
