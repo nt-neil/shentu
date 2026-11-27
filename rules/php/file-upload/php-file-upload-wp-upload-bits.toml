@@ -14,6 +14,7 @@ refs = ["CVE-2024-4397"]
 
 [[args]]
 arg = 1
+fixed_ext = true   # a name ending with an extension the code chose ($base . $ext, $ext only ever '.jpg' or '.png') stores that type
 
 [[samples]]
 kind = "vulnerable"

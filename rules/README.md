@@ -391,6 +391,7 @@ arguments, not the options).
 | `keys` | an argument that is an array, object or dict literal counts by its keys only: Yii's `orderBy([$column => SORT_ASC])` puts the key in the query, while the value only picks a direction. An item without a key (`[$column]`) counts as a key; an argument that is not a literal counts whole |
 | `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources. The string may be reached through a variable, a constant, a PHP class constant (`self::KEY`), a property declared with it (`$this->key`, `self::$key`; not when the file assigns the property elsewhere), a concatenation, or a call that only reshapes it (`hash('sha256', '...')`, `base64_decode`, `substr`...), at most four steps deep; a name given two different values in the file is not known |
 | `not_literal` | with `arg`, rules without sources only: the argument must not be what `literal` accepts, so a command or template written out in full (`os.system("make clean")`, or through a name holding it) is not reported, and one made from a value the code does not write out (`os.system(" ".join(args))`, a parameter) is. Such a rule's tier is `reference`. A limit: a command split into adjacent literals (`os.system('ls ' '-l')`, one string to Python) or joined from a list of literals (`' '.join(['ls', '-l'])`) is still taken as not written out |
+| `fixed_ext` | with `arg`: the argument does not count when the name built in it ends with a fixed extension: its last part is a string written out ending in one (`$name . '.txt'`), a variable every value the file gives it is one (`$ext = '.jpg'` or `'.png'` on every path), or a variable assigned such a name on every path (`$basename = $base . '-image' . $ext`). Appending to the name afterwards (`.=`) forgets it, and a variable the file also writes some other way (a foreach target, a reference, a destructuring, or any `extract()`) is not read. Only extensions served as data count (images, text, PDF, archives, audio, video, office documents), never `.php`, `.phtml`, `.phar`, `.html` or `.svg`. A name like `shell.php.jpg` is not reported because `wp_upload_bits()`, the one sink using it, passes the name through `sanitize_file_name()`, which breaks up the inner extensions; for another sink this needs looking at again. For upload rules: the stored type is then the code's choice |
 | `min_len` | with `literal`: one of the strings the value is made from must be at least this long |
 | `exclude` | with `literal`: regular expressions (any case); a string matching one does not count, so `exclude = ["^[a-z0-9_]+-(sha\|md5)[0-9]*$"]` leaves out a purpose label such as `'wp-sha384'` |
 | `receiver` | method sinks only: the call does not count when the file shows its receiver is another kind of object than these. The receiver qualifies when one of the fragments appears in it, or in what its root name (`db`, `self._files`) is assigned, annotated or imported with in the file (`db = MongoClient(url).shop`, `def __init__(self, db: Database)`, `from pymongo.collection import Collection`), followed up to four steps; an import says what a name holds only when it comes from the standard library or a well-known package that is not MongoDB (`os`, `re`, `django`, `flask`...). A root the file says nothing about (no assignment, an import from a module of the project such as `from app.db import mongo` or `from .db import mongo`, a parameter without a type) still counts. So `finders.find(path)` after `from django.contrib.staticfiles import finders`, `'abc'.find(x)` and `data['text'].find(x)` after `data = request.get_json()` are not MongoDB queries, while `mongo.find(x)` after `from app.db import mongo` is; a `.find(` on an object of the project that is not a collection is then still reported (a false positive, kept over a miss) |
@@ -704,7 +705,8 @@ file, every line of it; when it stops early, `ErrMinified` is joined to `ErrLimi
 or `ErrPartial`, and the audit marks its findings `generated` and counts them apart.
 Before the analysis, a rule is skipped for a file that holds none of the names of its
 sinks or, outside library mode, of its sources: patterns match token by token, so
-such a file cannot give it a finding. Both
+such a file cannot give it a finding. PHP's `array(...)` holds its
+values as `[...]` does, not as a call the engine does not know. Both
 come with the findings made so far.
 
 What it does not do: follow values across files (input read in a controller and
@@ -714,7 +716,9 @@ nonce check whose result is kept in a variable, treat a check on a value derived
 after `$ext = pathinfo($name, ...)`) as a check on the original (but for a URL's
 host in the SSRF rules, see above), while a check on part
 of a value written in place counts for all of it (`in_array(pathinfo($n, PATHINFO_EXTENSION), ...)`
-cleans `$n` for every rule, path traversal included), know framework semantics beyond
+cleans `$n` for every rule, path traversal included), tell apart the elements of an array
+indexed by a variable (a check on `$a[$i]`, `in_array($a[$i], ...)` included, counts for
+`$a[$j]` too: a key not written as a literal is `*`), know framework semantics beyond
 the rules (a lookup in a constant dict is not an allowlist), look into options
 kept in a variable assigned differently on two paths, or prove a
 finding.
