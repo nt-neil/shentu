@@ -467,6 +467,11 @@ func cfgDefaultUser(s string) (name string, seen bool) {
 			continue
 		}
 		d := indent(l)
+		// default_user anywhere but the block form read (a flow mapping,
+		// a quoted key, JSON): not told (S-274-8)
+		if strings.Contains(t, "default_user") && !(t == "default_user:" && (d == 0 || parent == "system_info")) {
+			return "", true
+		}
 		if in {
 			if d <= at {
 				return "", true // its block ended with no name:
@@ -477,10 +482,7 @@ func cfgDefaultUser(s string) (name string, seen bool) {
 		if d == 0 {
 			parent = strings.TrimSuffix(t, ":")
 		}
-		if strings.HasPrefix(t, "default_user:") && (d == 0 || parent == "system_info") {
-			if t != "default_user:" {
-				return "", true // a value on the line: {name: x}, an anchor
-			}
+		if t == "default_user:" {
 			in, at = true, d
 		}
 	}

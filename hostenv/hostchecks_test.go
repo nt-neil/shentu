@@ -353,3 +353,23 @@ func TestCloudDefaultUserFlow(t *testing.T) {
 		t.Errorf("a block with no name, ended by the next key: %q %v", n, seen)
 	}
 }
+
+// S-274-8: default_user on a line not in the block form read (a flow
+// mapping under system_info, a quoted key, a JSON file) is not told.
+func TestCloudDefaultUserOtherForms(t *testing.T) {
+	for name, cfg := range map[string]string{
+		"flow under system_info": "system_info: {default_user: {name: admin}}\n",
+		"quoted key":             "system_info:\n  \"default_user\":\n    name: admin\n",
+		"a JSON file":            `{"system_info": {"default_user": {"name": "admin"}}}` + "\n",
+	} {
+		if n, seen := cfgDefaultUser(cfg); n != "" || !seen {
+			t.Errorf("%s: %q seen %v", name, n, seen)
+		}
+		h := newFake(true)
+		h.files["/etc/cloud/cloud.cfg"] = "system_info:\n  default_user:\n    name: ubuntu\n"
+		h.files["/etc/cloud/cloud.cfg.d/90-x.cfg"] = cfg
+		if u := CloudDefaultUser(h); u != "" {
+			t.Errorf("%s: default user %q, want none told", name, u)
+		}
+	}
+}
