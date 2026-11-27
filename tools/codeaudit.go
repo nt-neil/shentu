@@ -1298,3 +1298,16 @@ func (c *notRegularCount) note(what string) string {
 	}
 	return fmt.Sprintf("%d file(s) are not regular files (a FIFO, a device, a cloud or HSM placeholder), %s: %s%s", c.n, what, strings.Join(c.shown, ", "), more)
 }
+
+// noteZh is note in Chinese, as app_vulns' partial says the rest
+// (S-279-2).
+func (c *notRegularCount) noteZh(what string) string {
+	if c.n == 0 {
+		return ""
+	}
+	more := ""
+	if c.n > len(c.shown) {
+		more = fmt.Sprintf("，另外還有 %d 個", c.n-len(c.shown))
+	}
+	return fmt.Sprintf("%d 個檔案不是一般檔案（FIFO、裝置檔，或 cloud、HSM 的 placeholder），%s：%s%s", c.n, what, strings.Join(c.shown, "、"), more)
+}

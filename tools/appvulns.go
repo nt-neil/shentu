@@ -171,11 +171,14 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system bool) (map[string]any, error) {
 	files, skipped := findLockfiles(roots)
 	nLock := len(files)
-	siteDirs, partial := findSitePackages(roots, system)
-	if note := skipped.note("not checked"); note != "" { // lock files no regular file (S-257-3)
+	siteDirs, siteNotes := findSitePackages(roots, system)
+	// every site-packages folder found: findSitePackages' own word, never
+	// told from partial's length, which other notes add to (N-279-1)
+	walked := len(siteNotes) == 0
+	partial := append([]string(nil), siteNotes...)
+	if note := skipped.noteZh("沒有檢查"); note != "" { // lock files no regular file (S-257-3)
 		partial = append(partial, note)
 	}
-	walked := len(partial) == 0 // every site-packages folder found
 	var pth []PthFile
 	for _, d := range siteDirs {
 		sd := readSitePackages(d)

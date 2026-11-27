@@ -44,8 +44,8 @@ func TestNotRegularSaid(t *testing.T) {
 		t.Errorf("index.php not audited")
 	}
 
-	if ls, skipped := findLockfiles([]string{r}); len(ls) != 0 || skipped.note("not checked") != "1 file(s) are not regular files (a FIFO, a device, a cloud or HSM placeholder), not checked: "+r+"/app/package-lock.json" {
-		t.Errorf("lock files %+v, note %q", ls, skipped.note("not checked"))
+	if ls, skipped := findLockfiles([]string{r}); len(ls) != 0 || skipped.noteZh("沒有檢查") != "1 個檔案不是一般檔案（FIFO、裝置檔，或 cloud、HSM 的 placeholder），沒有檢查："+r+"/app/package-lock.json" {
+		t.Errorf("lock files %+v, note %q", ls, skipped.noteZh("沒有檢查"))
 	}
 
 	if _, unread := WordPressPlugins([]string{r + "/site"}); !slices.ContainsFunc(unread, func(u string) bool {
@@ -66,5 +66,16 @@ func TestNotRegularNoteCut(t *testing.T) {
 	}
 	if (&notRegularCount{}).note("x") != "" {
 		t.Error("a note with none")
+	}
+}
+
+// S-279-2: app_vulns' partial says it in Chinese, as its other notes.
+func TestNotRegularNoteZh(t *testing.T) {
+	var c notRegularCount
+	for _, p := range []string{"/a", "/b", "/c", "/d"} {
+		c.add(p)
+	}
+	if got := c.noteZh("沒有檢查"); got != "4 個檔案不是一般檔案（FIFO、裝置檔，或 cloud、HSM 的 placeholder），沒有檢查：/a、/b、/c，另外還有 1 個" {
+		t.Errorf("%q", got)
 	}
 }
