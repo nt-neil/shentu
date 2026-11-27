@@ -46,6 +46,12 @@ Chinese for the zh-TW pages; keep the two in step.
   surface, nor taken for a CVE OSV already reports when a third-party PHP or nginx is compared with
   upstream. A USN whose package has no CVE-named advisory to tell its CVEs' release by is counted in
   `kev_unchecked` and named, never dropped quietly.
+- Windows: Shentu's own files opened without following a link (the dispatch log, the AI budget
+  reservations, the auto-incident and audit locks) are checked and used through one handle, opened
+  not following a symlink or junction. Before, the file was looked at, then opened by its name, and
+  the two compared in a way that cannot tell on Windows: a file swapped for a link in between was
+  opened through the link. A deduplicated file (Windows Server Data Deduplication) is still opened;
+  another kind of reparse point is said, not opened.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the

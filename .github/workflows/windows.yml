@@ -52,7 +52,7 @@ jobs:
           go test -v -run 'TestVtableSlotsMatchSDK|TestCollectLeavesHostUnchanged|TestFirewallPolicyLive' ./hostenv/
           go test ./hostenv/ ./checks/ ./internal/msrc/ ./internal/osutil/
           SHENTU_SNAPSHOT_WATCH=2m go test -v -count=1 -run 'TestSnapshotNoise' -timeout 10m ./hostenv/ # after collections: delayed writes
-          go test -v -run 'TestSecureDir|TestSecureDirRefusesSquatted|TestTrustConfig|TestTrustConfigMissingAndLinks|TestSkillsNeedTrustedFolder|TestStateReadyRefusesForeignState|TestCheckTrustedACETypes|TestSetupNotOnWindows|TestSecureDirRepairOnlyAtInstall|TestStateDirParentsChecked|TestStateDirParentsForms' .
+          go test -v -run 'TestSecureDir|TestSecureDirRefusesSquatted|TestTrustConfig|TestTrustConfigMissingAndLinks|TestSkillsNeedTrustedFolder|TestStateReadyRefusesForeignState|TestCheckTrustedACETypes|TestSetupNotOnWindows|TestSecureDirRepairOnlyAtInstall|TestStateDirParentsChecked|TestStateDirParentsForms|TestAppendBadWindows' .
           # Telegram bot, offline: a fake Bot API and a fake model (httptest).
           go test -run 'Bot|TOTP|MarkdownToTelegram|Welcome|Schedule|NextDaily' .
           go test ./tools/
