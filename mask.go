@@ -85,8 +85,10 @@ func tagAt(tags [][]int, i int) []int {
 
 // sudoTag is a sudoers NOPASSWD: or PASSWD: tag where sudoers puts one:
 // after a runas spec ")" or another tag, and before a command (ALL, an
-// absolute path, "!" or another tag). Group 1 is the tag. "PASSWD: x" or
-// "X-PASSWD: x" elsewhere is not a tag and is masked as a secret would be.
+// absolute path, "!" before a path or an upper-case name, or another
+// tag; ALL and a name end there: ALL-x, !x are not). Group 1 is the tag.
+// "PASSWD: x" or "X-PASSWD: x" elsewhere is not a tag and is masked as a
+// secret would be.
 // (A double-quoted pattern, so the rule-parity test, which reads
 // back-quoted patterns, skips it.)
-var sudoTag = regexp.MustCompile("(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|[A-Z]+:)")
+var sudoTag = regexp.MustCompile("(?m)(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL(?:[ \\t,:;)]|$)|/|![ \\t]*(?:/|[A-Z][A-Z0-9_]*(?:[ \\t]*(?:[,:]|$)|=))|[A-Z]+:)")

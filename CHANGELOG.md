@@ -80,11 +80,47 @@ Chinese for the zh-TW pages; keep the two in step.
 - package_vulns' overview tells how many of the vulnerabilities a fix is known to be out for
   (`fix_available`, also per package) and how many it is not known for (`fix_unconfirmed`). A
   fix is known when the advisory is a distribution's update notice (DSA, DLA, USN, RLSA, ALSA,
-  SUSE-SU) or an ALAS; for a php.net or nginx.org entry, the fixed release is out upstream, though
-  the repository the package came from (sury, for one) may not have packaged it yet. The rest, such as
+  SUSE-SU) or an ALAS. A php.net or nginx.org entry is counted in `fix_available` too: the fixed
+  release is out upstream, though the repository the package came from (sury, for one) may not have
+  packaged it yet. The rest, such as
   a CVE entry of Debian's or Ubuntu's tracker, are unconfirmed: the overview does not fetch each
   advisory to tell, and `fix_note` says that unconfirmed is not "no fix". Until now the count
   mixed them; `package` set still gives each one's `fixed_version`, without the counts.
+- site_profile on Linux and macOS says two more risks. `sudo:nopasswd` (a warning): sudoers lets
+  someone run every command with no password: `ALL` anywhere among the commands a NOPASSWD tag
+  covers (it holds up to a PASSWD tag), a command alias that is ALL or cannot be told, a command
+  whose path is a folder or holds a wildcard (`/usr/bin/`, `/usr/bin/*`: sh among them; a
+  wildcard in the arguments only is not), a command masked as a secret would be, or
+  `Defaults !authenticate` for everyone, a user or a run-as account; in any sudoers file, for a
+  group or ALL. The one exception is the cloud image's default user: such a rule in
+  `/etc/sudoers.d/90-cloud-init-users` (that path only) for cloud-init's `default_user` (read from
+  `/etc/cloud/cloud.cfg` and `cloud.cfg.d/*.cfg`, not user-data; one set in a way not read, such as
+  `{name: x}`, a quoted key or JSON, is none) alone is `sudo:nopasswd:cloud-init`
+  (info, in the report only), whose text says it is safe only while that user logs in with a key
+  alone. NOPASSWD for some commands only, or `Defaults!cmd !authenticate` for some, is
+  `sudo:nopasswd:some` (info). Each rule is listed with what it runs and the account it runs as.
+  The rules are read through every `#include`/`@include` and `includedir` as sudo reads them (names
+  with a dot or ending in `~` skipped). A file not read, or sudoers from sss or ldap, is said as
+  `unchecked:sudoers`, never taken for no such rule. A recording keeps sudo's tags only in sudoers
+  files (`/etc/sudoers`, `/etc/sudoers.d/*` and what they include), in their rule lines, where the
+  word after the tag is a command (`ALL=NOPASSWD: /path`, `(root) NOPASSWD: DEPLOY`, `sudoedit`, an
+  option), so a replay reads these rules as written; everywhere else the secret masking is as
+  before, and now also masks the value in `(x) PASSWD: !<password>` and `FOO: PASSWD: ALL-<password>`. `reboot:pending` (a warning): an update waits
+  for a reboot, its old kernel or libraries still running. On Debian and Ubuntu it is
+  `/run/reboot-required` (with the packages it names); elsewhere a kernel in `/boot` newer than the
+  running one of the same flavor (`+debug`, UEK and the distribution's own kernel compared apart).
+  A running kernel not in `/boot` (a container) is not compared.
+- file_changes and log_search's hard-link check read the host as the other checks do, through the
+  host source: a replay or another host's survey reads that host's files, not the machine running
+  the check (a Linux or macOS host's recording read on a Windows machine waits for a later
+  release). The host source's file details now carry the status-change time (ctime, which
+  file_changes counts as before: a file whose mtime was set back still shows) and the hard links;
+  these checks are made on Unix only (on Windows the details say they do not apply, never 0).
+- A file app_code_audit, app_vulns' lock-file search or the WordPress plugin search would read that
+  is not a regular file (a FIFO, a device, a cloud or HSM placeholder such as a OneDrive file not
+  on the disk) is said rather than skipped quietly: the audit's `not_checked` and app_vulns'
+  `partial` count them and name the first three; a plugin's `.php` file of that kind is named among
+  what was not read when no header was found. A link is not followed, as before, and not counted.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
@@ -123,6 +159,19 @@ Chinese for the zh-TW pages; keep the two in step.
 - PHP rules: input put in `array(...)` and passed to another function keeps its input, as `[...]`
   did (`edit_status(array($_REQUEST['id']))`); before, `array(...)` read as a call the engine does
   not know, so the input did not cross into that function's sinks.
+- Python rules: Tornado request arguments (`self.get_argument()`, `self.get_query_argument()`,
+  `self.get_body_argument()`) passed to `self.redirect()` are reported; before, neither the arguments
+  nor `self.redirect()` were read by the redirect rule.
+- PHP rules: PSR-7 request input (`$request->getQueryParams()`, `->getParsedBody()`) passed to a
+  redirect response (`new RedirectResponse($url)`) is reported.
+- PHP rules: a Symfony request's body (`$request->getContent()`, `$request->toArray()`) written into
+  SQL in the same function is reported, an ORDER BY column too.
+- PHP rules: a cell read with `fgetcsv()`, as from an imported CSV file, and passed to `unserialize()`
+  without `['allowed_classes' => false]` is reported.
+- A new JavaScript rule, `js-file-upload-client-name-write`: an upload written with
+  `fs.createWriteStream()`, `fs.writeFile()`, `fs.writeFileSync()` or `fs.promises.writeFile()` under
+  the name the client sent (multer's `file.originalname`) is reported. express-fileupload's `.name` is
+  not read.
 - `php-nosqli-mongo-query` and the CodeIgniter, Doctrine, Drupal, Joomla and Yii SQL rules: a
   method sink (`$Db->find(...)`, `->where(...)`) reached from another file is not reported in a
   project that never names the library (in its PHP code, a string, composer.json, composer.lock or
@@ -136,8 +185,25 @@ Chinese for the zh-TW pages; keep the two in step.
   unserializes strings only and returns an array as is. Before, the input in the array counted. One
   value of the array, a string made from it, and a path where the input arrives as a string are
   still reported.
+
 ### Known issues
 
+- A redirect target checked in another file (a Tornado base class's `self.sanitize_next_url()`) is
+  still reported: app_code_audit reads each file on its own first, and that finding stays when the
+  calls across files show the check.
+- `js-file-upload-client-name-write` reads no allowlist as a check: an upload written under the
+  client's name after its extension or MIME type was checked against a list (express-cart 1.1.7) is
+  still reported.
+- Input handed to a route generator that builds a path on the site is still reported in a redirect
+  (PSR-7's `urlFor()`, Flarum's `$url->to(...)->route()`, Tornado's `reverse_url()`).
+- `fgetcsv()`: a row assigned in a `while` condition (`while (($row = fgetcsv($h)) !== false)`) is not
+  followed into the loop, so that usual way of reading a CSV file is missed. A CSV file the
+  application ships itself is reported as well.
+- A value escaped with a database library's `->escape()` and written inside quotes is still reported
+  (`php-sqli-string-concat`): the rule does not read `->escape(` as a check, as some libraries'
+  escape adds no quotes and a numeric position is left open. A Symfony body now reaches it too.
+- A Symfony body decoded with `json_decode()` and passed to another function loses its input there,
+  so a field decoded in a controller and written into SQL in another class is missed.
 - After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:
   `extract()` of request data sets strings and arrays. `extract((array) json_decode($in))` and
   `extract(get_object_vars(json_decode($in)))` can set objects whose properties are input, and these

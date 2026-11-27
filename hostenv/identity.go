@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -123,9 +124,11 @@ func (m *Masker) apply(entries []*entry) []*entry {
 	if m.DropArgs {
 		dropArgs(entries)
 	}
+	sudoers := sudoersFiles(entries) // by their paths as read, before those are masked
 	// Deterministic placeholder order: walk entries sorted by key.
 	sort.Slice(entries, func(i, j int) bool { return entries[i].key() < entries[j].key() })
 	for _, e := range entries {
+		isSudoers := e.Op == "file" && sudoers[e.Path]
 		e.Path = m.text(e.Path, !winSkipIP(e), true)
 		for i := range e.Argv {
 			e.Argv[i] = m.text(e.Argv[i], true, true)
@@ -152,17 +155,27 @@ func (m *Masker) apply(entries []*entry) []*entry {
 		case e.Op == "cmd" && baseName(e.Argv[0]) == "lsof" && strings.Contains(strings.Join(e.Argv, " "), "-F"):
 			s = m.lsofFields(s) // "n192.0.2.1:22": the field letter hides the address from \b
 		}
-		s = m.text(s, !skipIP(e), !skipUser(e))
+		if isSudoers {
+			s = m.textWith(MaskSudoers, s, !skipIP(e), !skipUser(e)) // sudo's tags kept in its rules
+		} else {
+			s = m.text(s, !skipIP(e), !skipUser(e))
+		}
 		e.data = []byte(s)
 	}
 	return entries
 }
 
 func (m *Masker) text(s string, ips, users bool) string {
+	return m.textWith(MaskSecrets, s, ips, users)
+}
+
+// textWith is text with secrets masked by maskSecrets (MaskSudoers for a
+// sudoers file).
+func (m *Masker) textWith(maskSecrets func(string) string, s string, ips, users bool) string {
 	if s == "" {
 		return s
 	}
-	s = MaskSecrets(s)
+	s = maskSecrets(s)
 	s = maskMachineSIDs(s)
 	s = sshKeyRe.ReplaceAllStringFunc(s, m.key)
 	s = emailRe.ReplaceAllStringFunc(s, func(t string) string {
@@ -636,4 +649,61 @@ func sshBlob(keyType, key string) []byte {
 		b = append(b, f...)
 	}
 	return b
+}
+
+// sudoersFiles are the read entries that are sudoers files: /etc/sudoers,
+// those in /etc/sudoers.d, and those they include (#include, @include,
+// #includedir, @includedir; a relative path from the including file's
+// folder), as sudo reads them.
+//
+// Known limit: an includedir of a folder holding other configuration
+// (@includedir /etc) makes every file there without a dot (and not
+// ending in ~) a sudoers file, masked by MaskSudoers. That is how sudo
+// reads it too: sudo parses those files as sudoers.
+func sudoersFiles(entries []*entry) map[string]bool {
+	byPath := map[string]*entry{}
+	for _, e := range entries {
+		if e.Op == "file" && e.data != nil {
+			byPath[e.Path] = e
+		}
+	}
+	files := map[string]bool{}
+	var add func(p string, depth int)
+	add = func(p string, depth int) {
+		e := byPath[p]
+		if e == nil || files[p] || depth > 8 {
+			return
+		}
+		files[p] = true
+		for _, ln := range sudoersLines(string(e.data)) {
+			f := strings.Fields(ln)
+			kind := ""
+			if len(f) >= 2 {
+				kind = sudoIncludeDirective(f[0])
+			}
+			if kind == "" {
+				continue
+			}
+			q := strings.Trim(strings.Join(f[1:], " "), `"`)
+			if !path.IsAbs(q) {
+				q = path.Join(path.Dir(p), q)
+			}
+			if kind == "include" {
+				add(q, depth+1)
+				continue
+			}
+			for o := range byPath {
+				if path.Dir(o) == q && !sudoIncludedirSkips(path.Base(o)) {
+					add(o, depth+1)
+				}
+			}
+		}
+	}
+	add("/etc/sudoers", 0)
+	for p := range byPath { // sudo's default includedir, as read even with no /etc/sudoers recorded
+		if path.Dir(p) == "/etc/sudoers.d" && !sudoIncludedirSkips(path.Base(p)) {
+			add(p, 1)
+		}
+	}
+	return files
 }

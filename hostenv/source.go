@@ -86,6 +86,23 @@ type FileStat struct {
 	// same inode (ext4 and tmpfs reuse them).
 	Born time.Time `json:"born,omitempty"`
 	ID   string    `json:"id,omitempty"` // device:inode, to tell the same file from a swapped one ("" unknown)
+	// CTime is the status-change time (st_ctime: set by the kernel on any
+	// change, not by utimes as the mtime is); NLink the hard links. nil
+	// when not known: a fixture recorded before they were kept, a system
+	// not read for them. Where the system has no such thing they are in
+	// NotApplicable, never 0.
+	CTime *time.Time `json:"ctime,omitempty"`
+	NLink *uint64    `json:"nlink,omitempty"`
+	// NotApplicable names the fields this system has none of ("uid",
+	// "gid", "ctime", "nlink" on Windows): not 0, not unknown.
+	NotApplicable []string `json:"not_applicable,omitempty"`
+}
+
+// withStatExtra adds what the system's stat has besides the portable
+// fields: ctime and nlink, or what does not apply here.
+func withStatExtra(fst FileStat, st fs.FileInfo) FileStat {
+	fst.CTime, fst.NLink, fst.NotApplicable = statExtra(st)
+	return fst
 }
 
 // ErrChanged is returned when a file is not the one stat looked at: it was
@@ -305,7 +322,7 @@ func (l *Live) Stat(path string) (FileStat, error) {
 	if err != nil {
 		return FileStat{}, err
 	}
-	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st), ID: pathFileID(l.path(path), st), Born: pathBorn(l.path(path))}, nil
+	return withStatExtra(FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st), ID: pathFileID(l.path(path), st), Born: pathBorn(l.path(path))}, st), nil
 }
 
 func (l *Live) ReadDir(path string) ([]string, error) {

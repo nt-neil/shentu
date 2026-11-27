@@ -427,7 +427,7 @@ func TestHeldOut(t *testing.T) {
 		{"PY4 RawSQL annotate", "python", "def v(request):\n    o = request.GET['o']\n    return Item.objects.annotate(x=RawSQL('SELECT ' + o, []))\n", true, ""},
 		{"PY5 upload filename Path join", "python", "async def up(file: UploadFile):\n    target = Path(UPLOAD_DIR) / file.filename\n    with open(target, 'wb') as out:\n        out.write(await file.read())\n", true, ""},
 		{"PY6 httpx client stream", "python", "async def p(request):\n    u = (await request.json())['u']\n    async with httpx.AsyncClient() as http_client:\n        async with http_client.stream('GET', u) as r:\n            return {'s': r.status_code}\n", true, ""},
-		{"PY7 tornado redirect body", "python", "class H(RequestHandler):\n    def post(self):\n        self.redirect(self.get_body_argument('return_to'))\n", true, "the Tornado/aiohttp redirect rule is held back: a project's own next-URL check in a base class (self.sanitize_next_url) is not followed, so a fixed release was still reported"},
+		{"PY7 tornado redirect body", "python", "class H(RequestHandler):\n    def post(self):\n        self.redirect(self.get_body_argument('return_to'))\n", true, ""},
 		{"PY8 torch.load downloaded, default weights_only", "python", "def f(url):\n    buf = io.BytesIO(requests.get(url).content)\n    return torch.load(buf)\n", false, ""},
 		{"PY9 jinja2.Template starlette form", "python", "async def p(request):\n    t = jinja2.Template((await request.form())['tpl'])\n    return HTMLResponse(t.render())\n", true, ""},
 		{"PY10 tornado write href", "python", "class H(RequestHandler):\n    def get(self):\n        u = self.get_argument('u')\n        self.write('<a href=\"' + u + '\">back</a>')\n", true, ""},
@@ -447,8 +447,8 @@ func TestHeldOut(t *testing.T) {
 		{"PY24 redis client.get not ssrf", "python", "@app.get('/k')\nasync def k(request: Request):\n    return {'v': await client.get(request.query_params['k'])}\n", false, ""},
 		{"PY25 flask session.get not ssrf", "python", "@app.route('/s')\ndef s():\n    return {'v': session.get(request.args['k'])}\n", false, ""},
 		{"PY26 chained AsyncClient get", "python", "@app.get('/f')\nasync def f(request: Request):\n    return (await httpx.AsyncClient().get(request.query_params['url'])).text\n", true, ""},
-		{"PY27 redirect startswith check", "python", "class L(RequestHandler):\n    def get(self):\n        n = self.get_argument('n', '/')\n        if not n.startswith('/') or n.startswith('//'):\n            n = '/'\n        self.redirect(n)\n", true, "the Tornado/aiohttp redirect rule is held back: a project's own next-URL check in a base class (self.sanitize_next_url) is not followed, so a fixed release was still reported"},
-		{"PY28 redirect slash plus input", "python", "class L(RequestHandler):\n    def get(self):\n        self.redirect('/' + self.get_argument('n', ''))\n", true, "the Tornado/aiohttp redirect rule is held back: a project's own next-URL check in a base class (self.sanitize_next_url) is not followed, so a fixed release was still reported"},
+		{"PY27 redirect startswith check", "python", "class L(RequestHandler):\n    def get(self):\n        n = self.get_argument('n', '/')\n        if not n.startswith('/') or n.startswith('//'):\n            n = '/'\n        self.redirect(n)\n", true, ""},
+		{"PY28 redirect slash plus input", "python", "class L(RequestHandler):\n    def get(self):\n        self.redirect('/' + self.get_argument('n', ''))\n", true, ""},
 		{"PY29 tornado href xhtml_escape", "python", "class H(RequestHandler):\n    def get(self):\n        self.write('<a href=\"' + xhtml_escape(self.get_argument('u')) + '\">go</a>')\n", true, ""},
 		{"PY30 tornado bare write", "python", "class H(RequestHandler):\n    def get(self):\n        self.write(self.get_argument('x'))\n", true, ""},
 		{"PY31 starlette media_type charset", "python", "@app.get('/p')\nasync def p(request: Request):\n    return Response(content='<b>' + request.query_params['p'] + '</b>', media_type='text/html; charset=utf-8')\n", true, ""},
@@ -485,7 +485,7 @@ func TestHeldOut(t *testing.T) {
 		{"QB29 argv table lookup", "python", "@app.post('/c')\ndef c():\n    return subprocess.check_output(TOOLS.get(request.form['t'], ['true']))\n", false, ""},
 		{"QB30 format_html_join template", "python", "def v(request):\n    return HttpResponse(format_html_join('\\n', '<li>' + request.GET['c'] + '{}</li>', ((x,) for x in ITEMS)))\n", true, ""},
 		{"QB31 df.query request", "python", "@app.get('/q')\ndef q():\n    return df.query(request.args['q']).to_json()\n", true, ""},
-		{"QB32 redirect startswith slash only", "python", "class L(RequestHandler):\n    def get(self):\n        n = self.get_argument('n', '/')\n        if n.startswith('/'):\n            self.redirect(n)\n", true, "the Tornado/aiohttp redirect rule is held back: a project's own next-URL check in a base class (self.sanitize_next_url) is not followed, so a fixed release was still reported"},
+		{"QB32 redirect startswith slash only", "python", "class L(RequestHandler):\n    def get(self):\n        n = self.get_argument('n', '/')\n        if n.startswith('/'):\n            self.redirect(n)\n", true, ""},
 		// Python lane, batch 3: dynamic imports, upload file names, Image.open paths.
 		{"PC1 import_module from query", "python", "@app.get('/w')\ndef w():\n    mod = importlib.import_module(request.args['plugin'])\n    return mod.render()\n", true, ""},
 		{"PC2 import_string from json body", "python", "def v(request):\n    cfg = json.loads(request.body)\n    return JsonResponse(import_string(cfg['handler'])().run())\n", true, ""},
@@ -723,6 +723,9 @@ func TestHeldOut(t *testing.T) {
 		{"r32 REF CVE-2026-52840 CI controller Guzzle", "php", "<?php\nclass Caldav extends EA_Controller { public function connect() {\n  $url = request('caldav_url');\n  $client = new Client();\n  $r = $client->request('REPORT', $url, ['headers' => ['Depth' => 1]]);\n} }\n", true, "the bare request() helper is not a source: a pattern for it would also match ->request( of an HTTP client (engine)"},
 		{"r32 REF CVE-2026-52840 CI input->post", "php", "<?php\nclass Caldav extends CI_Controller { public function connect() {\n  $url = $this->input->post('caldav_url');\n  $client = new Client();\n  $r = $client->request('REPORT', $url);\n} }\n", true, ""},
 		{"r32 REF CVE-2025-50383 CI order_by from post", "php", "<?php\nclass Appointments extends EA_Controller { public function search() {\n  $order_by = request('order_by', 'update_datetime DESC');\n  $rows = $this->appointments_model->search($k, $limit, $offset, $order_by);\n} }\nclass Appointments_model extends EA_Model { public function search($k, $limit, $offset, $order_by) {\n  return $this->db->select()->from('appointments')->order_by($order_by)->get()->result_array();\n} }\n", true, "input passed to a model method of another class is not followed"},
+		// Cases from the review of #277.
+		{"r277 tornado next-URL check in another file", "python", "from .base import BaseHandler\n\nclass L(BaseHandler):\n    def post(self):\n        n = self.sanitize_next_url(self.get_argument('next', ''))\n        self.redirect(n)\n", false, "fixed FP known: the check is written in another file (a base class), so the product's per-file pass still reports the flow; cvebench scans with Project.Scan, which follows it, and does not"},
+		{"r277 fgetcsv row assigned in a while condition", "php", "<?php\nwhile (($row = fgetcsv($h, 1000, ',')) !== false) {\n    update_post_meta($id, $row[0], unserialize($row[1]));\n}\n", true, "a variable assigned inside a while condition is not followed into the loop body"},
 	}
 	pass := 0
 	for _, c := range cases {

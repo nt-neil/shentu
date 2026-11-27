@@ -37,7 +37,7 @@
   <label>語言 <select id="fl"><option value="">全部</option><option value="php">PHP</option><option value="python">Python</option><option value="js">JavaScript / TypeScript</option></select></label>
   <label>類別 <select id="fc"><option value="">全部</option><option value="cmdi">命令注入</option><option value="code-eval">程式碼執行</option><option value="deserialization">不安全的反序列化</option><option value="file-upload">危險的檔案上傳</option><option value="hardcoded-secret">寫死的憑證</option><option value="ldapi">LDAP 注入</option><option value="nosqli">NoSQL 注入</option><option value="open-redirect">開放重新導向</option><option value="path-traversal">路徑穿越</option><option value="sqli">SQL 注入</option><option value="ssrf">伺服器端請求偽造（SSRF）</option><option value="weak-crypto">弱加密</option><option value="xss">跨站腳本（XSS）</option><option value="xxe">XML 外部實體（XXE）</option></select></label>
   <label>嚴重度 <select id="fs"><option value="">全部</option><option value="critical">極危</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label>
-  <p class="count" aria-live="polite"><strong id="shown">131</strong> / 131 條規則</p>
+  <p class="count" aria-live="polite"><strong id="shown">132</strong> / 132 條規則</p>
 </form>
 <section class="routes">
   <h2>路由模型</h2>
@@ -2156,6 +2156,25 @@ app.post(&#34;/upload&#34;, (req, res) =&gt; {
 });</code></pre></div>
     </div>
     <p class="fix"><strong>修法</strong> Check the extension and MIME type against an allowlist before storing, and save the file under a name the server makes (crypto.randomUUID() plus a fixed extension) outside the web root.</p>
+  </details>
+  
+  <details class="rule" id="js-file-upload-client-name-write" data-rule-id="js-file-upload-client-name-write" data-lang="js" data-class="file-upload" data-sev="high" data-text="js-file-upload-client-name-write CWE-434 Uploaded file written under the name the client sent, without checking its type">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-file-upload-client-name-write</code> <span class="cwe">CWE-434</span><span class="title">Uploaded file written under the name the client sent, without checking its type</span></span></summary>
+    <p class="meta">框架: express</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">the upload copied into a stream named by the client</p><pre><code>router.post(&#34;/file/upload&#34;, upload.single(&#34;file&#34;), (req, res) =&gt; {
+  const file = req.file;
+  const source = fs.createReadStream(file.path);
+  const dest = fs.createWriteStream(path.join(&#34;public/uploads&#34;, file.originalname.replace(/ /g, &#34;_&#34;)));
+  source.pipe(dest);
+  res.redirect(&#34;/admin&#34;);
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the client&#39;s bytes under a name the server makes</p><pre><code>app.post(&#34;/avatar&#34;, upload.single(&#34;avatar&#34;), (req, res) =&gt; {
+  fs.writeFileSync(path.join(&#34;uploads&#34;, crypto.randomUUID() &#43; &#34;.bin&#34;), req.file.buffer);
+  res.sendStatus(201);
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Check the extension and MIME type against an allowlist before writing, and write the file under a name the server makes (crypto.randomUUID() plus a fixed extension) outside the web root.</p>
   </details>
   
 </section>
