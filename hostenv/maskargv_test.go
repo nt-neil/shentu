@@ -30,6 +30,9 @@ func TestMaskArgvSemicolonInPassword(t *testing.T) {
 		{[]string{"docker", "run", "-p", "8080:80", "mysql"}, "docker run -p 8080:80 mysql"},
 		{[]string{"mysql", "-p", "shop"}, "mysql -p shop"},
 		{[]string{"tool", "--password", "--next"}, "tool --password --next"},
+		// S-286-10: a user's name is no program
+		{[]string{"psql", "-U", "mysql", "-p5432"}, "psql -U mysql -p5432"},
+		{[]string{"tool", "--user", "mysql", "-p5432"}, "tool --user mysql -p5432"},
 	}
 	for _, c := range cases {
 		if got := ParseCmdline([]byte(strings.Join(c.argv, "\x00") + "\x00")); got != c.want {
@@ -49,6 +52,10 @@ func TestMaskArgvSemicolonInPassword(t *testing.T) {
 	if got := capCmdline(win); got != `"C:\Program Files\MySQL\bin\mysql.exe" -u root -p[REDACTED] db` {
 		t.Errorf("windows quoted path: %q", got)
 	}
+	// S-286-9: \\ before a quote is a backslash: the quote ends there.
+	if got := capCmdline(`"C:\dir\\" mysql.exe -p` + s); got != `"C:\dir\\" mysql.exe -p[REDACTED]` {
+		t.Errorf("windows \\\\ before a quote: %q", got)
+	}
 	// Text that is not argv (a log line, a shell's history) keeps the line
 	// rules: a command ends at an unquoted ; there.
 	if got := MaskSecrets("mysql -pab" + s + ";rm -rf /tmp/x"); got != "mysql -p[REDACTED];rm -rf /tmp/x" {
@@ -57,9 +64,23 @@ func TestMaskArgvSemicolonInPassword(t *testing.T) {
 }
 
 func TestSplitWinCmdline(t *testing.T) {
-	got := SplitWinCmdline(`"C:\a b\x.exe"  -p"c d" e\"f g` + "\t" + `h`)
-	want := []string{`"C:\a b\x.exe"`, `-p"c d"`, `e\"f`, `g`, `h`}
+	got := SplitWinCmdline(`"C:\a b\x.exe"  -p"c d" e\"f g` + "\t" + `h "C:\dir\\" i a\\\"b c`)
+	want := []string{`"C:\a b\x.exe"`, `-p"c d"`, `e\"f`, `g`, `h`, `"C:\dir\\"`, `i`, `a\\\"b`, `c`}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("%q", got)
+	}
+}
+
+// The joined argv's pass leaves out exactly the four text rules of a
+// command's own password (mysql -p, --password, curl's two).
+func TestArgvTextRules(t *testing.T) {
+	n := 0
+	for _, r := range secretRules {
+		if argvTextRule(r.re.String()) {
+			n++
+		}
+	}
+	if n != 4 {
+		t.Errorf("%d argv text rules, want 4", n)
 	}
 }
