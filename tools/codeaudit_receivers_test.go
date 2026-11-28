@@ -13,7 +13,8 @@ import (
 // names under vendor/, which it does not read, and whether it left a file of
 // a rule language out. $col->find() on the project's own MyDb::find() is no
 // MongoDB query only when nothing the audit skipped or could not read may
-// name MongoDB.
+// name MongoDB: a folder skipped counts for every rule, a single file only
+// for its language's rules (a script over the size limit is no PHP).
 func TestAppCodeAuditReceivers(t *testing.T) {
 	const rule = "php-nosqli-mongo-query"
 	base := map[string]string{
@@ -38,6 +39,8 @@ func TestAppCodeAuditReceivers(t *testing.T) {
 		{"R6 only composer.lock lists it", map[string]string{"composer.lock": `{"packages": [{"name": "mongodb/mongodb"}]}`}, nil, true},
 		{"R10 a file that names it cannot be read", map[string]string{"lib/m.php": mongo}, map[string]os.FileMode{"lib/m.php": 0}, true},
 		{"a folder the audit skips", map[string]string{"node_modules/x/index.js": "module.exports = 1\n"}, nil, true},
+		{"a script over the size limit: no PHP left out", map[string]string{"js/app.min.js": "var a=1;" + strings.Repeat("a=a+1;", auditMaxSize/6+1)}, nil, false},
+		{"a script that cannot be read: no PHP left out", map[string]string{"js/app.js": "var a = 1;\n"}, map[string]os.FileMode{"js/app.js": 0}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir, _ := filepath.EvalSymlinks(t.TempDir())

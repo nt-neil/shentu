@@ -78,6 +78,7 @@ type Project struct {
 	named                map[string]bool            // receivers names some PHP file names (fileIndex.Named)
 	pkgs                 map[string]bool            // Composer packages composer.json or composer.lock requires, or a vendor/ path holds (lower case)
 	gap                  bool                       // some file was not indexed to its end (unreadable, too big, the file or time limit)
+	gapLang              map[string]bool            // languages (baseLang) of single files the caller left out (ProjectOptions.IncompleteLangs)
 	methodsOnce          sync.Once
 	methods              map[string]bool          // methods the project's classes declare (lower case): ownMethodOnly
 	routeTo              map[string][]routeTarget // file → its functions other files register as handlers (routes.go)
@@ -105,10 +106,16 @@ type ProjectOptions struct {
 	// Packages: Composer packages the caller found installed and did not
 	// pass (vendor/<vendor>/<package>, lower case), for the rules' receivers.
 	Packages []string
-	// Incomplete: the caller left out files of the rules' languages (a folder
-	// it skips, a file too big or not read, its own caps): the project then
-	// holds no "never named" for the rules' receivers (Project.ownMethodOnly).
+	// Incomplete: the caller left out what any rule's files may be in (a
+	// folder it skips, one too deep, its own caps, a walk cut short,
+	// composer.lock or vendor/ not read): the project then holds no "never
+	// named" for the rules' receivers (Project.ownMethodOnly).
 	Incomplete bool
+	// IncompleteLangs: languages (LangOf) of single files the caller left out
+	// (too big, not read, no regular file): the same, for the rules of those
+	// languages only. A PHP rule's receivers still hold when a minified
+	// script over the caller's size limit was left out.
+	IncompleteLangs []string
 }
 
 // DefaultProjectWork is ProjectOptions.MaxWork's default. Every project of E7
@@ -192,7 +199,13 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
 		ctx: map[string]*fileCtx{}, sums: map[ruleFile]*summaries{}, kept: map[ruleFile]*keptSums{}, costs: map[[2]string]int{}, seen: map[string]bool{},
 		incl: map[string][]string{}, fnMemo: map[[2]string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{}, sinkRules: map[string]bool{}, named: map[string]bool{}, pkgs: map[string]bool{},
-		deadline: time.Now().Add(opt.MaxTime), gap: opt.Incomplete}
+		deadline: time.Now().Add(opt.MaxTime), gap: opt.Incomplete, gapLang: map[string]bool{}}
+	for _, l := range opt.IncompleteLangs {
+		if l == "" {
+			p.gap = true // no language named: every rule's
+		}
+		p.gapLang[baseLang(l)] = true
+	}
 	for _, k := range opt.Packages {
 		p.pkgs[strings.ToLower(k)] = true
 	}
@@ -335,7 +348,7 @@ func (p *Project) IndexDigest(lang string) string {
 		for _, k := range slices.Sorted(maps.Keys(p.pkgs)) {
 			fmt.Fprintf(h, "pkg %q\n", k) // ownMethodOnly
 		}
-		fmt.Fprintf(h, "gap %v\n", p.gap)
+		fmt.Fprintf(h, "gap %v %v\n", p.gap, slices.Sorted(maps.Keys(p.gapLang)))
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -350,6 +363,12 @@ func (p *Project) Unsteady() bool { return p.unsteady }
 // file unread, not stopped; see ownMethodOnly). cvebench counts the cases
 // where it is false.
 func (p *Project) NamesComplete() bool { return !p.gap && p.stopped == "" && len(p.unread) == 0 }
+
+// NamesCompleteFor is NamesComplete for the rules of one language (php,
+// python, js): a single file of another language left out does not count.
+func (p *Project) NamesCompleteFor(lang string) bool {
+	return p.NamesComplete() && !p.gapLang[baseLang(lang)]
+}
 
 // Stopped tells why calls stopped crossing files, or "" when they did not.
 func (p *Project) Stopped() string { return p.stopped }

@@ -698,11 +698,13 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	late := 0                    // ... nor before their own time limit
 	var code []string            // rule-language files, scanned once all are known
 	// For the rules' receivers (N-284-2): the Composer packages under vendor/,
-	// which is not read, and whether a file of a rule language was left out
-	// (a skipped folder, too deep or too big, unread, over the file cap, or
-	// the walk cut short): then no project-wide "never named" holds.
+	// which is not read, and what was left out: for every rule, a skipped
+	// folder, one too deep, the file cap, a walk cut short, composer.lock or
+	// vendor/ not read (incomplete); for one language's rules, a single file
+	// of it too big, unread or no regular file (incompleteLangs).
 	var pkgs []string
 	incomplete := false
+	var incompleteLangs []string // languages of single files left out (too big, unread, no regular file): those rules only
 	seen := map[string]hostenv.FileStat{}
 	src := hostSource()         // the host read (a replay, another host's survey), not the machine running the audit
 	hash := map[string]string{} // content of the rule-language files, for the results kept between audits
@@ -815,7 +817,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			// quiet gap; a link is not followed by design
 			if st.Mode&fs.ModeSymlink == 0 && auditable(name) {
 				notRegular.add(p)
-				incomplete = incomplete || engine.LangOf(name) != ""
+				if l := engine.LangOf(name); l != "" {
+					incompleteLangs = append(incompleteLangs, l)
+				}
 			}
 			return nil
 		}
@@ -863,7 +867,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			if lang != "" && eng != nil && st.Size > auditMaxSize {
 				partial = append(partial, UnfinishedFile{p, "size", ""})
 			}
-			incomplete = incomplete || lang != ""
+			if lang != "" {
+				incompleteLangs = append(incompleteLangs, lang)
+			}
 			return nil
 		}
 		res.Files++
@@ -1017,7 +1023,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		slowRules, slowFiles := 0, 0
 		if left := time.Until(deadline); left > 0 && ctx.Err() == nil {
 			pr := eng.NewProject(code, read, engine.ProjectOptions{CacheFile: codeIndexFile(), MaxTime: left,
-				MaxHeap: budget.heap, MaxTokens: budget.projectTokens(), Packages: pkgs, Incomplete: incomplete})
+				MaxHeap: budget.heap, MaxTokens: budget.projectTokens(), Packages: pkgs, Incomplete: incomplete, IncompleteLangs: incompleteLangs})
 			st.useDigests(pr, []string{"php", "python", "js"})
 			order := make([]string, 0, len(files))
 			var retry []string
