@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/rules/engine"
 )
 
@@ -298,8 +297,10 @@ func ErrorEvents(lines []string, verified bool, from string, loc *time.Location)
 			e.Frames = append(e.Frames, Frame{File: m[1], Line: n})
 		}
 	}
+	// The lines are parsed as written: a mask would let a request's text
+	// echoed before PHP's location (an unclosed key BEGIN) take the location
+	// with it. An event keeps only times and frames, which are never output.
 	for _, l := range lines {
-		l = hostenv.MaskSecrets(l)
 		if t, ok := errorTime(l, loc); ok {
 			out = append(out, ErrorEvent{Time: t, Verified: verified, From: from})
 			if m := phpLocation(l); m != nil {
