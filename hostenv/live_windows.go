@@ -118,16 +118,17 @@ func readValue(k registry.Key, name string) (RegValue, bool) {
 		if typ == registry.EXPAND_SZ {
 			t = "EXPAND_SZ"
 		}
-		return RegValue{Type: t, String: MaskSecrets(s)}, true
+		return RegValue{Type: t, String: MaskSecrets(s), Raw: s}, true
 	case registry.MULTI_SZ:
 		ss, _, err := k.GetStringsValue(name)
 		if err != nil {
 			return RegValue{}, false
 		}
+		raw := append([]string(nil), ss...)
 		for i := range ss {
 			ss[i] = MaskSecrets(ss[i])
 		}
-		return RegValue{Type: "MULTI_SZ", Strings: ss}, true
+		return RegValue{Type: "MULTI_SZ", Strings: ss, RawStrings: raw}, true
 	case registry.DWORD, registry.QWORD:
 		n, _, err := k.GetIntegerValue(name)
 		if err != nil {
@@ -238,7 +239,7 @@ func serviceConfig(scm windows.Handle, s *WinService) {
 		s.ConfigErr = errCode(winErr("QueryServiceConfig", s.Name, err))
 		return
 	}
-	s.BinaryPath = MaskSecrets(c.BinaryPathName)
+	s.BinaryPath, s.rawBinary = MaskSecrets(c.BinaryPathName), c.BinaryPathName
 	s.StartType = startTypes[c.StartType]
 	s.Account = c.ServiceStartName
 }
@@ -516,7 +517,10 @@ func (l *Live) Tasks() ([]WinTask, error) {
 					out = append(out, WinTask{Path: r, Err: errCode(err)})
 					continue
 				}
-				t, err := ParseTaskXML(r, []byte(MaskSecrets(DecodeText(b))))
+				// Parsed as written (N-286-1): masked first, a key BEGIN in a
+				// task's description took the rest of the XML with it and the
+				// task read as unparsable. Its actions are masked (capCmdline).
+				t, err := ParseTaskXML(r, b)
 				if err != nil {
 					t.Err = "other:parse"
 				}

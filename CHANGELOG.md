@@ -150,6 +150,10 @@ Chinese for the zh-TW pages; keep the two in step.
   a request's text echoed before PHP's location (an unclosed private key marker) no longer takes
   the location with it, so the sink keeps its error-log evidence. The events keep only times and
   locations, and nothing from them is output.
+- On Windows the checks read a service's command line, a registry string and a scheduled task's
+  XML as written, not masked first: an unclosed private key marker in a service's path, a home's
+  path or a task's description no longer hides an unquoted service path, a startup folder or the
+  task. What they output stays masked.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
@@ -227,12 +231,12 @@ Chinese for the zh-TW pages; keep the two in step.
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
   `-E cert:<secret>`).
 - Some checks still read texts masked when read in: commands' output (packages, the firewall's
-  rules, macOS's listeners and accounts), and on Windows scheduled tasks, services' paths,
-  registry values and event data.
-- In text (a log line, a shell's history, a cron line), a user's name of `mysql` given to an option
-  (`--user mysql -p5432`, `psql -U mysql -p5432`) or a file named `.mysql` (`psql -f backup.mysql
-  -p5432`) is read as the program, and the `-p` after it is masked; a process's command line,
-  judged argument by argument, is not.
+  rules, macOS's listeners and accounts), and on Windows event data (each field masked on its
+  own; log_search's text of an event is masked field by field).
+- A user's name of `mysql` given to an option in text (a log line, a shell's history, a cron line:
+  `--user mysql -p5432`, `psql -U mysql -p5432`) is read as the program, and the `-p` after it is
+  masked (a process's command line, judged argument by argument, is not); a file named `.mysql`
+  (`psql -f backup.mysql -p5432`) is read so in text and in a process's command line alike.
 - log_search matches the masked text: what the mask covers cannot be found. A pattern matched
   against the text as written would tell, match by match, what a masked secret is.
 - A recording (a fixture) holds the masked text only, so a check replayed from it can decide
