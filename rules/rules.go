@@ -104,6 +104,13 @@ type Args struct {
 	MinLen   int      `toml:"min_len"`  // with literal: the string must be at least this long
 	Exclude  []string `toml:"exclude"`  // with literal: a string matching one of these regular expressions (any case) does not count
 	Receiver []string `toml:"receiver"` // a method sink counts only when its receiver, followed through the file's assignments and annotations, holds one of these
+	// Handle (with receiver, for a function sink): the argument (from 1) that
+	// holds the handle the call works on (fwrite($fp, ...): 1). The call counts
+	// only when that argument, followed back through the file's assignments
+	// ($fp = fsockopen(...), $this->fp = stream_socket_client(...)), was made by
+	// one of receiver. A handle whose origin the file does not show counts as
+	// none: not reported.
+	Handle int `toml:"handle"`
 	// NotReceiver: a method sink does not count on an object surely made by
 	// one of these classes: new Class(...), or a name every assignment of the
 	// file gives such an object ($q = new WP_Query; $q->query($args)). A

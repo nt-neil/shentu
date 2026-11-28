@@ -203,6 +203,7 @@ type analysis struct {
 
 	ftoks  []Token              // the file's tokens, for the receiver condition (receiver.go)
 	rdefs  map[string][][]Token // what names of the file are assigned or annotated with, built on first use
+	hprops *handleProps         // the file's property table for the handle condition, built on first use (handle.go)
 	rcls   map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
 	colls  map[string]bool      // names the file binds once, at the top, to a collection (urlguard.go collectionName), built on use
 	fregs  *fnRegions           // the file's function literals (urlcapture.go), built on use
@@ -767,6 +768,11 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 	}
 	for _, tg := range tl {
 		a.setTarget(st, tg, tv, t[k].Text, sep)
+		if len(a.r.handleRaw) > 0 {
+			if key, _, ok := a.pathKey(tg); ok {
+				a.handleAssign(st, key, rhs, t[k].Text)
+			}
+		}
 		a.sourceParts(st, tg, rhs, t[k].Text)
 		a.sourceNot(st, tg, rhs, t[k].Text)
 		if key, _, ok := a.pathKey(tg); ok {
@@ -2785,6 +2791,12 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	}
 	if !s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, nil, t[i:open]) {
 		return false // md5(x) of a function the file does not import from hashlib
+	}
+	if !s.member && cond != nil && cond.handle > 0 {
+		args := splitTop(region, isComma)
+		if open < 0 || cond.handle > len(args) || !a.handleIs(st, cond, args[cond.handle-1]) {
+			return false // fwrite($fp, ...) on a file fopen() opened, or a handle the file does not show the origin of
+		}
 	}
 	whole := cond != nil && cond.whole
 	emb := false
