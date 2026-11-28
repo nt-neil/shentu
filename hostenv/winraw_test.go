@@ -118,6 +118,17 @@ func TestParseEventTextAcrossFields(t *testing.T) {
 	if !strings.Contains(got, "IpAddress=203.0.113.9") {
 		t.Errorf("a key's BEGIN and END in two fields hid the one between: %q", got)
 	}
+	// The security review of 42e9b2d6: curl's -u ending a field, the
+	// user:password in the next; --password ending one, a quoted value with
+	// spaces in the next.
+	got, _ = ParseEventText(ev(`<Data Name="a">x ` + "cu" + "rl" + ` -s -u</Data><Data Name="b">bob:hunter2x9</Data><Data Name="IpAddress">203.0.113.9</Data>`))
+	if strings.Contains(got, "hunter2x9") || !strings.Contains(got, "b=bob:[REDACTED]") || !strings.Contains(got, "IpAddress=203.0.113.9") {
+		t.Errorf("curl -u then user:password: %q", got)
+	}
+	got, _ = ParseEventText(ev(`<Data Name="a">tool --password</Data><Data Name="b">"hunter2x9 more"</Data><Data Name="IpAddress">203.0.113.9</Data>`))
+	if strings.Contains(got, "hunter2x9") || strings.Contains(got, "more") || !strings.Contains(got, "IpAddress=203.0.113.9") {
+		t.Errorf("--password then a quoted value: %q", got)
+	}
 	// A quoted user:password left open in one field (masked there to its
 	// end) would take every field after it in a pass over the line.
 	dl := "cu" + "rl"

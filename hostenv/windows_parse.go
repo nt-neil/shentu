@@ -215,6 +215,7 @@ func ParseEventText(s string) (string, error) {
 	ssh := strings.HasPrefix(x.System.Channel, "OpenSSH")
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s %d:", x.System.TimeCreated.SystemTime, x.System.Channel, x.System.EventID)
+	next := secretNone // what the field before says this one's value is
 	field := func(name, value string) {
 		if name == "" || typedNameEvents[x.System.EventID] && typedNameFields[name] {
 			return
@@ -223,6 +224,21 @@ func ParseEventText(s string) (string, error) {
 		if ssh {
 			value = sshSkeleton(value)
 		}
+		// A secret named by the field before and given in this one
+		// (S-294-2): judged by fields, not by a pattern across them (a quote
+		// opened in one field could take the ones after it, N-296-1).
+		raw := value
+		switch next {
+		case secretWhole:
+			if value != "" {
+				value = "[REDACTED]"
+			}
+		case secretAfterUser:
+			if i := strings.Index(value, ":"); i >= 0 {
+				value = value[:i+1] + "[REDACTED]"
+			}
+		}
+		next = secretNext(raw)
 		// Each field masked on its own (S-294-1): an unclosed key BEGIN in
 		// one a client sent (a logon's names) masked every field after it,
 		// the source address among them. The value first (a program at its
@@ -243,22 +259,43 @@ func ParseEventText(s string) (string, error) {
 // secret named in one field and given in the next ("--password" then the
 // value, "Bearer" then the token). Only rules whose value holds no space
 // run here (key=value, Bearer and Basic, a URL's user:password, the token
-// formats), and --password with a bare word: one whose value may be quoted
+// formats): one whose value may be quoted
 // (mysql's -p, --password, curl's -u, a JSON argv) or a private key's
 // would take a quote opened in one field to where a later one closes it,
-// and hide the fields between (N-296-1). Each field had them on its own.
+// and hide the fields between (N-296-1). Each field had them on its own;
+// a secret given in the field after its option is masked by fields
+// (secretNext).
 func maskJoinedEvent(s string) string {
 	for _, r := range secretRules {
 		if !acrossFieldsRule(r.re.String()) {
 			s = replaceOutsideSudoTags(s, r.re, r.repl)
 		}
 	}
-	return joinedBarePassword.ReplaceAllString(s, "${1}[REDACTED]")
+	return s
 }
 
-// joinedBarePassword is --password/--passwd then a bare word (no quote, no
-// space): the value of a field after one that ends with the option.
-var joinedBarePassword = regexp.MustCompile(`(--pass(?:word|wd)\s+)[^-\s"'\\;|&][^\s"'\\;|&]*`)
+const (
+	secretNone      = iota
+	secretWhole     // the field before ended with --password, --passwd, Bearer or Basic
+	secretAfterUser // the field before ended with curl's or wget's -u, -U, --user or --proxy-user
+)
+
+var eventCurl = regexp.MustCompile(`(?i)(?:^|[^=\w])(?:curl|wget)(?:\.exe)?(?:\s|$)`)
+
+// secretNext is what a field's value says the next field's value is.
+func secretNext(value string) int {
+	w := strings.Fields(value)
+	if len(w) == 0 {
+		return secretNone
+	}
+	switch last := w[len(w)-1]; {
+	case strings.EqualFold(last, "--password") || strings.EqualFold(last, "--passwd") || strings.EqualFold(last, "Bearer") || strings.EqualFold(last, "Basic"):
+		return secretWhole
+	case (last == "-u" || last == "-U" || last == "--user" || last == "--proxy-user") && eventCurl.MatchString(value):
+		return secretAfterUser
+	}
+	return secretNone
+}
 
 // acrossFieldsRule is a rule left out of the joined pass: a private key's,
 // a command's own password in text (argvTextRule), a JSON argv's.
