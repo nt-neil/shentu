@@ -89,7 +89,7 @@ func (p *Project) vendorPkg(f string) {
 // cut short by the clock or the work cap; the scan reports either as
 // Unsteady.
 func (p *Project) ownMethodOnly(r *crule, method string) bool {
-	if p == nil || len(r.recvNames) == 0 && len(r.recvPkgs) == 0 || p.gap || p.stopped != "" || len(p.unread) > 0 {
+	if p == nil || len(r.recvNames) == 0 && len(r.recvPkgs) == 0 || !p.NamesCompleteFor(r.rule.Lang) {
 		return false
 	}
 	for _, n := range r.recvNames {
