@@ -161,8 +161,9 @@ Chinese for the zh-TW pages; keep the two in step.
 - sudo's rule for cloud-init's default user (every command, no password) is a warning, not info,
   when sshd lets every user log in with a password: PasswordAuthentication yes, or sshd's default
   on a known distribution, and no Match block in any sshd config file (every file read; an
-  Include with a %-token or ~ counts as maybe one). Whoever guesses that user's password is then
-  root at once. The survey's sshd facts say whether a Match block may change a setting (`match`)
+  Include with a %-token or ~ counts as maybe one; with no main sshd_config, as with no sshd or
+  openSUSE's /usr/etc/ssh alone, it is not raised). If that user has a password set (cloud-init
+  locks it by default), whoever guesses it is then root at once. The survey's sshd facts say whether a Match block may change a setting (`match`)
   and which settings a file sets (`set`).
 - On Windows the checks read a service's command line, a registry string and a scheduled task's
   XML as written, not masked first: an unclosed private key marker in a service's path, a home's
@@ -272,6 +273,9 @@ Chinese for the zh-TW pages; keep the two in step.
   another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
   `-E cert:<secret>`).
+- The cloud-init sudo warning reads PasswordAuthentication only: it is raised although
+  `AuthenticationMethods publickey` allows keys alone, and not raised when PasswordAuthentication is
+  no but `KbdInteractiveAuthentication yes` with `UsePAM yes` still takes a password.
 - Some checks still read texts masked when read in: on Windows event data (each field masked on
   its own; log_search's text of an event is masked field by field).
 - A secret whose name and value an event gives in two fields (a name in one, the value in the next)
