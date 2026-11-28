@@ -7,7 +7,7 @@ tier = "info"
 title = "Request input written into a protocol line sent over a socket (a CRLF in it starts another command)"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->get(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["fwrite(", "fputs("]
-sanitizers = ["(int)", "intval", "absint", "ctype_digit", "ctype_alnum", "rawurlencode", "urlencode", "base64_encode", "bin2hex"]
+sanitizers = ["(int)", "intval", "absint", "ctype_digit", "ctype_alnum", "rawurlencode", "urlencode", "base64_encode", "bin2hex", "http_build_query"]
 fix = "Refuse a value holding a line break (\\r or \\n) before it goes into a protocol line: check it against an allowlist anchored with \\z (not $, which lets a final \\n through), or cast it to an integer."
 refs = ["CVE-2026-126813"]
 

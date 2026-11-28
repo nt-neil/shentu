@@ -109,7 +109,7 @@ func TestHandleNeedsReceiver(t *testing.T) {
 // bound: no token is copied, and past maxHandleProps the table is given up.
 func TestHandleCost(t *testing.T) {
 	var b strings.Builder
-	b.WriteString("<?php\nclass C { function f() {\n")
+	b.WriteString("<?php\nclass C { function f() {\n$this->fp = fsockopen($h, 80);\n") // names a receiver: the table is read
 	for b.Len() < 1<<20 {
 		b.WriteString("$this->a=$this->a=$this->a=$this->a=1;\n")
 	}
@@ -149,6 +149,15 @@ func TestHandleCost(t *testing.T) {
 	}
 	if got := after.TotalAlloc - before.TotalAlloc; got > 1<<20 {
 		t.Errorf("reading the property table allocated %d bytes, want under 1 MiB", got)
+	}
+
+	// A file that names no receiver gets no table at all, at the cost of one pass.
+	plainFile := lex("php", strings.ReplaceAll(b.String(), "fsockopen", "fopen"), newBudget(Limits{}))
+	if h := e.fileHandleProps("php", plainFile); h == nil || h.mention || h.cut || len(h.props) != 0 {
+		t.Errorf("a file without a receiver: %+v, want an empty table", h)
+	}
+	if allocs := testing.AllocsPerRun(3, func() { e.fileHandleProps("php", plainFile) }); allocs > 3 {
+		t.Errorf("a file without a receiver: %v allocations", allocs)
 	}
 }
 

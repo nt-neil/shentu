@@ -38,8 +38,9 @@ const (
 // handleProps is a file's property table: for each property name, the
 // receivers (as the rules write them) some assignment to $this->name calls.
 type handleProps struct {
-	props map[string][]string
-	cut   bool // more property assignments than maxHandleProps: nothing is known
+	props   map[string][]string
+	cut     bool // more property assignments than maxHandleProps: nothing is known
+	mention bool // the file names one of the receivers at all: otherwise nothing in it is made by one, and no state is kept for it
 }
 
 // rhsEnd is the end of the right side starting at i: the first ";" or ","
@@ -79,14 +80,23 @@ func madeBy(t []Token, raws []string, ps []*pat) []string {
 
 // buildHandleProps reads a PHP file's $this->x = ... assignments.
 func buildHandleProps(toks []Token, raws []string, ps []*pat) *handleProps {
-	h := &handleProps{props: map[string][]string{}}
+	names := map[string]bool{}
+	for _, r := range raws {
+		n := strings.TrimSuffix(r, "(")
+		n = n[strings.LastIndexAny(n, ".>:")+1:]
+		names[n] = true
+	}
+	if !slices.ContainsFunc(toks, func(t Token) bool { return t.Kind == Ident && names[t.Text] }) {
+		return &handleProps{} // no receiver in the file: no table, and assignments in it are not recorded
+	}
+	h := &handleProps{props: map[string][]string{}, mention: true}
 	n := 0
 	for i := 0; i+3 < len(toks); i++ {
 		if toks[i].Kind != Var || toks[i].Text != "$this" || !toks[i+1].op("->") || toks[i+2].Kind != Ident || !toks[i+3].op("=") {
 			continue
 		}
 		if n++; n > maxHandleProps {
-			return &handleProps{cut: true}
+			return &handleProps{cut: true, mention: true}
 		}
 		name := toks[i+2].Text
 		for _, r := range madeBy(toks[i+4:rhsEnd(toks, i+4)], raws, ps) {
@@ -112,6 +122,9 @@ func (e *Engine) fileHandleProps(lang string, toks []Token) *handleProps {
 func (a *analysis) handleAssign(st state, key string, rhs []Token, op string) {
 	if op != "=" {
 		return // $fp .= ...: the value is not replaced
+	}
+	if h := a.handleFile(); h != nil && !h.mention {
+		return // the file names no receiver: no value in it is made by one
 	}
 	for _, r := range a.r.handleRaw {
 		delete(st, handleSt+key+"\x00"+r)
@@ -165,10 +178,7 @@ func (a *analysis) handleIs(st state, cond *argCond, arg []Token) bool {
 	if !a.php || !isProp || strings.Contains(prop, sepCh) {
 		return false
 	}
-	if a.hprops == nil && a.ftoks != nil {
-		a.hprops = buildHandleProps(a.ftoks, a.r.handleRaw, a.r.handlePats)
-	}
-	if a.hprops == nil {
+	if a.handleFile() == nil {
 		return false
 	}
 	if a.hprops.cut {
@@ -182,4 +192,13 @@ func (a *analysis) handleIs(st state, cond *argCond, arg []Token) bool {
 		}
 	}
 	return false
+}
+
+// handleFile is the property table of the file being analysed: the project's
+// (a function analysed from another file), or built from the file's tokens.
+func (a *analysis) handleFile() *handleProps {
+	if a.hprops == nil && a.ftoks != nil {
+		a.hprops = buildHandleProps(a.ftoks, a.r.handleRaw, a.r.handlePats)
+	}
+	return a.hprops
 }
