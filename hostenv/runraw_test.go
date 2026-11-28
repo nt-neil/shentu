@@ -14,7 +14,7 @@ type prodMac struct{ fakeMac }
 
 func (p prodMac) Run(ctx context.Context, argv []string) (CmdResult, error) {
 	r, err := p.fakeMac.Run(ctx, argv)
-	r.Stdout = []byte(MaskSecrets(string(r.Stdout)))
+	r.Stdout, r.Stderr = []byte(MaskSecrets(string(r.Stdout))), MaskSecrets(r.Stderr) // as Runner.Run (S-293-1)
 	return r, err
 }
 func (p prodMac) RunUnmasked(ctx context.Context, argv []string) (CmdResult, error) {

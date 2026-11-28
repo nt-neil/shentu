@@ -291,6 +291,16 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 	case "apk":
 		set.ThirdParty, set.OriginNotes = apkThirdParty(src)
 	}
+	// dpkg's and rpm's output is parsed as written; what is kept is masked
+	// (N-293-1), after the origins were judged on it.
+	for i := range items {
+		p := &items[i]
+		p.Name, p.Source, p.Version, p.Arch = MaskSecrets(p.Name), MaskSecrets(p.Source), MaskSecrets(p.Version), MaskSecrets(p.Arch)
+		p.Origin = MaskSecrets(p.Origin)
+	}
+	for i := range set.NotChecked {
+		set.NotChecked[i] = MaskSecrets(set.NotChecked[i])
+	}
 	set.Items = items
 	if set.Feed != nil {
 		DropAbsentSLEProducts(set.Feed, src, items)

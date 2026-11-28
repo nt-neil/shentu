@@ -95,7 +95,7 @@ func macProcesses(ctx context.Context, all bool) (procs []Proc, partial string, 
 		if hp.InTemp {
 			p.Flags = append(p.Flags, "runs_from_temp")
 		}
-		if minerSigns(p.Exe, hp.MatchCmdline()) { // as written, not the masked and cut p.Cmdline (N-286-1)
+		if minerSigns(hp.MatchExe(), hp.MatchCmdline()) { // as written, not the masked and cut p.Cmdline (N-286-1)
 			p.Flags = append(p.Flags, "miner")
 		}
 		if (webUsers[p.User] || macWebUsers[p.User]) && shells[filepath.Base(p.Exe)] {

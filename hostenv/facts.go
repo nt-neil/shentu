@@ -181,6 +181,9 @@ type Process struct {
 	// for checks only (N-286-1: a mask must not hide a miner's options); it
 	// is never output and is empty when read back from a fixture.
 	RawCmdline string `json:"-"`
+	// RawExe is Exe as written where the source masked it (macOS's ps),
+	// for checks only; empty otherwise.
+	RawExe string `json:"-"`
 }
 
 type Account struct {
@@ -331,4 +334,13 @@ func (p Process) MatchCmdline() string {
 		return p.RawCmdline
 	}
 	return p.Cmdline
+}
+
+// MatchExe is the executable a check matches: as written when the source
+// kept it so, else Exe.
+func (p Process) MatchExe() string {
+	if p.RawExe != "" {
+		return p.RawExe
+	}
+	return p.Exe
 }

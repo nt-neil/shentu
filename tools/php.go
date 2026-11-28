@@ -188,7 +188,7 @@ var (
 var (
 	phpWindows = false
 	phpRun     = func(ctx context.Context, argv []string) ([]byte, error) {
-		res, err := hostenv.RunUnmasked(ctx, hostSource(), argv) // parsed as written (N-286-1)
+		res, err := hostSource().Run(ctx, argv) // masked: package metadata, its fields kept as output (N-293-1)
 		if err == nil && res.ExitCode != 0 {
 			err = fmt.Errorf("%s exited %d", argv[0], res.ExitCode)
 		}
