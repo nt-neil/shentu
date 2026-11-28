@@ -5,9 +5,8 @@ Kind: precision
 - Rules whose sinks are method names (`->find(`, `->where(`, `->setQuery(`)
   counted the method on any object, since the engine does not know a
   receiver's type. In the CVE bench's noise lines:
-  - newsletters-lite's `$Db->find()`, its own `wpmlDbHelper::find()`, read as a
-    MongoDB query;
-  - wp-recall's `RQ::tbl(...)->where()` read as five frameworks' SQL;
+  - wp-recall's `RQ::tbl(...)->where()`, its own `Rcl_Query::where()`, read as
+    five frameworks' SQL;
   - redaxo's `rex_sql::setQuery()` read as Joomla's;
   - nextgen-gallery's DataMapper `where()` read as Doctrine's and Yii's.
 - When a project never names a library and one of its own classes declares a
