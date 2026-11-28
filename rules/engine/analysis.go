@@ -37,6 +37,10 @@ type entry struct {
 	arr   bool // PHP: the value is an array, on every path that taints it (array(...), [...], explode()): maybe_unserialize() returns it as is
 	keys  bool // an array tainted only by what was written under literal keys ($q['a'] = $in): another literal key it does not hold reads clean (get)
 	ext   bool // tainted only by extract() of input, which sets strings and arrays: a property of it ($wpdb->prefix) holds no input (postfix)
+	// litKeys (PHP): an array every key of which is a literal (['db.host' =>
+	// $in], array(...), written by literal key since), on every path that taints
+	// it: a foreach over it binds keys that are no input (loop)
+	litKeys bool
 }
 
 type state map[string]entry
@@ -102,8 +106,9 @@ func mergeInto(x, y state) state {
 	both := func(a, b entry) entry {
 		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san, pre: a.pre && b.pre,
 			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak), arr: weakOf(a.taint, a.arr, b.taint, b.arr),
-			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys), // tainted only under literal keys on every path that taints it
-			ext:  (a.taint || b.taint) && (!a.taint || a.ext) && (!b.taint || b.ext)}
+			keys:    (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys), // tainted only under literal keys on every path that taints it
+			ext:     (a.taint || b.taint) && (!a.taint || a.ext) && (!b.taint || b.ext),
+			litKeys: weakOf(a.taint, a.litKeys, b.taint, b.litKeys)}
 	}
 	type add struct {
 		k string
@@ -128,7 +133,7 @@ func mergeInto(x, y state) state {
 	return x
 }
 
-type val struct{ taint, san, pre, raw, emb, weak, arr bool } // pre, raw: see entry; set by assign only; arr: as weak, every tainted part
+type val struct{ taint, san, pre, raw, emb, weak, arr, litKeys bool } // pre, raw: see entry; set by assign only; arr, litKeys: as weak, every tainted part
 
 // weakOf is the weak flag of a value with two tainted-or-not parts: weak when
 // some part is tainted and every tainted part is weak.
@@ -639,8 +644,11 @@ func (a *analysis) loop(s *stmt, st state) state {
 		for k, t := range tl {
 			v := iv
 			v.arr = false // a key or one value of the collection, of any kind
-			if k == 0 && keyed && a.keysTainted(x, iter) {
+			switch {
+			case k == 0 && keyed && a.keysTainted(x, iter):
 				v = val{taint: true} // the keys of a cleaned array are still the input's (context.go)
+			case k == 0 && keyed && iv.litKeys && a.litKeysSure(iter):
+				v = val{} // ['db.host' => $in]: the keys are the code's literals, only the values input
 			}
 			a.setTarget(x, t, v, "=", false)
 		}
@@ -917,7 +925,8 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 		if v.taint {
 			keys = (!e.taint || e.keys) && !strings.HasSuffix(key, "[*]")
 		}
-		st[container] = entry{taint: e.taint || v.taint, raw: e.raw || v.raw, emb: e.emb || v.emb, weak: weakOf(e.taint, e.weak, v.taint, v.weak), arr: a.php && weakOf(e.taint, e.arr, v.taint, true), keys: keys}
+		st[container] = entry{taint: e.taint || v.taint, raw: e.raw || v.raw, emb: e.emb || v.emb, weak: weakOf(e.taint, e.weak, v.taint, v.weak), arr: a.php && weakOf(e.taint, e.arr, v.taint, true), keys: keys,
+			litKeys: (e.litKeys || !e.taint && e.arr) && !strings.HasSuffix(key, "[*]")} // $a['k'] = $in keeps the keys literal; $a[$k] = $in does not
 		if strings.HasSuffix(key, "[*]") && v.taint {
 			st.del(container)                                                                                          // $a[$i] = input may overwrite any key: forget what was known per key
 			st[container] = entry{taint: true, raw: true, emb: v.emb, weak: v.weak, arr: a.php && (!e.taint || e.arr)} // written by key: an array, unless it held input of another kind
@@ -938,7 +947,7 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 	}
 	if op == "=" || op == ":=" {
 		st.del(key)
-		st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak, arr: v.arr}
+		st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak, arr: v.arr, litKeys: v.litKeys}
 		return
 	}
 	e, _ := st.get(key)
@@ -1376,19 +1385,22 @@ func (a *analysis) expr(st state, t []Token, whole bool) val {
 		v.emb = v.emb || tv.emb
 		v.san = tv.san
 		v.arr = tv.arr
+		v.litKeys = tv.litKeys
 		terms++
 		i = max(e, i+1)
 	}
 	if terms != 1 {
 		v.san = false
-		v.arr = false            // "a" . $arr, $n + 1: a string or a number (array + array is rare enough to report)
+		v.arr = false // "a" . $arr, $n + 1: a string or a number (array + array is rare enough to report)
+		v.litKeys = false
 		v.emb = v.emb || v.taint // "SELECT " . $x, "a" + x, "%s" % x
 	}
 	return v
 }
 
 func or(x, y val) val {
-	return val{taint: x.taint || y.taint, emb: x.emb || y.emb, weak: weakOf(x.taint, x.weak, y.taint, y.weak), arr: weakOf(x.taint, x.arr, y.taint, y.arr)}
+	return val{taint: x.taint || y.taint, emb: x.emb || y.emb, weak: weakOf(x.taint, x.weak, y.taint, y.weak), arr: weakOf(x.taint, x.arr, y.taint, y.arr),
+		litKeys: weakOf(x.taint, x.litKeys, y.taint, y.litKeys)}
 }
 
 func (a *analysis) anyOf(st state, parts [][]Token, whole bool) val {
@@ -1486,6 +1498,7 @@ func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
 		c := closeOf(t, i)
 		lv := a.literal(st, inside(t, i, c), tk.Text, whole)
 		lv.arr = a.php && tk.op("[") && lv.taint // [$_POST['a']]: an array
+		lv.litKeys = lv.arr && allLitKeys(inside(t, i, c))
 		return a.postfix(st, t, i, c+1, lv, whole)
 	case a.php && tk.word("match") && i+1 < len(t) && t[i+1].op("(") && closeOf(t, i+1)+1 < len(t) && t[closeOf(t, i+1)+1].op("{") &&
 		(i == 0 || !memberOp(true, t[i-1])):
@@ -1578,7 +1591,8 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		}
 		if key != "" {
 			if e, ok := st[key]; ok {
-				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak, arr: e.arr && arrPath(key) && !a.arrUnsure(t[start].Text)}
+				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak, arr: e.arr && arrPath(key) && !a.arrUnsure(t[start].Text),
+					litKeys: e.litKeys && key == t[start].Text}
 				byKeys = e.keys && e.taint
 				ext = e.ext && e.taint
 			} else if byKeys && litIdx {
@@ -1669,6 +1683,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 					weak: !(t[start].Kind == Str || formatFuncs[name] || a.passes(t, start, j-1) || key != "" && !a.returnsUnknown(key))}
 			}
 			v.arr = v.taint && sum == nil && fn != "" && arrayFuncs[strings.ToLower(fn)] // explode($s): an array whatever it is given
+			v.litKeys = v.arr && strings.EqualFold(fn, "array") && allLitKeys(inside(t, j, c))
 			if key != "" {
 				key += sepCh + "()"
 			}
