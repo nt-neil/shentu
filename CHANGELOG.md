@@ -346,6 +346,12 @@ Chinese for the zh-TW pages; keep the two in step.
   `elementor/editor/after_save` callback written in another file than its `add_action()` (the hook in
   the main plugin file, the function in an include) is not read as one, so a fetch there is not
   reported. The other route models share the limit.
+- PHP: a `foreach ($a as $k => $v)` over an array whose every key is written in the code
+  (`['db.host' => $_POST['h']]`, `array('a' => ...)`, a list, later writes by literal key only) gives
+  `$k` no input: only the values are input. A key header (`"X-Key: {$k}"`) or query part built from
+  such a `$k` was reported. The key is still input when the array is written under a computed key,
+  given input whole (`$a = $_POST`), redefined by `extract()`, passed by reference to a function that
+  may write it, not a literal on one path, or holds a computed key or a spread (`...$a`).
 
 ## v0.5.7 — 2026-11-26
 
