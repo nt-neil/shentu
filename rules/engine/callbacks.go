@@ -297,9 +297,11 @@ func listOpen(t []Token, c int) bool {
 	return false
 }
 
-// pcallSeeds finds, in a PHP statement, calls of a function whose summary
-// calls one of its parameters (summary.pcall: tap($value, $callback), Arr::
-// first($array, $callback)) and follows the callable passed there:
+// pcallSeeds finds, in a PHP statement, a closure called where it is written
+// ((function ($a) { ... })($x): seeded like a closure literal below) and
+// calls of a function whose summary calls one of its parameters
+// (summary.pcall: tap($value, $callback), Arr::first($array, $callback)) and
+// follows the callable passed there:
 //   - a closure literal: its parameters are seeded with what the callee passes
 //     them (the input of the call's arguments the effect names), so its sinks
 //     are found;
@@ -313,6 +315,19 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 	}
 	var out map[*fn][]*paramSeed
 	for i := 0; i+1 < len(t); i++ {
+		if t[i].op("(") && i+3 < len(t) && t[i+1].Kind == Func && t[i+2].op(")") && t[i+3].op("(") {
+			// (function ($a) use ($b) { ... })($atts): a closure called where it
+			// is written gets each argument in the parameter of its place
+			args := callArgs(t, i+3)
+			seed := func(k int) val {
+				if k < len(args) {
+					return a.expr(st, args[k], false)
+				}
+				return val{}
+			}
+			out = a.passCallable(st, t[i+1:i+2], funcs, seed, len(args), false, out)
+			continue
+		}
 		if !t[i+1].op("(") || t[i].Kind != Ident && t[i].Kind != Var {
 			continue
 		}

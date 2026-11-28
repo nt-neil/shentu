@@ -625,10 +625,25 @@ func (a *analysis) unsetStmt(st state, t []Token) {
 	}
 }
 
+// parseStrScope reports whether t[i] starts parse_str($q) or mb_parse_str($q)
+// with one argument: no result array, so the keys become variables of the
+// scope (PHP before 8).
+func parseStrScope(t []Token, i int) bool {
+	return i+1 < len(t) && (t[i].word("parse_str") || t[i].word("mb_parse_str")) && t[i+1].op("(") &&
+		(i == 0 || !memberOp(true, t[i-1]) && !t[i-1].op("::")) &&
+		len(splitTop(inside(t, i+1, closeOf(t, i+1)), isComma)) == 1
+}
+
 // extractStmt follows extract(shortcode_atts(array('id' => 0, ...), $atts)) and
 // extract(array(...)): each literal key becomes a variable holding what the
 // array holds.
 func (a *analysis) extractStmt(st state, t []Token) {
+	if a.php && parseStrScope(t, 0) {
+		// parse_str($q) with no result array (before PHP 8) sets a variable of
+		// the scope for each key of the query: extract() with no flags
+		a.extractAny(st, extractMode{overwrite: true, create: true}, a.expr(st, inside(t, 1, closeOf(t, 1)), false), "")
+		return
+	}
 	if !a.php || len(t) < 4 || !t[0].word("extract") || !t[1].op("(") {
 		return
 	}
@@ -1055,7 +1070,7 @@ func (a *analysis) writtenOtherwise(name string) bool {
 	w := false
 	for i := 0; i < len(t) && !w; i++ {
 		switch {
-		case t[i].word("extract") && i+1 < len(t) && t[i+1].op("("):
+		case t[i].word("extract") && i+1 < len(t) && t[i+1].op("("), parseStrScope(t, i):
 			w = true
 		case t[i].Text == name && (t[i].Kind == Var || t[i].Kind == Ident) && i > 0:
 			p := t[i-1]
