@@ -24,7 +24,8 @@ Kind: precision
     (also through another name, a chained assignment or a ternary), and the next
     assignment replaces it. So another function's `$fp` of the same name, or a
     `$fp` reopened as a file after `fclose`, does not count (review round 1);
-  - for `$this->x`, by an assignment to the property anywhere in its file: a
+  - for `$this->x` not assigned in the same function (S-295-4), by an
+    assignment to the property anywhere in its file: a
     project keeps, per PHP file, which receivers each property's assignments
     call. Names only, no tokens; a method analysed from another file reads its
     class's own file.
@@ -37,8 +38,9 @@ Kind: precision
 - Unlike `receiver`, a handle whose origin the code does not show does not count.
   Known limits, all missed rather than reported: a parameter, `STDOUT`, a
   method's return value (`$this->fp = $this->connect()`), a static property set
-  in another method (`self::$conn`), an array element, a `foreach` variable,
-  `list()`. A rule using the field states the limits its cases meet in its own
+  in another method (`self::$conn`), an array element, a `foreach` variable.
+  Over-reported: `list()` and destructuring give every target the whole right
+  side (`[$a, $fp] = [$x, fsockopen(...)]` counts `$a` too). A rule using the field states the limits its cases meet in its own
   record.
 - `handle` without `receiver`, or a negative `handle`, is refused when the rules
   load.

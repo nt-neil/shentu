@@ -44,6 +44,11 @@ func TestHandleCondition(t *testing.T) {
 		{"reopened as a file", "<?php\n$fp = fsockopen($host, 80);\nfclose($fp);\n$fp = fopen('f.txt', 'w');\nfwrite($fp, $_GET['p']);\n", false},
 		{"a file, then a socket", "<?php\n$fp = fopen('f.txt', 'w');\nfclose($fp);\n$fp = fsockopen($host, 80);\nfwrite($fp, $_GET['p']);\n", true},
 		{"in place", "<?php\nfwrite(fsockopen($host, 80), $_GET['p']);\n", true},
+		// a property reassigned in the same method: the nearest assignment decides, not the file's table (S-295-4)
+		{"a property reopened as a file in the method", "<?php\nclass C {\n  function put() {\n    $this->fp = fsockopen($h, 80);\n    fclose($this->fp);\n    $this->fp = fopen('f.txt', 'w');\n    fwrite($this->fp, $_GET['p']);\n  }\n}\n", false},
+		{"a property set to a file here, a socket in another method", "<?php\nclass C {\n  function connect() { $this->fp = fsockopen($h, 80); }\n  function log() {\n    $this->fp = fopen('f.txt', 'w');\n    fwrite($this->fp, $_GET['p']);\n  }\n}\n", false},
+		// known over-report: list() gives every target the whole right side
+		{"list() over-reports", "<?php\n[$a, $fp] = [$x, fsockopen($h, 80)];\nfwrite($a, $_GET['p']);\n", true},
 		{"through a ternary", "<?php\n$fp = $ssl ? stream_socket_client($u) : fsockopen($h, 80);\nfwrite($fp, $_GET['p']);\n", true},
 		{"a chained assignment", "<?php\n$a = $fp = fsockopen($h, 80);\nfwrite($a, $_GET['p']);\n", true},
 		// known limits: not followed, so not reported

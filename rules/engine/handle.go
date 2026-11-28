@@ -24,7 +24,10 @@ import (
 //     scan records CutHandles.
 //   - Not followed (not reported): a method's return value ($this->fp =
 //     $this->connect()), a static property set in another method
-//     (self::$conn), an array element, a foreach variable, list(), a parameter.
+//     (self::$conn), an array element, a foreach variable, a parameter.
+//   - Over-reported: list() and destructuring ([$a, $fp] = [$x, fsockopen()])
+//     give every target the whole right side, so $a counts as made by
+//     fsockopen() too.
 
 const (
 	handleSt       = "\x00handle:" // state key prefix: handleSt + key + "\x00" + receiver
@@ -110,6 +113,7 @@ func (a *analysis) handleAssign(st state, key string, rhs []Token, op string) {
 	for _, r := range a.r.handleRaw {
 		delete(st, handleSt+key+"\x00"+r)
 	}
+	st[handleSt+key+"\x00"] = entry{} // assigned in this function: its property table is not read for key
 	if op != "=" {
 		return
 	}
@@ -150,6 +154,9 @@ func (a *analysis) handleIs(st state, cond *argCond, arg []Token) bool {
 		if _, had := st[handleSt+key+"\x00"+r]; had {
 			return true
 		}
+	}
+	if _, here := st[handleSt+key+"\x00"]; here {
+		return false // assigned in this function, by none of the receivers: the nearest assignment decides (S-295-4)
 	}
 	prop, isProp := strings.CutPrefix(key, "$this"+sepCh+".")
 	if !a.php || !isProp || strings.Contains(prop, sepCh) {
