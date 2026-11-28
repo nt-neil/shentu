@@ -169,7 +169,7 @@ var typedNameEvents = map[int]bool{4625: true, 4648: true, 4768: true, 4771: tru
 
 // typedNameFields are dropped from those events.
 var typedNameFields = map[string]bool{"TargetUserName": true, "TargetDomainName": true, "TargetOutboundUserName": true,
-	"TargetOutboundDomainName": true, "Workstation": true}
+	"TargetOutboundDomainName": true, "Workstation": true, "WorkstationName": true} // WorkstationName: the client's own (S-294-1)
 
 // sshNameWord starts the part of an OpenSSH message that names a user
 // ("for X", "user X"); sshAddr is the source address and port.
@@ -223,7 +223,11 @@ func ParseEventText(s string) (string, error) {
 		if ssh {
 			value = sshSkeleton(value)
 		}
-		fmt.Fprintf(&b, " %s=%s", name, value)
+		// Each field masked on its own (S-294-1): an unclosed key BEGIN in
+		// one a client sent (a logon's names) masked every field after it,
+		// the source address among them. Name and value together, so a
+		// field named for a secret is masked as key=value.
+		b.WriteString(" " + MaskSecrets(name+"="+value))
 	}
 	for _, d := range x.EventData.Data {
 		field(d.Name, d.Value)
@@ -231,7 +235,7 @@ func ParseEventText(s string) (string, error) {
 	for _, d := range x.UserData.Inner.Fields {
 		field(d.XMLName.Local, d.Value)
 	}
-	return MaskSecrets(b.String()), nil
+	return b.String(), nil
 }
 
 type taskXML struct {
@@ -299,7 +303,13 @@ func ParseTaskXML(path string, b []byte) (WinTask, error) {
 		t.Actions = append(t.Actions, capCmdline(cmd))
 	}
 	for _, c := range x.Actions.ComHandler {
-		t.Actions = append(t.Actions, "com:"+strings.TrimSpace(c.ClassID))
+		t.Actions = append(t.Actions, "com:"+MaskSecrets(strings.TrimSpace(c.ClassID)))
+	}
+	// The XML is read as written (a mask first could break it); what
+	// leaves is masked: the actions above, the account and the triggers.
+	t.RunAs = MaskSecrets(t.RunAs)
+	for i := range t.Triggers {
+		t.Triggers[i] = MaskSecrets(t.Triggers[i])
 	}
 	return t, nil
 }
