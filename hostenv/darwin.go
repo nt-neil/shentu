@@ -338,10 +338,11 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 	if err != nil || r.ExitCode != 0 {
 		return unknownFrom[[]Process]("ps", cmdErr(err, r))
 	}
-	args := map[int]string{}
+	// The command lines masked, and as written for checks (N-286-1).
+	args, raws := map[int]string{}, map[int]string{}
 	argsWhy := "" // why some command lines are missing
 	ambiguousOnly := false
-	a, aerr := src.Run(ctx, macPsArgsArgv)
+	a, aerr := RunUnmasked(ctx, src, macPsArgsArgv)
 	switch {
 	case aerr == nil && a.ExitCode == 0:
 	case errors.Is(aerr, ErrTruncated) || errors.Is(aerr, ErrTimeout):
@@ -363,12 +364,14 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 					ambiguous[n] = true
 				}
 				args[n] = CutString(MaskSecrets(strings.TrimSpace(rest)), MaxCmdline)
+				raws[n] = CutString(strings.TrimSpace(rest), MaxRawCmdline)
 			}
 		}
 		if len(ambiguous) > 0 {
 			var pids []int
 			for n := range ambiguous {
 				delete(args, n)
+				delete(raws, n)
 				pids = append(pids, n)
 			}
 			sort.Ints(pids)
@@ -395,7 +398,7 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 			continue
 		}
 		comm := l[at:]
-		p := Process{PID: pid, PPID: ppid, UID: f[2], User: f[3], Cmdline: args[pid], Name: path.Base(comm)}
+		p := Process{PID: pid, PPID: ppid, UID: f[2], User: f[3], Cmdline: args[pid], RawCmdline: raws[pid], Name: path.Base(comm)}
 		if strings.HasPrefix(comm, "/") {
 			p.Exe, p.ExeKnown = comm, true
 			_, serr := Stat(src, comm)

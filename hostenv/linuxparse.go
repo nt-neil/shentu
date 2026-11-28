@@ -493,6 +493,12 @@ func ParseCmdline(b []byte) string {
 	return CutString(MaskSecrets(strings.TrimSpace(strings.ReplaceAll(string(b), "\x00", " "))), MaxCmdline)
 }
 
+// ParseRawCmdline is ParseCmdline unmasked, cut at MaxRawCmdline: what a
+// check matches (Process.RawCmdline).
+func ParseRawCmdline(b []byte) string {
+	return CutString(strings.TrimSpace(strings.ReplaceAll(string(b), "\x00", " ")), MaxRawCmdline)
+}
+
 // CutString shortens s to at most n bytes without splitting a UTF-8
 // character, adding "…" when it cuts (tools.Cut, shared).
 func CutString(s string, n int) string {

@@ -285,7 +285,8 @@ func processDetail(p *WinProcess) {
 			p.ExeMissing = true
 		}
 	}
-	p.Cmdline = capCmdline(processCmdline(h))
+	raw := processCmdline(h)
+	p.Cmdline, p.RawCmdline = capCmdline(raw), CutString(raw, MaxRawCmdline)
 	var tok windows.Token
 	if err := windows.OpenProcessToken(h, windows.TOKEN_QUERY, &tok); err == nil {
 		if u, err := tok.GetTokenUser(); err == nil {
