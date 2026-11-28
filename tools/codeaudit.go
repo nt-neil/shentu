@@ -815,6 +815,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			// a FIFO, a device, a cloud or HSM placeholder (ModeIrregular)
 			// is not read: said when it is a file the audit reads, never a
 			// quiet gap; a link is not followed by design
+			if name == "composer.json" || name == "composer.lock" {
+				incomplete = true // its packages are not known: every rule's receivers
+			}
 			if st.Mode&fs.ModeSymlink == 0 && auditable(name) {
 				notRegular.add(p)
 				if l := engine.LangOf(name); l != "" {
