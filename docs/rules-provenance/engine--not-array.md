@@ -53,7 +53,13 @@ Kind: precision
 - Known limits:
   - an array that goes through a WordPress or plugin function not in
     `wp_byvalue.txt` is still reported;
-  - so is an array at a file's top level.
+  - so is an array at a file's top level;
+  - an index of an object is trusted when the object was made some way other
+    than `$o = new ...` (`$o = (new Bag())`, `$o = $p = new Bag()`,
+    `Bag::make()`, `clone`). Only a class that implements ArrayAccess makes
+    that matter (review of #302, S-302-4). The thorough fix, trusting an index
+    only where the base variable was assigned an array in the function, is
+    planned for v0.5.9.
 
 ## Probes
 Product path (`ScanTimed`, then `ScanCallsPart`), `rules/engine/notarray_test.go`:
@@ -87,6 +93,35 @@ Product path (`ScanTimed`, then `ScanCallsPart`), `rules/engine/notarray_test.go
 - Round 1 at af9d5143: B0 N2 S2. N-284-1: seven ways of writing the variable
   that the analysis did not see. Fixed as above.
 - Round 2 at 07d4ce66: B0 N0 S2. Merged as #284.
+
+## Follow-up: object members
+- After #284 merged, a security review of the merge found that the mark
+  reached object members too. `$this->x` or `$o->p` written with an array
+  kept the mark even when a method of the class, or a copy of the object
+  (`$q = $o; $q->p = ...`), had made it a string since. The arrUnsure checks
+  look at the base variable only, and an object is shared, not copied.
+- Probe on the product path, the same fixtures on e0d8f79d (before #284) and
+  on b088eae6:
+  - `$this->x` rewritten by a method: reported before, not after #284;
+  - an object copied, then its property written: reported before, not after;
+  - a method of the object called: reported before, not after.
+  - These are three missed reports that #284 added. Since v0.5.8 was not
+    released, no release had them.
+- Fix: a value read under a key with a member segment (`$this->x`, `$o->p`,
+  `self::$x`) or a call's result (`$o->get()`) keeps no mark. Only a variable of
+  the function, or an index of one (`$a['k']`), does, and still through the
+  checks above. `$this->x` that stays an array is reported again: that is
+  fail closed, accepted by the commander.
+- An index of a variable the file assigns an object with `new` keeps no mark
+  either (review of #302, S-302-1): `$o['k']` is then ArrayAccess's
+  `offsetGet()`, which may return anything.
+- The CHANGELOG states only the final behavior. The earlier v0.5.8 build
+  that let a property pass was never released, so the record of it stays
+  here (review of #302, S-302-3).
+- Tests: `TestNotArrayMembers`, 8 rows on the product path (one of them the
+  ArrayAccess index), and
+  `TestAppCodeAuditNotArrayMembers`, 3 rows through `AppCodeAudit`. With the
+  member rule turned off, the five member rows fail (the static property among them), and the two through `AppCodeAudit`; with `newBound` off, the ArrayAccess row fails.
 
 ## Measured on
 - CVE-2025-14383 (booking 10.14.8 → 10.14.9): the two `maybe_unserialize()` lines above, in both releases.
