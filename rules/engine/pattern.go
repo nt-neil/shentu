@@ -325,6 +325,17 @@ func (p *pat) callParen() int {
 			stack = stack[:len(stack)-1]
 		}
 	}
+	// str_replace(array("\r", "\n": a pattern that starts with a name and its
+	// "(" and leaves that "(" open is that call, not the inner array( it
+	// writes out; the match covers the whole str_replace(...). A namespace
+	// written before the name (\f(, ns\f(, A\B\f() is part of it.
+	n := 0
+	for n+1 < len(p.toks) && (p.toks[n].op(`\`) || p.toks[n].Kind == Ident && p.toks[n+1].op(`\`)) {
+		n++
+	}
+	if len(stack) > 1 && n+1 < len(p.toks) && stack[0] == n+1 && p.toks[n].Kind == Ident && p.toks[n+1].op("(") {
+		return n + 1
+	}
 	for k := len(stack) - 1; k >= 0; k-- {
 		if p.toks[stack[k]].op("(") {
 			return stack[k]

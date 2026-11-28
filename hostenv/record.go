@@ -297,18 +297,27 @@ func writeNew(path string, data []byte) error {
 // fixture does not hold fails with ErrNotRecorded, so a collector change that
 // asks for new data shows up as "unknown/not_recorded", never as "absent".
 type Replay struct {
-	info SourceInfo
-	byK  map[string]*entry
-	mu   sync.Mutex
-	miss []string // the requests answered ErrNotRecorded, in order
+	info   SourceInfo
+	byK    map[string]*entry
+	mu     sync.Mutex
+	miss   []string // the requests answered ErrNotRecorded, in order, up to maxMissed
+	missed int      // all of them, those past maxMissed too
 }
+
+// maxMissed bounds Replay.Missed: a check reading a large tree a fixture
+// lacks asks for one entry per file (S-305-3).
+const maxMissed = 1000
 
 // Missed is every request the fixture did not hold, as "op path argv":
 // what a check read that the recording left out.
 func (rp *Replay) Missed() []string {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
-	return append([]string(nil), rp.miss...)
+	out := append([]string(nil), rp.miss...)
+	if n := rp.missed - len(rp.miss); n > 0 {
+		out = append(out, fmt.Sprintf("... and %d more", n))
+	}
+	return out
 }
 
 func LoadReplay(dir string) (*Replay, error) {
@@ -386,7 +395,9 @@ func (rp *Replay) find(op, path string, argv []string) (*entry, error) {
 	if e == nil {
 		k := op + " " + path + strings.Join(argv, " ")
 		rp.mu.Lock()
-		rp.miss = append(rp.miss, k)
+		if rp.missed++; len(rp.miss) < maxMissed {
+			rp.miss = append(rp.miss, k)
+		}
 		rp.mu.Unlock()
 		return nil, fmt.Errorf("%w: %s", ErrNotRecorded, k)
 	}

@@ -275,6 +275,11 @@ Chinese for the zh-TW pages; keep the two in step.
   taken as an array (`$this->x`, `$o->p`, `self::$x`), nor an index of a variable assigned an object
   with `new` (ArrayAccess); only a variable of the function or an index of it.
 
+- Rule patterns: a sanitizer, source or sink written as a call that holds an unclosed inner call
+  (`str_replace(array("\r", "\n"`) matches the whole outer call, as the `[...]` form does. Before,
+  it covered only the inner `array(...)`, so such a sanitizer cleaned nothing. No rule shipped uses
+  one; `php-nosqli-mongo-query`'s `json_decode(file_get_contents('php://input'` source now spans the
+  whole `json_decode(...)` and reports as before.
 - Rules: a function sink's `[[args]]` can name the argument holding a handle (`handle`, with
   `receiver`): `fwrite($fp, ...)` then counts only when `$fp` was made by one of `receiver`
   (`fsockopen()` say): in place, by the nearest assignment before the call in the same function, or,
@@ -285,6 +290,12 @@ Chinese for the zh-TW pages; keep the two in step.
   `handle-table`). Nothing is kept unless a rule uses it, and no shipped rule uses it yet.
 ### Known issues
 
+- A recording (`hostfacts -record`) holds what the facts and site_profile read through the host
+  source. What a check reads of the machine directly is not in it: certbot's certificates
+  (cert_expiry), Docker's and containerd's image stores. A test holds the list of such reads in
+  tools and checks, line by line, so a new one is told; hostenv (the host source itself) and attack
+  detection are not scanned. Only Linux fixtures are checked this way so far, and the survey is recorded with
+  no app paths (lock files under `APP_PATHS` are not recorded).
 - A Python package's `RECORD` with a line that opens a quote and never closes it is read as one
   field from there to its end: the rows after that line are not used, and a `.pth` file they would
   prove a tool's (setuptools, virtualenv, an editable install) is listed as not proven (reported
