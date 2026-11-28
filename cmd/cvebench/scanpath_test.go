@@ -161,3 +161,22 @@ func TestCallsErr(t *testing.T) {
 		t.Errorf("cut with ErrLimit: got %v", err)
 	}
 }
+
+// A calls pass a cap cut short without an error of its own counts as calls cut
+// in a release's scan (S-283-5): a stand-in ScanCallsPart returns Cut, no error.
+func TestScanCountsCutCallsPass(t *testing.T) {
+	dir := t.TempDir()
+	writeTree(t, dir, acrossFiles)
+	saved := newScanner
+	defer func() { newScanner = saved }()
+	newScanner = func(*engine.Engine, []string, func(string) ([]byte, error), string) (func(string, []byte) scanned, bool) {
+		return productScan(func(string, []byte) ([]engine.Finding, bool, error) { return nil, false, nil },
+			func(rel string, _ []byte) (engine.CallsPart, error) {
+				return engine.CallsPart{Cut: rel == "app/views.py"}, nil
+			}), true
+	}
+	r := scan(testEngine(t), dir, pathProduct)
+	if r.CallsCut != 1 || r.Unfinished != 0 || r.Clock != 0 {
+		t.Errorf("calls cut %d, unfinished %d, clock %d; want 1, 0, 0", r.CallsCut, r.Unfinished, r.Clock)
+	}
+}
