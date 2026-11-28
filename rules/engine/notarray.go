@@ -60,6 +60,37 @@ func arrPath(key string) bool {
 	return !strings.Contains(key, sepCh+".") && !strings.Contains(key, sepCh+"()")
 }
 
+// allLitKeys reports whether every element of an array literal's elements
+// (inner, between its brackets) has a literal key or none: 'db.host' => $v,
+// 3 => $v, $v. A computed key ($k => $v, "k{$k}" => $v) or a spread (...$a)
+// does not.
+func allLitKeys(inner []Token) bool {
+	for _, e := range splitTop(inner, isComma) {
+		if len(e) == 0 {
+			continue
+		}
+		if e[0].op("...") {
+			return false
+		}
+		if k := indexTop(e, 0, isOp("=>")); k >= 0 && !(k == 1 && (e[0].Kind == Str && len(e[0].Parts) == 0 || e[0].Kind == Num)) {
+			return false
+		}
+	}
+	return true
+}
+
+// litKeysSure reports whether a foreach over iter may trust its litKeys mark:
+// the array literal itself, or a variable the code does not write some way
+// the analysis does not follow (arrUnsure: a reference, extract(), a call
+// that may take it by reference, the global scope).
+func (a *analysis) litKeysSure(iter []Token) bool {
+	iter = stripParens(iter)
+	if len(iter) > 0 && iter[0].op("[") || len(iter) > 1 && iter[0].word("array") && iter[1].op("(") {
+		return true
+	}
+	return len(iter) == 1 && iter[0].Kind == Var && !a.arrUnsure(iter[0].Text)
+}
+
 // arrDynamic reports whether the file writes variables by a name it computes
 // or through $GLOBALS: $$k, ${'x'}, $GLOBALS['x'], parse_str($s) with no
 // array to fill (PHP 7 makes variables of it).
