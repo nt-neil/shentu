@@ -232,7 +232,8 @@ Chinese for the zh-TW pages; keep the two in step.
   `-E cert:<secret>`).
 - Some checks still read texts masked when read in: commands' output (packages, the firewall's
   rules, macOS's listeners and accounts), and on Windows event data (each field masked on its
-  own; log_search's text of an event is masked field by field).
+  own; log_search's text of an event is masked field by field, then once more as a line
+  for a secret named in one field and given in the next).
 - A user's name of `mysql` given to an option in text (a log line, a shell's history, a cron line:
   `--user mysql -p5432`, `psql -U mysql -p5432`) is read as the program, and the `-p` after it is
   masked (a process's command line, judged argument by argument, is not); a file named `.mysql`
