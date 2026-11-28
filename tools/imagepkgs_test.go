@@ -411,3 +411,17 @@ func TestImagePackagesDeadline(t *testing.T) {
 		t.Error("mergeLayers went on after ctx ended")
 	}
 }
+
+// S-244-4: the survey's tail risks (hostRisksTail, which Survey calls)
+// carry containerd's store not checked yet, so a lost call fails a test.
+func TestHostRisksTailContainerd(t *testing.T) {
+	withDocker(t)
+	os.MkdirAll(filepath.Join(containerdRoot, "io.containerd.content.v1.content"), 0o700)
+	var found bool
+	for _, r := range hostRisksTail(context.Background(), &hostenv.Live{}) {
+		found = found || r.Key == "unchecked:notyet:containerd"
+	}
+	if !found {
+		t.Error("containerd's store not among the survey's risks")
+	}
+}

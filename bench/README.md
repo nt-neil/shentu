@@ -5,7 +5,12 @@ vulnerabilities. For each case in `cves/` it downloads the last vulnerable and
 the first fixed release of the package, scans both with `rules/engine`, and
 writes a Markdown table: which rule caught which case, the catch rate, the
 false-positive rate on fixed releases, and how many findings and how much time
-each release took. `baseline.md` is the first run; compare later runs with it.
+each release took. `baseline.md` (cves), `baseline-holdout.md` and
+`baseline-cves-ts.md` are the runs to compare later ones with: integ e0d8f79d
+on 2026-11-28, on the product scan path (the default since then; each report's
+header names it). The first run (2026-11-09, 59 cases) scanned file by file (as
+`-scanpath per-file` now) and is in the history of `baseline.md`; compare it only
+with a `-scanpath per-file` run.
 
 The tool runs on a developer machine only. It is not built into the released
 binary (`.goreleaser.yaml` builds the root package alone).
@@ -48,7 +53,7 @@ commit), and check the line numbers against the released files: a fix made on
 trunk can sit at other lines in the tagged release. The tool fails a case
 whose file or range is not in the release.
 
-A case whose id a rule cites in `refs` counts in the "rule source" group, the
+A case whose id a rule or a route model (`rules/routes/`) cites in `refs` counts in the "rule source" group, the
 rest in "independent", so rules are not graded on the advisories they were
 written from. A rule designed from a case of `cves/` (its miss read in the
 vulnerable release and the fix) cites that case in `refs`, so the case moves to
@@ -72,6 +77,29 @@ only on the cases both have.
 
 `-library` scans Composer, PyPI and npm cases in the engine's library mode
 (public parameters are input); WordPress plugins stay in application mode.
+
+Releases are scanned as app_code_audit scans a server's code (`-scanpath
+product`, the default): each file on its own first, then what following calls
+across the release's files finds, the two merged by rule, path and line. A
+finding of the first pass stays when the calls across files show a check, as it
+does for a user: a check written in another file (a base class's method) leaves
+the fixed release reported. The project caps are the engine's defaults, written
+in the report's header; there is no audit clock (app_code_audit goes on in the
+next audit where its clock stopped) and no cap on the findings listed. Files a
+clock or the heap still cut short are listed under "Cut by a clock" (the product
+path only: `Project.Scan` does not say when its clock stopped it, so a project
+run's cuts show only in the unfinished and calls-cut columns): those numbers
+depend on how busy the machine was. Which files are read is cvebench's own:
+vendor, node_modules and .git are skipped, but not the virtual environments,
+site-packages or caches app_code_audit skips, and there is no folder depth cap.
+`-scanpath project` scans with `Project.Scan`, which decides each flow with the
+calls across files, so such a check takes the finding away: it is kept to
+compare with, as the most a project-level check could take away, not as the
+verdict. A product run usually reports more than a project run, so its catches
+and its fixed false positives can both be higher; that is a measured result, not
+a guarantee (the two paths stop differently at a project cap). Runs before
+v0.5.8 used the project path; compare those only with a `-scanpath project`
+run. `-per-file` (`-scanpath per-file`) follows no calls across files.
 
 ## Verdicts
 

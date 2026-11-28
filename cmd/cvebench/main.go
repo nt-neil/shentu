@@ -14,6 +14,7 @@
 //	go run ./cmd/cvebench -only CVE-2023-123 # some cases
 //	go run ./cmd/cvebench -fetch             # download and unpack only, print the directories
 //	go run ./cmd/cvebench -library           # Composer, PyPI and npm packages in the engine's library mode
+//	go run ./cmd/cvebench -scanpath project  # Project.Scan instead of the product's path, to compare
 package main
 
 import (
@@ -38,16 +39,26 @@ func main() {
 	out := flag.String("out", "", "write the report to this file instead of stdout")
 	jobs := flag.Int("j", 2, "cases run at the same time")
 	library := flag.Bool("library", false, "scan Composer, PyPI and npm packages in library mode (WordPress plugins stay in application mode)")
-	perFile := flag.Bool("per-file", false, "scan each file on its own even when the engine can follow calls across files")
+	perFile := flag.Bool("per-file", false, "scan each file on its own even when the engine can follow calls across files (as -scanpath per-file)")
+	scanPath := flag.String("scanpath", pathProduct, "how a release is scanned: product (as app_code_audit), project (Project.Scan, to compare) or per-file")
 	flag.Parse()
+	if *perFile {
+		*scanPath = pathPerFile
+	}
+	switch *scanPath {
+	case pathProduct, pathProject, pathPerFile:
+	default:
+		fmt.Fprintln(os.Stderr, "cvebench: -scanpath is product, project or per-file")
+		os.Exit(2)
+	}
 
-	if err := run(*casesDir, *cacheDir, *only, *fetchOnly, *out, *jobs, *library, *perFile); err != nil {
+	if err := run(*casesDir, *cacheDir, *only, *fetchOnly, *out, *jobs, *library, *scanPath); err != nil {
 		fmt.Fprintln(os.Stderr, "cvebench:", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, library, perFile bool) error {
+func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, library bool, scanPath string) error {
 	cases, err := loadCases(casesDir)
 	if err != nil {
 		return err
@@ -87,7 +98,11 @@ func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, 
 		}
 	}
 	f := &fetcher{dir: cacheDir, client: newClient()}
-	cited := ruleSource(rs)
+	routes, err := rules.LoadRoutes()
+	if err != nil {
+		return err
+	}
+	cited := ruleSource(rs, routes)
 
 	results := make([]caseResult, len(cases))
 	next := make(chan int)
@@ -101,7 +116,7 @@ func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, 
 				if cases[i].Ecosystem != "wordpress-plugin" {
 					e = libEng
 				}
-				results[i] = runCase(f, e, rs, cited, cases[i], fetchOnly, perFile)
+				results[i] = runCase(f, e, rs, cited, cases[i], fetchOnly, scanPath)
 			}
 		}()
 	}
@@ -126,7 +141,7 @@ func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, 
 		}
 		return nil
 	}
-	report := markdown(results, rs, time.Now())
+	report := markdown(results, rs, time.Now(), scanPathNote(scanPath))
 	if out == "" {
 		_, err = os.Stdout.WriteString(report)
 		return err
@@ -135,7 +150,7 @@ func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, 
 }
 
 // runCase fetches and scans both releases of one case and judges the result.
-func runCase(f *fetcher, eng *engine.Engine, rs []rules.Rule, cited map[string]bool, c Case, fetchOnly, perFile bool) caseResult {
+func runCase(f *fetcher, eng *engine.Engine, rs []rules.Rule, cited map[string]bool, c Case, fetchOnly bool, scanPath string) caseResult {
 	r := caseResult{Case: c, RuleSource: cited[c.ID]}
 	var err error
 	if r.vulnDir, err = f.release(c, c.Vulnerable); err != nil {
@@ -153,8 +168,8 @@ func runCase(f *fetcher, eng *engine.Engine, rs []rules.Rule, cited map[string]b
 	if fetchOnly {
 		return r
 	}
-	r.Vuln = scan(eng, r.vulnDir, perFile)
-	r.FixedScan = scan(eng, r.fixedDir, perFile)
+	r.Vuln = scan(eng, r.vulnDir, scanPath)
+	r.FixedScan = scan(eng, r.fixedDir, scanPath)
 	judge(&r, rs)
 	return r
 }

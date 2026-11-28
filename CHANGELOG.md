@@ -113,7 +113,9 @@ Chinese for the zh-TW pages; keep the two in step.
 - file_changes and log_search's hard-link check read the host as the other checks do, through the
   host source: a replay or another host's survey reads that host's files, not the machine running
   the check, a Linux or macOS host's recording read on a Windows machine too (its paths keep their
-  "/": the walks, the log allowlist and the site-packages search spell them as the host does). The host source's file details now carry the status-change time (ctime, which
+  "/": the walks, the log allowlist, the site-packages search, the WordPress plugin search,
+  app_vulns' and app_code_audit's path argument, and the audit resuming where it stopped spell them
+  as the host does). The host source's file details now carry the status-change time (ctime, which
   file_changes counts as before: a file whose mtime was set back still shows) and the hard links;
   these checks are made on Unix only (on Windows the details say they do not apply, never 0).
 - A file app_code_audit, app_vulns' lock-file search or the WordPress plugin search would read that
@@ -180,6 +182,21 @@ Chinese for the zh-TW pages; keep the two in step.
   `fs.createWriteStream()`, `fs.writeFile()`, `fs.writeFileSync()` or `fs.promises.writeFile()` under
   the name the client sent (multer's `file.originalname`) is reported. express-fileupload's `.name` is
   not read.
+- Route models can name the hook a call registers (`hooks`): the call counts only when its first
+  argument is one of those names, written out as one string; a variable, a constant or a joined
+  string there does not count. `path` and `hooks` cannot be used together.
+- PHP rules: the editor data Elementor passes to `elementor/editor/after_save` callbacks (the second
+  parameter, every element's settings, which contributors and up write) is request input. Before,
+  a URL read from a widget's settings there and fetched (`getimagesize()`) was not reported.
+- cvebench scans as app_code_audit does by default (`-scanpath product`): each file on its own,
+  then the calls across files, merged. Before, it decided each flow with the calls across files
+  (`Project.Scan`, now `-scanpath project`), so a check written in another file took a finding away
+  that app_code_audit still shows. The rules are the same; the bench's fixed false positives
+  usually rise, closer to what a user sees (measured on v0.5.8's cases: nothing reported
+  fewer). The report's header names the scan path and the project caps.
+- bench: the baselines are rerun on the product scan path (`baseline.md` for cves, and now
+  `baseline-holdout.md`, `baseline-cves-ts.md`); the one before was the first run, on 59 cases,
+  scanned file by file.
 
 - Rules: a function sink's `[[args]]` can name the argument holding a handle (`handle`, with
   `receiver`): `fwrite($fp, ...)` then counts only when the file shows `$fp` (or `$this->fp`, set in
@@ -216,7 +233,13 @@ Chinese for the zh-TW pages; keep the two in step.
 - In a sudo rule's commands, a password not written as `key=value` (`mysql -p<secret>`,
   `--password <secret>`, `curl -u user:<secret>`) is not masked in the survey's texts.
 - On a non-Windows machine replaying a Windows host's recording, the code audit's ASP check, its
-  web-root ACL check and its case-insensitive path comparison are not turned on yet (v0.5.9).
+  web-root ACL check and its case-insensitive path comparison are not turned on yet, and
+  app_vulns' and app_code_audit's path argument is refused unless it is one of the app paths
+  exactly (v0.5.9).
+- A route model reads a handler only in the file that registers it: an
+  `elementor/editor/after_save` callback written in another file than its `add_action()` (the hook in
+  the main plugin file, the function in an include) is not read as one, so a fetch there is not
+  reported. The other route models share the limit.
 
 ## v0.5.7 — 2026-11-26
 

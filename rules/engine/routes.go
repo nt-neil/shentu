@@ -256,6 +256,9 @@ func (e *Engine) registrations(php bool, s *stmt, rs []*croute, ff *fileFuncs, m
 			if c.r.Path && (len(args) == 0 || !pathLiteral(args[0])) {
 				continue
 			}
+			if len(c.r.Hooks) > 0 && (len(args) == 0 || !hookLiteral(args[0], c.r.Hooks)) {
+				continue
+			}
 			k := c.r.Handler - 1
 			if c.r.Handler < 0 {
 				k = len(args) - 1
@@ -437,6 +440,13 @@ func pathLiteral(t []Token) bool {
 	return len(t) == 1 && t[0].Kind == Str && strings.HasPrefix(t[0].Text, "/")
 }
 
+// hookLiteral: t is one string literal spelling one of hooks exactly. A
+// variable, a constant, a concatenation or an interpolated string is none
+// (the hook it names is not known, so its callback is not taken as a handler).
+func hookLiteral(t []Token, hooks []string) bool {
+	return len(t) == 1 && t[0].Kind == Str && !strings.ContainsAny(t[0].Text, "$") && slices.Contains(hooks, t[0].Text)
+}
+
 var templateParam = regexp.MustCompile(`<(?:([A-Za-z_]+):)?([A-Za-z_][A-Za-z0-9_]*)>|\{([A-Za-z_][A-Za-z0-9_]*)\??(?::[^}]*)?\}`)
 
 // numericConverters cannot carry an attack (Flask <int:id>).
@@ -593,6 +603,9 @@ func (e *Engine) routeRefs(lang string, tree []*stmt) []routeRef {
 				}
 				args := splitTop(inside(t, i+1, closeOf(t, i+1)), isComma)
 				if c.r.Path && (len(args) == 0 || !pathLiteral(args[0])) {
+					continue
+				}
+				if len(c.r.Hooks) > 0 && (len(args) == 0 || !hookLiteral(args[0], c.r.Hooks)) {
 					continue
 				}
 				k := c.r.Handler - 1

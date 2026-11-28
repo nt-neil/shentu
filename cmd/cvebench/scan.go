@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,10 +38,17 @@ type scanResult struct {
 	// not all followed (ErrCalls): cross-file findings may be missing.
 	CallsCut int
 	Cuts     map[string]int // files cut short (ErrLimit or ErrCalls), by cause (engine.CutOf)
-	Time     time.Duration
+	// Clock: files a clock or the heap cut short (product path): their results
+	// depend on how busy the machine was.
+	Clock int
+	Time  time.Duration
 }
 
-func scan(eng *engine.Engine, root string, perFile bool) scanResult {
+// newScanner makes the scan of one file for a path that follows calls across
+// files: projectScanner, or a stand-in in a test.
+var newScanner = projectScanner
+
+func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 	var r scanResult
 	start := time.Now()
 	var files []string // relative paths, "/"-separated
@@ -77,12 +85,16 @@ func scan(eng *engine.Engine, root string, perFile bool) scanResult {
 		return nil
 	})
 	read := func(rel string) ([]byte, error) { return os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))) }
-	scanOne := func(rel string, src []byte) ([]engine.Finding, error) { return eng.ScanFile(rel, src) }
-	if !perFile {
-		if ps, ok := projectScanner(eng, files, read); ok {
+	scanOne := func(rel string, src []byte) scanned {
+		fs, err := eng.ScanFile(rel, src)
+		return scanned{found: fs, errs: []error{err}}
+	}
+	if scanPath != pathPerFile {
+		if ps, ok := newScanner(eng, files, read, scanPath); ok {
 			scanOne = ps
 		}
 	}
+	seen := map[string]bool{} // a finding once per release, whichever file's scan found it
 	for _, rel := range files {
 		if engine.LangOf(rel) == "" {
 			continue
@@ -92,20 +104,33 @@ func scan(eng *engine.Engine, root string, perFile bool) scanResult {
 			r.Unfinished++
 			continue
 		}
-		fs, err := scanOne(rel, src)
+		sc := scanOne(rel, src)
+		err = errors.Join(sc.errs...)
 		switch {
 		case errors.Is(err, engine.ErrLimit) || errors.Is(err, engine.ErrPartial):
 			r.Unfinished++
 		case errors.Is(err, engine.ErrCalls):
 			r.CallsCut++
 		}
-		for _, n := range engine.CutOf(err).Names() {
+		if sc.timed {
+			r.Clock++
+		}
+		var cut engine.Cut
+		for _, e := range sc.errs {
+			cut |= engine.CutOf(e)
+		}
+		for _, n := range cut.Names() {
 			if r.Cuts == nil {
 				r.Cuts = map[string]int{}
 			}
 			r.Cuts[n]++
 		}
-		r.Findings = append(r.Findings, fs...)
+		for _, f := range sc.found {
+			if k := f.RuleID + "\x00" + f.Path + "\x00" + strconv.Itoa(f.Line); !seen[k] {
+				seen[k] = true
+				r.Findings = append(r.Findings, f)
+			}
+		}
 	}
 	r.Time = time.Since(start)
 	return r
@@ -148,10 +173,16 @@ type caseResult struct {
 	vulnDir, fixedDir string
 }
 
-// ruleSource returns the ids that rules cite in refs.
-func ruleSource(rs []rules.Rule) map[string]bool {
+// ruleSource returns the ids that rules and route models cite in refs.
+func ruleSource(rs []rules.Rule, routes []rules.Route) map[string]bool {
 	out := map[string]bool{}
 	for _, r := range rs {
+		for _, ref := range r.Refs {
+			out[ref] = true
+		}
+	}
+	// A route model designed from a case cites it as a rule does.
+	for _, r := range routes {
 		for _, ref := range r.Refs {
 			out[ref] = true
 		}
