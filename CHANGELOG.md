@@ -160,7 +160,8 @@ Chinese for the zh-TW pages; keep the two in step.
   entries after it, so a backported fix is no longer reported as open.
 - On Windows, log_search masks a field's value on its own before its name and value together: a
   value starting with a program (`CommandLine=mysql -u root -p<secret>`) is masked; masked only as
-  `Name=value`, the `=` before it hid the program.
+  `Name=value`, the `=` before it hid the program. A masked value's marker stays whole after its
+  field's name (`Password=[REDACTED PRIVATE KEY]`, not `[REDACTED] PRIVATE KEY]`).
 - sudo's rule for cloud-init's default user (every command, no password) is a warning, not info,
   when sshd lets every user log in with a password: PasswordAuthentication yes, or sshd's default
   on a known distribution, and no Match block in any sshd config file (every file read; an

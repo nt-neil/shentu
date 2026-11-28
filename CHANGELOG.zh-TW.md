@@ -25,7 +25,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 挖礦程式的檢查（Linux、macOS、Windows）改成比對行程原本的 command line：改了名字的挖礦程式，就算參數寫在一個會被整段遮掉的密碼後面（`mysql -p' -o stratum+tcp://… '`），也找得到。它的證據和交給模型的內容照樣是遮過的。
 - 攻擊偵測讀 PHP 的 error log 和 journald 的訊息時，改成直接讀原文，不再先遮：請求裡被回寫到 PHP 位置前面的文字（例如沒有結尾的私鑰標記），不會再把位置一起遮掉，sink 的 error log 證據就留得住。解析出來的事件只留時間和位置，裡面的內容都不會輸出。
 - 為了找套件有沒有 backport 某個 CVE 的修正（nginx、PHP、內含的函式庫），rpm 的 changelog 改成直接讀原文：某一筆裡有沒有結尾的私鑰標記時，不會再把後面的記錄一起遮掉，已經 backport 的修正也就不會再被報成還沒修。
-- Windows 的 log_search 改成先遮欄位的值，再把名稱和值一起遮一次：值的第一個字是程式名稱時（`CommandLine=mysql -u root -p<密碼>`）也會遮；只把「名稱=值」一起遮的話，前面的 `=` 會讓程式名稱認不出來。
+- Windows 的 log_search 改成先遮欄位的值，再把名稱和值一起遮一次：值的第一個字是程式名稱時（`CommandLine=mysql -u root -p<密碼>`）也會遮；只把「名稱=值」一起遮的話，前面的 `=` 會讓程式名稱認不出來。遮過的值接在欄位名稱後面時，標記會保持完整（`Password=[REDACTED PRIVATE KEY]`，不會變成 `[REDACTED] PRIVATE KEY]`）。
 - cloud-init 預設使用者的 sudo 規則（所有指令都不用密碼），在 sshd 讓每個使用者都能用密碼登入時，從 info 升成 warning。條件是 PasswordAuthentication 為 yes（或在已知的發行版上沒有設定、用的是 sshd 的預設值），而且所有 sshd 設定檔裡都沒有 Match 區塊（每個檔都要讀到；Include 裡有 %-token 或 ~ 時，當成可能有 Match）。沒有 sshd_config 主檔時（沒裝 sshd，或是 openSUSE 這類只有 /usr/etc/ssh 的主機），不會升級。那個使用者如果有設密碼（cloud-init 預設是鎖住的），只要試出密碼就直接是 root。survey 的 sshd facts 也會寫出是否可能有 Match 區塊會改掉設定（`match`），以及哪些設定是設定檔自己寫的（`set`）。
 - Windows 的檢查改成直接讀服務的 command line、登錄檔字串和排程工作 XML 的原文，不再先遮：服務路徑、使用者的 home 路徑或排程工作說明裡有沒有結尾的私鑰標記時，不會再藏住沒加引號的服務路徑、啟動資料夾或那個排程工作。輸出的內容照樣是遮過的。
 - 網站首頁：捲動時才出現的區塊（統計、開放原始碼、最新版本和河道），從中段進入頁面時（例如從連到頁內位置的連結、回到上一頁，或直接跳到中段）不再一直空白。區塊只要有任何一部分看得到就會出現；頁面一打開就看得到的區塊，以及從頁內位置打開的頁面上的每個區塊，都會立刻出現。
