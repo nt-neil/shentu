@@ -241,21 +241,29 @@ func ParseEventText(s string) (string, error) {
 
 // maskJoinedEvent masks an event's joined fields once more (S-294-2): a
 // secret named in one field and given in the next ("--password" then the
-// value, "Bearer" then the token). It leaves out the rules that can run
-// across fields to hide the ones between or after (a private key's BEGIN
-// to its END or to the line's end, a quoted user:password to the line's
-// end): each field had those on its own above.
+// value, "Bearer" then the token). Only rules whose value holds no space
+// run here (key=value, Bearer and Basic, a URL's user:password, the token
+// formats), and --password with a bare word: one whose value may be quoted
+// (mysql's -p, --password, curl's -u, a JSON argv) or a private key's
+// would take a quote opened in one field to where a later one closes it,
+// and hide the fields between (N-296-1). Each field had them on its own.
 func maskJoinedEvent(s string) string {
 	for _, r := range secretRules {
 		if !acrossFieldsRule(r.re.String()) {
 			s = replaceOutsideSudoTags(s, r.re, r.repl)
 		}
 	}
-	return s
+	return joinedBarePassword.ReplaceAllString(s, "${1}[REDACTED]")
 }
 
+// joinedBarePassword is --password/--passwd then a bare word (no quote, no
+// space): the value of a field after one that ends with the option.
+var joinedBarePassword = regexp.MustCompile(`(--pass(?:word|wd)\s+)[^-\s"'\\;|&][^\s"'\\;|&]*`)
+
+// acrossFieldsRule is a rule left out of the joined pass: a private key's,
+// a command's own password in text (argvTextRule), a JSON argv's.
 func acrossFieldsRule(src string) bool {
-	return strings.Contains(src, "PRIVATE KEY") || strings.HasSuffix(src, `[^"'\n]*`)
+	return strings.Contains(src, "PRIVATE KEY") || argvTextRule(src) || strings.HasPrefix(src, `("`)
 }
 
 type taskXML struct {

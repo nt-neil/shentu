@@ -136,7 +136,21 @@ func TestParseEventTextAcrossFields(t *testing.T) {
 			n++
 		}
 	}
-	if n != 3 {
-		t.Errorf("%d rules left out of the joined pass, want 3 (two private key, quoted user:password)", n)
+	if n != 9 {
+		t.Errorf("%d rules left out of the joined pass, want 9 (two private key, four of a command's own password, three JSON argv)", n)
+	}
+	// N-296-1: a quote opened in one field and closed in a later one hides
+	// none between.
+	for _, c := range [][2]string{
+		{`--password "x`, `y"`},
+		{`--password 'x`, `y'`},
+		{`"mysql" "-p`, `"`},
+		{`x mysql -p"x`, `y"`},
+		{`x ` + dl + ` -u bob:"x`, `y"`},
+	} {
+		got, _ := ParseEventText(ev(`<Data Name="a">` + c[0] + `</Data><Data Name="IpAddress">203.0.113.9</Data><Data Name="b">` + c[1] + `</Data>`))
+		if !strings.Contains(got, "IpAddress=203.0.113.9") {
+			t.Errorf("%q ... %q hid the field between: %q", c[0], c[1], got)
+		}
 	}
 }
