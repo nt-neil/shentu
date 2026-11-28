@@ -30,6 +30,49 @@ type finding struct {
 	// zh is Summary in Chinese, for the report with a Chinese setting;
 	// not saved: "" (or a finding read back) falls back to Summary.
 	zh string
+	// cooling: what the cooldown compares besides Key (SiteProfile.Cooling).
+	cooling string
+}
+
+// riskFindings are the risks pushed (not info), each with what its
+// cooldown compares besides the key (prof.Cooling).
+func riskFindings(prof tools.SiteProfile, risks []tools.Risk) []finding {
+	var out []finding
+	for _, r := range risks {
+		if r.Severity != "info" {
+			out = append(out, finding{Key: r.Key, Severity: r.Severity, Summary: r.Summary, cooling: prof.Cooling[r.Key]})
+		}
+	}
+	return out
+}
+
+// freshFindings are the findings not alerted within cooldown (by coolKey).
+func freshFindings(all []finding, alerted map[string]time.Time, cooldown time.Duration, now time.Time) []finding {
+	var fresh []finding
+	for _, f := range all {
+		if t, ok := alerted[coolKey(f)]; ok && now.Sub(t) < cooldown {
+			continue
+		}
+		fresh = append(fresh, f)
+	}
+	return fresh
+}
+
+// markAlerted records the findings sent, by coolKey: what freshFindings
+// reads on the next patrol.
+func markAlerted(alerted map[string]time.Time, sent []finding, now time.Time) {
+	for _, f := range sent {
+		alerted[coolKey(f)] = now
+	}
+}
+
+// coolKey is the cooldown's key of f: Key, and what it joins when its
+// content counts (a rule added to sudo:nopasswd is pushed again).
+func coolKey(f finding) string {
+	if f.cooling == "" {
+		return f.Key
+	}
+	return f.Key + "#" + f.cooling
 }
 
 // newFinding is a finding whose summary is report text key with args, in
@@ -41,7 +84,7 @@ func newFinding(key, severity string, evidence any, text string, args ...any) fi
 // newFindingIn is newFinding with values said differently in each language,
 // such as a list joined with ", " in English and "、" in Chinese.
 func newFindingIn(key, severity string, evidence any, text string, en, zh []any) finding {
-	return finding{key, severity, fmt.Sprintf(dt(false, text), en...), evidence, fmt.Sprintf(dt(true, text), zh...)}
+	return finding{key, severity, fmt.Sprintf(dt(false, text), en...), evidence, fmt.Sprintf(dt(true, text), zh...), ""}
 }
 
 // procFinding, sharedKeyFinding and preloadFinding list their values with
@@ -143,7 +186,7 @@ func sshFindings(r map[string]any, err error, threshold int, zh bool) (out []fin
 				sev = "critical"
 			}
 			out = append(out, finding{"ssh:" + s.IP, sev,
-				fmt.Sprintf(dt(false, "f_ssh"), n, s.IP, s.Accepted, note), s, fmt.Sprintf(dt(true, "f_ssh"), n, s.IP, s.Accepted, noteZh)})
+				fmt.Sprintf(dt(false, "f_ssh"), n, s.IP, s.Accepted, note), s, fmt.Sprintf(dt(true, "f_ssh"), n, s.IP, s.Accepted, noteZh), ""})
 		}
 	}
 	if c, _ := r["complete"].(bool); !c {
@@ -420,7 +463,7 @@ func codeAuditFindings(audit tools.CodeAudit) []finding {
 		if f.Rule != "" {
 			detail = fmt.Sprintf("%s (%s, rule %s)", f.Detail, f.CWE, f.Rule)
 		}
-		out = append(out, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, detail, f.Fix), f, ""})
+		out = append(out, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, detail, f.Fix), f, "", ""})
 	}
 	// An audit that did not check everything, or listed only part of what it
 	// found, says so: silence would read as nothing found.
@@ -432,7 +475,7 @@ func codeAuditFindings(audit tools.CodeAudit) []finding {
 		if strings.Contains(f.Detail, "unfinished") {
 			key = "code:audit:unfinished"
 		}
-		out = append(out, finding{key, "warning", fmt.Sprintf("code audit: %s; fix: %s", f.Detail, f.Fix), f, ""})
+		out = append(out, finding{key, "warning", fmt.Sprintf("code audit: %s; fix: %s", f.Detail, f.Fix), f, "", ""})
 	}
 	return out
 }
@@ -449,11 +492,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	if !daily {
 		prof.Stacks, prof.Lockfiles = st.Profile.Stacks, st.Profile.Lockfiles
 	}
-	for _, r := range append(prof.Risks, tools.Drift(st.Profile, prof)...) {
-		if r.Severity != "info" {
-			out = append(out, finding{r.Key, r.Severity, r.Summary, nil, ""})
-		}
-	}
+	out = riskFindings(prof, append(prof.Risks, tools.Drift(st.Profile, prof)...))
 	st.Profile = prof
 	since := st.LastRun
 	if since.IsZero() || time.Since(since) > 24*time.Hour {
@@ -660,13 +699,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	} else if dr.sum.Err != "" {
 		unchecked += fmt.Sprintf(dt(zh, "det_err"), dr.sum.Err)
 	}
-	var fresh []finding
-	for _, f := range all {
-		if t, ok := st.Alerted[f.Key]; ok && time.Since(t) < dur(cfg.Patrol.Cooldown) {
-			continue
-		}
-		fresh = append(fresh, f)
-	}
+	fresh := freshFindings(all, st.Alerted, dur(cfg.Patrol.Cooldown), time.Now())
 	st.LastRun = time.Now()
 	if len(fresh) == 0 && !daily {
 		fmt.Println("patrol: nothing new")
@@ -743,9 +776,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	if carry != "" {
 		clearCarryOver(cfg.StateDir) // said in this report
 	}
-	for _, f := range fresh {
-		st.Alerted[f.Key] = time.Now()
-	}
+	markAlerted(st.Alerted, fresh, time.Now())
 	return st.save(cfg.StateDir)
 }
 

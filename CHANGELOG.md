@@ -86,6 +86,10 @@ Chinese for the zh-TW pages; keep the two in step.
   a CVE entry of Debian's or Ubuntu's tracker, are unconfirmed: the overview does not fetch each
   advisory to tell, and `fix_note` says that unconfirmed is not "no fix". Until now the count
   mixed them; `package` set still gives each one's `fixed_version`, without the counts.
+- The patrol's cooldown of `sudo:nopasswd` compares its rules too, every one (not only the three
+  its text shows): when a no-password rule is added or removed while the risk is already reported,
+  it is pushed again within the cooldown; the same rules stay quiet as before. After upgrading, the first patrol
+  pushes a `sudo:nopasswd` already reported once more (its cooldown is kept under a new key).
 - site_profile on Linux and macOS says two more risks. `sudo:nopasswd` (a warning): sudoers lets
   someone run every command with no password: `ALL` anywhere among the commands a NOPASSWD tag
   covers (it holds up to a PASSWD tag), a command alias that is ALL or cannot be told, a command
@@ -254,9 +258,10 @@ Chinese for the zh-TW pages; keep the two in step.
   under vendor/ (whose files it does not read). The call is the project's own (a WordPress plugin's
   SQL helper). Before, a method of that name counted on any object. It stays reported when anything
   names the library, when no class of the project declares the method, and whenever app_code_audit
-  left a file out: a folder it skips (node_modules/, .git/), one more than 8 levels deep, a
-  rule-language file over 1 MiB or not readable, more than 20,000 files, or a walk cut short. A call
-  found in the file it is written in is reported as before.
+  left a file out: a folder it skips (node_modules/, .git/), one more than 8 levels deep, a PHP
+  file over 1 MiB or not readable (a script or another language's file left out does not count),
+  more than 20,000 files, a walk cut short, or composer.json, composer.lock or vendor/ not read. A
+  call found in the file it is written in is reported as before.
 - `php-deserialization-wp-maybe-unserialize`: an argument that is an array on every path is not
   reported (`maybe_unserialize(array('fields' => $_POST['f']))`, an array written by key, `explode()`),
   also when a function of the code's own passes its parameter on as is: `maybe_unserialize()`
