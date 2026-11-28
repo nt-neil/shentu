@@ -188,7 +188,7 @@ var (
 var (
 	phpWindows = false
 	phpRun     = func(ctx context.Context, argv []string) ([]byte, error) {
-		res, err := hostSource().Run(ctx, argv) // masked: package metadata, its fields kept as output (N-293-1)
+		res, err := pkgQuery(ctx, argv)
 		if err == nil && res.ExitCode != 0 {
 			err = fmt.Errorf("%s exited %d", argv[0], res.ExitCode)
 		}
