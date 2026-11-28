@@ -67,7 +67,7 @@ type FixFile struct {
 
 var (
 	ecosystems = map[string]string{"wordpress-plugin": "php", "composer": "php", "pypi": "python", "npm": "js", "github": "ts"}
-	classes    = map[string]bool{"sqli": true, "cmdi": true, "code-eval": true, "deserialization": true, "path-traversal": true, "xss": true, "ssrf": true, "open-redirect": true, "xxe": true, "ldapi": true, "nosqli": true, "file-upload": true, "weak-crypto": true, "hardcoded-secret": true} // ldapi: LDAP injection, nosqli: NoSQL operator injection, file-upload: dangerous file type accepted, weak-crypto: broken algorithm or hash, hardcoded-secret: credential in source
+	classes    = map[string]bool{"sqli": true, "cmdi": true, "code-eval": true, "deserialization": true, "path-traversal": true, "xss": true, "ssrf": true, "open-redirect": true, "xxe": true, "ldapi": true, "nosqli": true, "file-upload": true, "weak-crypto": true, "hardcoded-secret": true, "crlf": true} // ldapi: LDAP injection, nosqli: NoSQL operator injection, file-upload: dangerous file type accepted, weak-crypto: broken algorithm or hash, hardcoded-secret: credential in source, crlf: a line break written into a line-based format
 	idRe       = regexp.MustCompile(`^(CVE-\d{4}-\d{4,}|GHSA(-[23456789cfghjmpqrvwx]{4}){3})$`)
 	versionRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
 	tagRe      = regexp.MustCompile(`^(@[a-z0-9][a-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._+-]*@[0-9][A-Za-z0-9._+-]*$`) // monorepo tags: name@1.2.3

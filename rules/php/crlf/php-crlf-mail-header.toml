@@ -1,0 +1,73 @@
+id = "php-crlf-mail-header"
+lang = "php"
+class = "crlf"
+cwe = "CWE-93"
+severity = "medium"
+tier = "info"
+title = "Request input put into the extra headers of a mail (a line break in it adds a header: Bcc, another body)"
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['HTTP_HOST']", "->get_param(", "$request->input(", "$request->get(", "$this->request->getPost(", "$this->request->getGet(", "filter_input(", "->filterInput(", "->filter_input("]
+sinks = ["mail(", "wp_mail("]
+sanitizers = ["(int)", "intval", "absint", "ctype_digit", "ctype_alnum", "sanitize_email", "sanitize_text_field", "sanitize_key", "is_email", "rawurlencode", "base64_encode", 'str_replace(["\r", "\n"]', 'str_replace(["\n", "\r"]']
+fix = "Do not put request values into mail headers; if a header needs one, refuse any value holding \\r or \\n (or take it from configuration, as the host name of the site's URL)."
+refs = ["CVE-2026-39971"]
+
+# The extra headers: mail()'s and wp_mail()'s 4th argument. The recipient,
+# subject and body are other risks (and PHP's mail() rejects some), not this rule's.
+[[args]]
+arg = 4
+
+[[samples]]
+kind = "vulnerable"
+note = "the Host header goes into a Message-ID header of a notification mail"
+code = '''
+<?php
+function notify($to, $subject, $body) {
+    $headers = array();
+    $headers[] = 'From: blog@example.org';
+    $headers[] = 'Message-ID: <' . bin2hex(random_bytes(16)) . '@' . $_SERVER['HTTP_HOST'] . '>';
+    return mail($to, $subject, $body, implode("\n", $headers));
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a reply-to address from a contact form"
+code = '''
+<?php
+function contact() {
+    $headers = "From: site@example.org\r\nReply-To: " . $_POST['email'];
+    wp_mail('owner@example.org', 'Contact', $_POST['message'], $headers);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "line breaks removed from the value first"
+code = '''
+<?php
+function f() {
+    $v = str_replace(["\r", "\n"], '', $_POST['v']);
+    mail('a@example.org', 'S', 'B', 'X-Ref: ' . $v);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the address checked with sanitize_email first"
+code = '''
+<?php
+function contact() {
+    $from = sanitize_email($_POST['email']);
+    wp_mail('owner@example.org', 'Contact', $_POST['message'], "Reply-To: " . $from);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "request input only in the body"
+code = '''
+<?php
+function contact() {
+    mail('owner@example.org', 'Contact', $_POST['message'], "From: site@example.org");
+}
+'''

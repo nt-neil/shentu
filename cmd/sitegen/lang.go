@@ -22,6 +22,7 @@ var classNames = map[string][2]string{
 	"file-upload":      {"Dangerous file upload", "危險的檔案上傳"},
 	"weak-crypto":      {"Weak cryptography", "弱加密"},
 	"hardcoded-secret": {"Hard-coded credentials", "寫死的憑證"},
+	"crlf":             {"CRLF / line injection", "CRLF 換行注入"},
 	// bench groups
 	"all":         {"All", "全部"},
 	"rule source": {"Rule source", "規則依據的案例"},

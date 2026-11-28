@@ -20,7 +20,7 @@ rules/<lang>/<class>/<id>.toml
 | field | values |
 |---|---|
 | `lang` | `php`, `python`, `js` (JavaScript rules also apply to TypeScript, see [TypeScript](#typescript)) |
-| `class` | `sqli`, `cmdi`, `path-traversal` (includes file inclusion), `deserialization`, `code-eval`, `xss`, `ssrf`, `open-redirect`, `xxe`, `ldapi`, `nosqli`, `file-upload`, `weak-crypto`, `hardcoded-secret`, `prototype-pollution` |
+| `class` | `sqli`, `cmdi`, `path-traversal` (includes file inclusion), `deserialization`, `code-eval`, `xss`, `ssrf`, `open-redirect`, `xxe`, `ldapi`, `nosqli`, `file-upload`, `weak-crypto`, `hardcoded-secret`, `prototype-pollution`, `crlf` (a line break written into a line-based format: a mail header, a line of a `.env` or configuration file, a network protocol line; not a response header set with `header()`) |
 
 ## Format
 
@@ -469,6 +469,7 @@ Allowed CWEs per class:
 | `weak-crypto` | CWE-327, CWE-328, CWE-916 |
 | `hardcoded-secret` | CWE-798, CWE-259, CWE-321 |
 | `prototype-pollution` | CWE-1321 |
+| `crlf` | CWE-93, CWE-77 |
 
 ### Output contexts
 

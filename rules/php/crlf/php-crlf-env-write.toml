@@ -1,0 +1,57 @@
+id = "php-crlf-env-write"
+lang = "php"
+class = "crlf"
+cwe = "CWE-93"
+severity = "high"
+tier = "info"
+title = "Request input written into a .env file (a line break in it adds a setting)"
+sources = ["$_GET", "$_POST", "$_REQUEST", "->get_param(", "$request->input(", "$request->get(", "$this->request->getPost(", "$this->request->getGet(", "->getVar(", "filter_input(", "->filterInput(", "->filter_input("]
+sinks = ["file_put_contents(", "fwrite(", "fputs("]
+sanitizers = ["(int)", "intval", "absint", "ctype_digit", "ctype_alnum", "sanitize_key", "rawurlencode", "base64_encode", "bin2hex", 'str_replace(["\r", "\n"]', 'str_replace(["\n", "\r"]']
+fix = "Refuse a value holding \\r or \\n before it is written into a line of the file (or quote it as the file's format allows), and keep the installer from running again once installed."
+refs = ["CVE-2026-39394"]
+
+# The content (argument 2) of a write whose path names a .env file.
+[[args]]
+sinks = ["file_put_contents("]
+arg = 2
+when = ["'.env'"]
+
+[[samples]]
+kind = "vulnerable"
+note = "an installer writes the database host from the form into .env"
+code = '''
+<?php
+class Install {
+    public function save() {
+        $host = $this->request->getPost('host');
+        $env = file_get_contents(ROOTPATH . '.env');
+        $env = preg_replace('/^database.default.hostname=.*/m', "database.default.hostname={$host}", $env);
+        file_put_contents(ROOTPATH . '.env', $env);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "line breaks removed from the value first"
+code = '''
+<?php
+function f() {
+    $v = str_replace(["\r", "\n"], '', $_POST['v']);
+    file_put_contents(ROOTPATH . '.env', "KEY={$v}\n", FILE_APPEND);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the same value written into another file"
+code = '''
+<?php
+class Install {
+    public function save() {
+        $host = $this->request->getPost('host');
+        file_put_contents(WRITEPATH . 'install.log', "host={$host}\n", FILE_APPEND);
+    }
+}
+'''

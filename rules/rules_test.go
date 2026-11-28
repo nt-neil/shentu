@@ -29,6 +29,7 @@ var (
 		"file-upload":      {"CWE-434"},
 		"weak-crypto":      {"CWE-327", "CWE-328", "CWE-916"},
 		"hardcoded-secret": {"CWE-798", "CWE-259", "CWE-321"},
+		"crlf":             {"CWE-93", "CWE-77"},
 
 		"prototype-pollution": {"CWE-1321"},
 	}
