@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -113,5 +115,56 @@ func TestRecordingCoversSurvey(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("the replay lost sudo:nopasswd:cloud-init: %+v", p.Risks)
+	}
+}
+
+// hostReadsBypass are the reads of the machine in tools and checks that do
+// not go through hostSource, so a recording does not hold them (S-305-1),
+// counted per file. One more, or one gone, fails TestNoHostReadsBypass: a
+// new one is to go through hostSource or be added here with its reason.
+var hostReadsBypass = map[string]int{
+	"tools/alas.go":      7, // shentu's own cache of Amazon Linux advisories
+	"tools/codeaudit.go": 1, // shentu's state directory
+	"tools/codecalls.go": 6, // shentu's kept audit results and its own executable
+	"tools/files.go":     2, // certbot's certificates (cert_expiry): not recorded (known issue)
+	"tools/firewall.go":  3, // nft on this machine: block_ip acts, it does not read the host
+	"tools/imagepkgs.go": 6, // Docker's and containerd's image stores: not recorded (known issue)
+}
+
+var hostReadRe = regexp.MustCompile(`\bos\.(ReadFile|Open|OpenFile|ReadDir|Stat|Lstat|Readlink)\(|\bexec\.(Command|CommandContext|LookPath)\(|\bfilepath\.(Walk|WalkDir|Glob)\(|\bioutil\.`)
+
+func TestNoHostReadsBypass(t *testing.T) {
+	got := map[string]int{}
+	for _, dir := range []string{".", "../checks"} {
+		names, err := filepath.Glob(filepath.Join(dir, "*.go"))
+		if err != nil || len(names) == 0 {
+			t.Fatal(dir, err)
+		}
+		for _, n := range names {
+			if strings.HasSuffix(n, "_test.go") {
+				continue
+			}
+			b, err := os.ReadFile(n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c := len(hostReadRe.FindAll(b, -1)); c > 0 {
+				got[filepath.ToSlash(filepath.Join("tools", n))] = c
+			}
+		}
+	}
+	norm := map[string]int{}
+	for k, v := range got {
+		norm[strings.Replace(k, "tools/../", "", 1)] = v
+	}
+	for k, v := range norm {
+		if hostReadsBypass[k] != v {
+			t.Errorf("%s reads the machine without hostSource %d times, the list says %d: go through hostSource, or list it with its reason", k, v, hostReadsBypass[k])
+		}
+	}
+	for k, v := range hostReadsBypass {
+		if _, ok := norm[k]; !ok {
+			t.Errorf("%s is listed (%d) but has none: take it off the list", k, v)
+		}
 	}
 }

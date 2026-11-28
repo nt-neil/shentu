@@ -93,6 +93,11 @@ func TestAuditMemoryUnderCgroup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and scans a large project")
 	}
+	if raceBuild {
+		// -race slows the audit so much that its time runs out before memory
+		// reaches the limit this test is about (S-306).
+		t.Skip("the race detector's slowness spends the audit's time first")
+	}
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		// The guarantee is the systemd cgroup's memory budget (Linux); macOS
 		// CI runs it as a check of the budget's arithmetic. On Windows the

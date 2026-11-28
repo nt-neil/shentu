@@ -280,6 +280,11 @@ Chinese for the zh-TW pages; keep the two in step.
   `handle-table`). Nothing is kept unless a rule uses it, and no shipped rule uses it yet.
 ### Known issues
 
+- A recording (`hostfacts -record`) holds what the facts and site_profile read through the host
+  source. What a check reads of the machine directly is not in it: certbot's certificates
+  (cert_expiry), Docker's and containerd's image stores. A test holds the list of such reads, so a
+  new one is told. Only Linux fixtures are checked this way so far, and the survey is recorded with
+  no app paths (lock files under `APP_PATHS` are not recorded).
 - A Python package's `RECORD` with a line that opens a quote and never closes it is read as one
   field from there to its end: the rows after that line are not used, and a `.pth` file they would
   prove a tool's (setuptools, virtualenv, an editable install) is listed as not proven (reported
