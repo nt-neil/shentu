@@ -51,6 +51,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 規則：函式 sink 的 `[[args]]` 可以指定哪個參數是 handle（`handle`，要和 `receiver` 一起用）。這樣 `fwrite($fp, ...)` 只有在 `$fp` 是 `receiver` 列的函式（例如 `fsockopen()`）產生的時候才算數：直接寫在呼叫裡、同一個函式裡這次呼叫之前最近的一次指派，或者 `$this->fp` 在同一個 class 檔案裡其他地方的指派。看不出來源的 handle 不算：參數、`STDOUT`、方法的回傳值、在別的方法設定的 static 屬性、`$s[0]` 這種寫法，或 `foreach` 的變數。一個檔案的屬性指派超過 4096 筆時，這個檔案就不追（掃描會記下截斷原因 `handle-table`）。沒有規則用到時不會多做任何事；目前還沒有規則用到它。
 ### 已知問題
 
+- 錄製（`hostfacts -record`）只收進 facts 和 site_profile 經由主機來源讀到的內容；檢查直接讀這台機器的部分不在裡面：certbot 的憑證（cert_expiry）、Docker 和 containerd 的 image 存放區。tools 和 checks 裡這類讀取由一條測試逐行列出清單，多一處就會失敗；hostenv（主機來源本身）和攻擊偵測不在掃描範圍內。目前只有 Linux 的 fixture 這樣檢查，錄製 survey 時也沒有帶應用程式路徑（`APP_PATHS` 裡的 lock 檔不會錄到）。
 - Python 套件的 `RECORD` 裡，如果有一行開了引號但沒有收尾，從那裡到檔案結尾都會被當成同一個欄位：那一行之後的內容都用不到，原本用這些內容能證明是工具（setuptools、virtualenv、editable install）寫的 `.pth`，會列成無法證明（多報，不會漏報）。
 - 直接寫在指令參數裡的密碼，下面幾種情況不會遮：密碼全是 JSON 標點（`, : { } [ ]` 和空白）；密碼裡空白之後的部分（command line 是用空白把 argv 接起來的；在 shell 指令行裡加了引號的會整段遮掉）；log 或 shell 的指令紀錄裡，沒有引號的 `;`、`|`、`&` 之後的部分；分成多行寫出的 JSON argv，或前面的字串裡有 `]` 的 JSON argv；以及其他程式的密碼參數（`sshpass -p`、`redis-cli -a`、`ldapsearch -w`、`smbclient -U user%<密碼>`、`mongosh -p`、`htpasswd -b`、curl 的 `--pass` 和 `-E cert:<密碼>`）。
 - cloud-init sudo 的 warning 只看 PasswordAuthentication：設了 `AuthenticationMethods publickey`、實際上只能用金鑰登入時，仍然會升級（多報）；PasswordAuthentication 是 no，但 `KbdInteractiveAuthentication yes` 加上 `UsePAM yes` 仍然可以用密碼登入時，不會升級（少報）。
