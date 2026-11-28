@@ -11,6 +11,8 @@ sources = ["$this->input->get(", "$this->input->post(", "$this->input->get_post(
 # (its ->query( sink), which reads CodeIgniter's input too.
 # CodeIgniter 4's ->orderBy( is php-sqli-orderby-identifier's, as Laravel's and Yii's.
 sinks = ["$this->db->simple_query(", "->order_by(", "->where(", "->or_where(", "->orWhere(", "->having("]
+# a method sink of a project that never names the library and declares a method of that name is its own (Project.ownMethodOnly)
+receivers = ["CodeIgniter", "CodeIgniter4", "CI_Controller", "CI_Model", "CI_DB", "CI_DB_driver", "CI_DB_query_builder", "get_instance", "codeigniter/framework", "codeigniter4/framework"]
 # ->where( and ->orWhere( are Yii's calls too: input both read on the same
 # call is php-sqli-yii-query's (yields.go); CodeIgniter's own input stays here.
 yields_to = ["php-sqli-yii-query"]

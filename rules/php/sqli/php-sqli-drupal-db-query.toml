@@ -7,6 +7,8 @@ tier = "info"
 title = "Request input written into the SQL text of a Drupal database query"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->query->get(", "->request->get(", "::request()->get(", "$form_state->getValue(", "$form_state->getUserInput(", "arg(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["db_query(", "db_query_range(", "\\Drupal::database()->query(", "$this->database->query(", "$this->connection->query(", "$connection->query(", "$database->query(", "Database::getConnection()->query(", "->where("]
+# a method sink of a project that never names the library and declares a method of that name is its own (Project.ownMethodOnly)
+receivers = ["Drupal", "db_select", "db_query", "db_query_range", "db_update", "db_insert", "db_delete", "db_merge", "drupal/core"]
 # ->where( is a Yii, a CodeIgniter and a Doctrine call as well: on the same
 # call, input those rules read too is theirs (yields.go: Symfony's
 # $request->query->get( is Doctrine's); Drupal's own input stays here.
