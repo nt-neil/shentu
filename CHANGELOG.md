@@ -217,7 +217,7 @@ Chinese for the zh-TW pages; keep the two in step.
 
 - A command's own password is not masked when it is only JSON punctuation (`, : { } [ ]` and
   spaces), past a space in it (a command line joins argv with spaces; quoted in a shell line it is
-  masked whole), past an unquoted `;`, `|`, `&`, `)` or backtick in a log line or a shell's
+  masked whole), past an unquoted `;`, `|` or `&` in a log line or a shell's
   history, in a JSON argv printed over several lines or after a string holding `]`, or given to
   another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
