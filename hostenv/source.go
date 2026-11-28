@@ -361,6 +361,11 @@ func (l *Live) Run(ctx context.Context, argv []string) (CmdResult, error) {
 	return l.Runner.Run(ctx, argv)
 }
 
+// RunUnmasked runs an allowlisted command and gives its output as written.
+func (l *Live) RunUnmasked(ctx context.Context, argv []string) (CmdResult, error) {
+	return l.Runner.RunUnmasked(ctx, argv)
+}
+
 // Classify maps a Source error to the Reason a fact should carry.
 func Classify(err error) Reason {
 	switch {

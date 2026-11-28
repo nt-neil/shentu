@@ -209,6 +209,17 @@ func (r *Runner) Allowed(argv []string) bool {
 // Run executes argv with no shell, no stdin, a fixed environment, a timeout
 // and capped output. Stdout and stderr are secret-masked before returning.
 func (r *Runner) Run(ctx context.Context, argv []string) (CmdResult, error) {
+	return r.run(ctx, argv, true)
+}
+
+// RunUnmasked is Run with the output as written, for parsers that match the
+// text and mask only what they output (N-286-1: a mask must not hide from a
+// check what an attacker wrote into a command line).
+func (r *Runner) RunUnmasked(ctx context.Context, argv []string) (CmdResult, error) {
+	return r.run(ctx, argv, false)
+}
+
+func (r *Runner) run(ctx context.Context, argv []string, masked bool) (CmdResult, error) {
 	if !r.Allowed(argv) {
 		return CmdResult{}, fmt.Errorf("%w: %q", ErrNotAllowed, argv)
 	}
@@ -232,10 +243,9 @@ func (r *Runner) Run(ctx context.Context, argv []string) (CmdResult, error) {
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 
 	err := cmd.Run()
-	res := CmdResult{
-		Stdout:    []byte(MaskSecrets(stdout.String())),
-		Stderr:    MaskSecrets(stderr.String()),
-		Truncated: stdout.over || stderr.over,
+	res := CmdResult{Stdout: []byte(stdout.String()), Stderr: stderr.String(), Truncated: stdout.over || stderr.over}
+	if masked {
+		res.Stdout, res.Stderr = []byte(MaskSecrets(string(res.Stdout))), MaskSecrets(res.Stderr)
 	}
 	if ctx.Err() == context.DeadlineExceeded {
 		return res, ErrTimeout
@@ -353,4 +363,20 @@ func (r *Runner) runStream(ctx context.Context, argv []string, read func(io.Read
 		return res, err
 	}
 	return res, serr
+}
+
+// RawRunner is implemented by Sources that can give a command's output
+// unmasked.
+type RawRunner interface {
+	RunUnmasked(ctx context.Context, argv []string) (CmdResult, error)
+}
+
+// RunUnmasked runs argv through src with the output as written. A Source
+// that cannot give it unmasked (a replayed fixture, already masked) gives
+// what it has; a Recorder keeps it masked for the fixture.
+func RunUnmasked(ctx context.Context, src Source, argv []string) (CmdResult, error) {
+	if rr, ok := src.(RawRunner); ok {
+		return rr.RunUnmasked(ctx, argv)
+	}
+	return src.Run(ctx, argv)
 }

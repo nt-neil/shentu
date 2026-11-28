@@ -176,6 +176,11 @@ type Process struct {
 	UID        string `json:"uid,omitempty"`         // uid or SID
 	Started    string `json:"started,omitempty"`     // RFC3339; Linux: mtime of /proc/PID
 	StartTicks int64  `json:"start_ticks,omitempty"` // Linux: clock ticks after boot (stat field 22)
+
+	// RawCmdline is the command line as written, capped at MaxRawCmdline,
+	// for checks only (N-286-1: a mask must not hide a miner's options); it
+	// is never output and is empty when read back from a fixture.
+	RawCmdline string `json:"-"`
 }
 
 type Account struct {
@@ -314,4 +319,16 @@ func NewFacts(name, version string, at time.Time) *Facts {
 		AuthEvents:  Unknown[AuthEvents](nc, ""),
 		Web:         Unknown[Web](nc, ""),
 	}
+}
+
+// MaxRawCmdline caps Process.RawCmdline.
+const MaxRawCmdline = 8192
+
+// MatchCmdline is the command line a check matches: as written when the
+// Source gave it so, else the masked one (a replayed fixture).
+func (p Process) MatchCmdline() string {
+	if p.RawCmdline != "" {
+		return p.RawCmdline
+	}
+	return p.Cmdline
 }

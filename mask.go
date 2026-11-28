@@ -24,6 +24,40 @@ var maskRules = []struct {
 	{regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`), "[REDACTED JWT]"},
 	// key=value / key: value. The value class stops at quotes and backslashes so JSON text stays valid.
 	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\\?"?\s*[=:]\s*\\?"?)[^\s"\\,;]{3,}`), "${1}[REDACTED]"},
+	// S-281-1: a password as a command's own argument, not key=value:
+	// the mysql family's -p<secret> (mysql, mysqldump, mysqlcheck, mysqlimport,
+	// mysqlshow, mysqlpump, mysqlbinlog, mysql_upgrade, mysqlslap,
+	// mysqladmin, mysqlsh, mariadb and its tools; any case, .exe; not the
+	// mysqld or mariadbd daemon, whose -port= is no password),
+	// --password/--passwd then the next argument, and curl's or wget's
+	// -u/-U/--user/--proxy-user user:<secret> (attached, with =, or an empty
+	// user; the program's name starts the line or follows any character but
+	// = or a letter, digit or _ (a space, / \ a quote, ; | & ( ) { } or `:
+	// x;mysql, $(mysql, `mysql`, echo|mysql), so --user=mysql names no
+	// program; its path may be quoted). The command reaches only to
+	// an unquoted ; | & or the line's
+	// end (git push -u a:b after it is another command's). A value is one
+	// shell word: \x, quoted segments ("a b" or 'a b', at its start or after
+	// other characters) and anything but a space, a quote or ; | & (a ) or `
+	// ending a $( ) or ` ` command goes with the value: too much rather than
+	// a password's rest). A "..."
+	// holding only JSON punctuation (, : { } [ ] and spaces) ends the word
+	// instead: it is a JSON string's end and the next one's start
+	// ({"msg":"mysql -pab","ip":...}), and the line keeps its shape for the
+	// parsers after. Not masked: a password of only that punctuation, the
+	// part after a space in an unquoted one (argv joined by spaces), and a
+	// pretty-printed JSON argv over several lines.
+	{regexp.MustCompile(`((?:^|[^=\w])(?i:(?:mysql(?:dump|check|import|show|pump|binlog|_upgrade|slap|admin|sh)?\d*|mariadb(?:-?(?:dump|admin|check|import|show|binlog|upgrade|slap|backup))?)(?:\.exe)?)\b["']?(?:"[^"\n]*"|'[^'\n]*'|[^\n;|&"'])*?\s-p)(?:\\.|[^\s"'\\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')+`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(--pass(?:word|wd)\s+)(?:\\.|[^-\s"'\\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')(?:\\.|[^\s"'\\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')*`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`((?:^|[^=\w])(?i:(?:curl|wget)(?:\.exe)?)\b["']?(?:"[^"\n]*"|'[^'\n]*'|[^\n;|&"'])*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])(?:"[^\s:"]*:|'[^\s:']*:))[^"'\n]*`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`((?:^|[^=\w])(?i:(?:curl|wget)(?:\.exe)?)\b["']?(?:"[^"\n]*"|'[^'\n]*'|[^\n;|&"'])*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])(?:\\.|[^\s:"'\\])*:)(?:\\.|[^\s"'\\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')+`), "${1}[REDACTED]"},
+	// The same three in a JSON argv (docker inspect's Path and Args, an
+	// image's Cmd, a healthcheck): a string naming the program, then in the
+	// same array on the same line "-p<secret>", "--password", "<secret>" or
+	// "-u", "user:<secret>".
+	{regexp.MustCompile(`("(?:[^"\n]*[/\\])?(?i:mysql(?:dump|check|import|show|pump|binlog|_upgrade|slap|admin|sh)?\d*|mariadb(?:-?(?:dump|admin|check|import|show|binlog|upgrade|slap|backup))?)(?:\.exe)?"[^\n\]]*?"-p)(?:\\.|[^"\\\n])+"`), "${1}[REDACTED]\""},
+	{regexp.MustCompile(`("--pass(?:word|wd)"\s*,\s*")(?:\\.|[^-"\\\n])(?:\\.|[^"\\\n])*"`), "${1}[REDACTED]\""},
+	{regexp.MustCompile(`("(?:[^"\n]*[/\\])?(?i:curl|wget)(?:\.exe)?"[^\n\]]*?"(?:(?:-u|-U|--user|--proxy-user)"\s*,\s*"|-[uU]|--(?:proxy-)?user=)(?:\\.|[^"\\\n:])*:)(?:\\.|[^"\\\n])+"`), "${1}[REDACTED]\""},
 }
 
 // mask removes secrets. sudoers' NOPASSWD: and PASSWD: tags in sudoers
