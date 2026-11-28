@@ -24,6 +24,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 主機盤點改成直接解析指令輸出的原文，不再先遮（套件和 rpm vendor、防火牆規則、macOS 的平台、帳號、行程、listener、pf 和保護機制）：某個行程的路徑或 iptables 規則的 comment 裡有沒有結尾的私鑰標記時，後面的行程或規則不會再被一起遮掉。解析時用原文，存下來的欄位都有遮，訊息裡引用的指令錯誤文字也會先遮；nginx 和 PHP 的套件查詢照樣讀遮過的文字（那是套件管理程式的輸出）。
 - 挖礦程式的檢查（Linux、macOS、Windows）改成比對行程原本的 command line：改了名字的挖礦程式，就算參數寫在一個會被整段遮掉的密碼後面（`mysql -p' -o stratum+tcp://… '`），也找得到。它的證據和交給模型的內容照樣是遮過的。
 - 攻擊偵測讀 PHP 的 error log 和 journald 的訊息時，改成直接讀原文，不再先遮：請求裡被回寫到 PHP 位置前面的文字（例如沒有結尾的私鑰標記），不會再把位置一起遮掉，sink 的 error log 證據就留得住。解析出來的事件只留時間和位置，裡面的內容都不會輸出。
+- 為了找套件有沒有 backport 某個 CVE 的修正（nginx、PHP、內含的函式庫），rpm 的 changelog 改成直接讀原文：某一筆裡有沒有結尾的私鑰標記時，不會再把後面的記錄一起遮掉，已經 backport 的修正也就不會再被報成還沒修。
 - Windows 的 log_search 改成先遮欄位的值，再把名稱和值一起遮一次：值的第一個字是程式名稱時（`CommandLine=mysql -u root -p<密碼>`）也會遮；只把「名稱=值」一起遮的話，前面的 `=` 會讓程式名稱認不出來。
 - Windows 的檢查改成直接讀服務的 command line、登錄檔字串和排程工作 XML 的原文，不再先遮：服務路徑、使用者的 home 路徑或排程工作說明裡有沒有結尾的私鑰標記時，不會再藏住沒加引號的服務路徑、啟動資料夾或那個排程工作。輸出的內容照樣是遮過的。
 - 網站首頁：捲動時才出現的區塊（統計、開放原始碼、最新版本和河道），從中段進入頁面時（例如從連到頁內位置的連結、回到上一頁，或直接跳到中段）不再一直空白。區塊只要有任何一部分看得到就會出現；頁面一打開就看得到的區塊，以及從頁內位置打開的頁面上的每個區塊，都會立刻出現。
@@ -49,6 +50,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ### 已知問題
 
 - 直接寫在指令參數裡的密碼，下面幾種情況不會遮：密碼全是 JSON 標點（`, : { } [ ]` 和空白）；密碼裡空白之後的部分（command line 是用空白把 argv 接起來的；在 shell 指令行裡加了引號的會整段遮掉）；log 或 shell 的指令紀錄裡，沒有引號的 `;`、`|`、`&` 之後的部分；分成多行寫出的 JSON argv，或前面的字串裡有 `]` 的 JSON argv；以及其他程式的密碼參數（`sshpass -p`、`redis-cli -a`、`ldapsearch -w`、`smbclient -U user%<密碼>`、`mongosh -p`、`htpasswd -b`、curl 的 `--pass` 和 `-E cert:<密碼>`）。
+- 沒用 Composer 安裝的 Drupal（沒有 `composer.lock`），這一版對 Drupal core 的 installer 漏洞（SA-CORE-2026-017、SA-CORE-2026-019）還沒有主機面的檢查；用 Composer 安裝的，app_vulns 會透過 OSV 報出來，並在 CISA 的 KEV 收錄時標成已被利用。
 - 有些檢查讀進來的文字仍然是先遮過的：Windows 的 event data（每一欄各自遮；log_search 裡的事件文字也是一欄一欄分開遮）。
 - 事件裡密碼的名稱和值如果分在兩個欄位（名稱在一欄、值在下一欄），在 log_search 的文字裡不會被遮；Windows 內建的事件沒有這種寫法（CommandLine、ImagePath、ScriptBlockText 都是單一欄位）。
 - 一般文字裡（log、shell 的指令紀錄、cron），如果 `mysql` 是傳給參數的使用者名稱（`--user mysql -p5432`、`psql -U mysql -p5432`），會被當成程式名稱，後面的 `-p` 也會被遮掉；行程的 command line 是一個參數一個參數判斷的，不會這樣。檔名結尾是 `.mysql` 時（`psql -f backup.mysql -p5432`），一般文字和行程的 command line 都會這樣多遮。

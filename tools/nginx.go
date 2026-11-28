@@ -128,6 +128,18 @@ type ngxInstall struct {
 	removed                  bool
 }
 
+// pkgQuery runs a package manager's query through the host source. Its
+// output is read masked (its fields are output in many places, N-293-1),
+// but for rpm's changelog, which is only searched for CVE ids (backports)
+// and never output: read as written (S-293-3), so a key BEGIN in an entry
+// does not take the ids after it.
+func pkgQuery(ctx context.Context, argv []string) (hostenv.CmdResult, error) {
+	if len(argv) == 4 && argv[1] == "-q" && argv[2] == "--changelog" {
+		return hostenv.RunUnmasked(ctx, hostSource(), argv)
+	}
+	return hostSource().Run(ctx, argv)
+}
+
 // ngxRun, ngxRead and ngxExists run a package manager's query, read a binary
 // (up to 64 MiB) and look for a file, all through the host source (a
 // replay, or another host's survey, is never answered by the machine
@@ -136,7 +148,7 @@ type ngxInstall struct {
 // error, its output kept (dpkg-query's "config-files").
 var (
 	ngxRun = func(ctx context.Context, argv []string) ([]byte, error) {
-		res, err := hostSource().Run(ctx, argv) // masked: package metadata, its fields kept as output (N-293-1)
+		res, err := pkgQuery(ctx, argv)
 		if err == nil && res.ExitCode != 0 {
 			err = fmt.Errorf("%s exited %d", argv[0], res.ExitCode)
 		}
