@@ -222,7 +222,9 @@ Chinese for the zh-TW pages; keep the two in step.
 - log_search matches the masked text: what the mask covers cannot be found. A pattern matched
   against the text as written would tell, match by match, what a masked secret is.
 - A recording (a fixture) holds the masked text only, so a check replayed from it can decide
-  otherwise than on the live host (the cryptominer check, on options the mask covered).
+  otherwise than on the live host: the cryptominer check, on options the mask covered, and attack
+  detection, which can have less error-log evidence (an error log or journald message whose
+  location the mask covered).
 - A redirect target checked in another file (a Tornado base class's `self.sanitize_next_url()`) is
   still reported: app_code_audit reads each file on its own first, and that finding stays when the
   calls across files show the check.
