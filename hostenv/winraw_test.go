@@ -108,3 +108,14 @@ func TestParseEventTextProgramAtValueStart(t *testing.T) {
 		t.Errorf("%q %v", got, err)
 	}
 }
+
+// S-298-1: a field named for a secret whose value held a private key's
+// BEGIN keeps its marker whole.
+func TestParseEventTextMarkerWhole(t *testing.T) {
+	x := `<Event><System><EventID>7045</EventID><Channel>System</Channel></System><EventData>` +
+		`<Data Name="Password">` + winKeyBegin() + `</Data><Data Name="Token">ghp_` + strings.Repeat("a", 36) + `</Data></EventData></Event>`
+	got, err := ParseEventText(x)
+	if err != nil || !strings.Contains(got, "Password=[REDACTED PRIVATE KEY]") || !strings.Contains(got, "Token=[REDACTED GITHUB TOKEN]") || strings.Contains(got, "] PRIVATE KEY]") {
+		t.Errorf("%q %v", got, err)
+	}
+}

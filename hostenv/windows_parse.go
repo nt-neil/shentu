@@ -206,6 +206,10 @@ func sshSkeleton(v string) string {
 // searching, and MaskSecrets takes the credentials out). What someone
 // typed at a failed logon never appears: the typed-name fields of
 // typedNameEvents are dropped, and OpenSSH's messages that name a user are
+// splitMarker is a "[REDACTED <KIND>]" marker the key=value rule cut after
+// its first word.
+var splitMarker = regexp.MustCompile(`\[REDACTED\] ((?:[A-Z]+ )*[A-Z]+)\]`)
+
 // cut to a skeleton (sshSkeleton).
 func ParseEventText(s string) (string, error) {
 	var x eventXML
@@ -229,7 +233,10 @@ func ParseEventText(s string) (string, error) {
 		// start: CommandLine=mysql -p..., whose name the = before it would
 		// hide), then name and value together (a field named for a secret,
 		// as key=value).
-		b.WriteString(" " + MaskSecrets(name+"="+MaskSecrets(value)))
+		// The second pass may take the first's marker for a key's value
+		// (Password=[REDACTED PRIVATE KEY] -> [REDACTED] PRIVATE KEY]): put
+		// the marker back whole; it held no secret (S-298-1).
+		b.WriteString(" " + splitMarker.ReplaceAllString(MaskSecrets(name+"="+MaskSecrets(value)), "[REDACTED $1]"))
 	}
 	for _, d := range x.EventData.Data {
 		field(d.Name, d.Value)
