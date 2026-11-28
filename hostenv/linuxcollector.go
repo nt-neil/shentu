@@ -301,6 +301,9 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 	for i := range set.NotChecked {
 		set.NotChecked[i] = MaskSecrets(set.NotChecked[i])
 	}
+	for i := range half { // named in the fact's detail
+		half[i] = MaskSecrets(half[i])
+	}
 	set.Items = items
 	if set.Feed != nil {
 		DropAbsentSLEProducts(set.Feed, src, items)

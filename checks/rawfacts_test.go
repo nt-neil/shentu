@@ -89,7 +89,7 @@ func TestRawOutputFactsMasked(t *testing.T) {
 		t.Errorf("lsof's listeners: %s", b)
 	}
 	deb := liveLike{goos: "linux", files: map[string]string{"/etc/os-release": "ID=debian\nVERSION_ID=12\n"}, cmds: map[string]string{
-		"/usr/bin/dpkg-query -W -f " + hostenv.DpkgQueryFormat: "app\t\t1.0 " + pw + "\tamd64\tii \n",
+		"/usr/bin/dpkg-query -W -f " + hostenv.DpkgQueryFormat: "app\t\t1.0 " + pw + "\tamd64\tii \n" + "half\t\t2.0 " + pw + "\tamd64\tiF \n",
 	}}
 	ps := hostenv.LinuxCollector{}.Packages(context.Background(), deb, map[string]string{"ID": "debian", "VERSION_ID": "12"})
 	b, _ = json.Marshal(ps)
