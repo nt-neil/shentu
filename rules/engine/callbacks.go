@@ -297,9 +297,36 @@ func listOpen(t []Token, c int) bool {
 	return false
 }
 
-// pcallSeeds finds, in a PHP statement, calls of a function whose summary
-// calls one of its parameters (summary.pcall: tap($value, $callback), Arr::
-// first($array, $callback)) and follows the callable passed there:
+// iifeCall returns the index of the "(" that calls the function literal t[f]
+// where it is written: ( [static] Func ) ( ..., with any number of parentheses
+// around; 0 when it is not called so.
+func iifeCall(t []Token, f int) int {
+	l, r := f-1, f+1
+	if l >= 0 && t[l].word("static") {
+		l--
+	}
+	if l < 0 || r >= len(t) || !t[l].op("(") || !t[r].op(")") {
+		return 0
+	}
+	for l > 0 && r+1 < len(t) && t[l-1].op("(") && t[r+1].op(")") {
+		l, r = l-1, r+1
+	}
+	if r+1 < len(t) && t[r+1].op("(") && (l == 0 || !(t[l-1].Kind == Ident && !iifeLead[strings.ToLower(t[l-1].Text)] || t[l-1].Kind == Var || t[l-1].op(")") || t[l-1].op("]"))) {
+		return r + 1
+	}
+	return 0
+}
+
+// iifeLead: keywords a parenthesised expression may follow (return (function
+// ...)(...), echo (...)(...)): not a name whose call the "(" would be.
+var iifeLead = map[string]bool{"return": true, "echo": true, "print": true, "yield": true, "throw": true,
+	"include": true, "include_once": true, "require": true, "require_once": true, "and": true, "or": true, "xor": true}
+
+// pcallSeeds finds, in a PHP statement, a closure called where it is written
+// ((function ($a) { ... })($x): seeded like a closure literal below) and
+// calls of a function whose summary calls one of its parameters
+// (summary.pcall: tap($value, $callback), Arr::first($array, $callback)) and
+// follows the callable passed there:
 //   - a closure literal: its parameters are seeded with what the callee passes
 //     them (the input of the call's arguments the effect names), so its sinks
 //     are found;
@@ -313,6 +340,24 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 	}
 	var out map[*fn][]*paramSeed
 	for i := 0; i+1 < len(t); i++ {
+		if t[i].Kind == Func {
+			// (function ($a) use ($b) { ... })($atts), (static function ...)(...),
+			// ((fn ($a) => ...))(...): a closure called where it is written gets
+			// each argument in the parameter of its place. One returned and then
+			// called ((function () { return function ($a) {...}; })()($x)) is not
+			// followed.
+			if c := iifeCall(t, i); c > 0 {
+				args := callArgs(t, c)
+				seed := func(k int) val {
+					if k < len(args) {
+						return a.expr(st, args[k], false)
+					}
+					return val{}
+				}
+				out = a.passCallable(st, t[i:i+1], funcs, seed, len(args), false, out)
+			}
+			continue
+		}
 		if !t[i+1].op("(") || t[i].Kind != Ident && t[i].Kind != Var {
 			continue
 		}

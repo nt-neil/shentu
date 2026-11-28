@@ -73,6 +73,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 在非 Windows 的機器上 replay Windows 主機的記錄時，code audit 的 ASP 檢查、web root 的 ACL 檢查，以及不分大小寫的路徑比對，都還沒有打開，app_vulns 和 app_code_audit 的 path 參數，除非和某個 app path 完全相同，否則會被拒絕（v0.5.9 處理）。
 - route 模型只在註冊它的那個檔案裡找 handler：`elementor/editor/after_save` 的 callback 如果寫在另一個檔案（hook 寫在外掛主檔、函式寫在 include 裡），就不會被當成 handler，那裡的抓取也不會回報。其他 route 模型也有同樣的限制。
 - PHP：`foreach ($a as $k => $v)` 讀的 array，如果每個 key 都是程式碼裡寫死的（`['db.host' => $_POST['h']]`、`array('a' => ...)`、沒有寫 key 的清單，之後也只用字面值 key 寫入），`$k` 就不算輸入，只有值是輸入。以前用這種 `$k` 組出來的 header（`"X-Key: {$k}"`）或查詢片段會被報出來。下面這幾種情況，key 仍然算輸入：array 之後用計算出來的 key 寫入、整個被指派成輸入（`$a = $_POST`）、被 `extract()` 重新定義、用 reference 傳給可能改寫它的函式、有一條路徑不是字面值，或 array 字面值裡有計算出來的 key 或 spread（`...$a`）。
+- PHP：寫出來就直接呼叫的 closure（`(function ($atts) use ($path) { ... })($atts)`，也包括 `static function` 和外面多包幾層括號的寫法），現在和一般的 helper 函式一樣，每個引數都會進到同一個位置的參數：從這裡傳進去的輸入到了 sink，或是在 closure 裡被 `extract()`，都會報。以前參數沒有和引數連起來，所以傳進去的值都不算輸入。由另一個 closure 回傳、再拿來呼叫的 closure（`(function () { return function ($a) { ... }; })()($x)`），目前還不會追。
+- PHP：沒有帶結果 array 的 `parse_str($q)` 和 `mb_parse_str($q)`（PHP 8 之前會把每個 key 寫成目前範圍的變數），現在照沒有帶 flag 的 `extract()` 處理：之前定義過的變數，之後就算輸入。帶結果 array、同名的 method，或沒有輸入的字串，都不會寫入變數。這兩個函式和 `extract()` 的名稱不分大小寫，前面有 `@`、`\` 或 `$r =` 也一樣處理。
 
 ## v0.5.7 — 2026-11-26
 

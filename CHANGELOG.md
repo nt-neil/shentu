@@ -368,6 +368,16 @@ Chinese for the zh-TW pages; keep the two in step.
   such a `$k` was reported. The key is still input when the array is written under a computed key,
   given input whole (`$a = $_POST`), redefined by `extract()`, passed by reference to a function that
   may write it, not a literal on one path, or holds a computed key or a spread (`...$a`).
+- PHP: a closure called where it is written (`(function ($atts) use ($path) { ... })($atts)`, also
+  `static function` and more parentheses around) gets each argument in the parameter of its place,
+  as a helper function does: input passed there that reaches a sink, or an `extract()` of it inside,
+  is reported. The parameter was not tied to the argument, so nothing passed in was input. A closure
+  returned by another and then called (`(function () { return function ($a) { ... }; })()($x)`) is
+  not followed yet.
+- PHP: `parse_str($q)` and `mb_parse_str($q)` with no result array (before PHP 8 they set a variable
+  of the scope for each key) are followed as `extract()` with no flags: a variable defined before is
+  input after it. A result array, a method of that name or a string with no input sets none. Both
+  calls and `extract()` are read in any case, after `@`, a leading `\` or `$r =`.
 
 ## v0.5.7 — 2026-11-26
 
