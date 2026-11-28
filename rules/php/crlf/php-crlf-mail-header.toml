@@ -7,7 +7,7 @@ tier = "info"
 title = "Request input put into the extra headers of a mail (a line break in it adds a header: Bcc, another body)"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['HTTP_HOST']", "->get_param(", "$request->input(", "$request->get(", "$this->request->getPost(", "$this->request->getGet(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["mail(", "wp_mail("]
-sanitizers = ["(int)", "intval", "absint", "ctype_digit", "ctype_alnum", "sanitize_email", "sanitize_text_field", "sanitize_key", "is_email", "rawurlencode", "base64_encode", 'str_replace(["\r", "\n"]', 'str_replace(["\n", "\r"]']
+sanitizers = ["(int)", "intval", "absint", "ctype_digit", "ctype_alnum", "sanitize_email", "sanitize_text_field", "sanitize_key", "is_email", "rawurlencode", "base64_encode", 'str_replace(["\r", "\n"]', 'str_replace(["\n", "\r"]', 'str_replace(array("\r", "\n"', 'str_replace(array("\n", "\r"']
 fix = "Do not put request values into mail headers; if a header needs one, refuse any value holding \\r or \\n (or take it from configuration, as the host name of the site's URL)."
 refs = ["CVE-2026-39971"]
 

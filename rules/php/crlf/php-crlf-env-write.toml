@@ -7,7 +7,7 @@ tier = "info"
 title = "Request input written into a .env file (a line break in it adds a setting)"
 sources = ["$_GET", "$_POST", "$_REQUEST", "->get_param(", "$request->input(", "$request->get(", "$this->request->getPost(", "$this->request->getGet(", "->getVar(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["file_put_contents(", "fwrite(", "fputs("]
-sanitizers = ["(int)", "intval", "absint", "ctype_digit", "ctype_alnum", "sanitize_key", "rawurlencode", "base64_encode", "bin2hex", 'str_replace(["\r", "\n"]', 'str_replace(["\n", "\r"]']
+sanitizers = ["(int)", "intval", "absint", "ctype_digit", "ctype_alnum", "sanitize_key", "rawurlencode", "base64_encode", "bin2hex", 'str_replace(["\r", "\n"]', 'str_replace(["\n", "\r"]', 'str_replace(array("\r", "\n"', 'str_replace(array("\n", "\r"']
 fix = "Refuse a value holding \\r or \\n before it is written into a line of the file (or quote it as the file's format allows), and keep the installer from running again once installed."
 refs = ["CVE-2026-39394"]
 
