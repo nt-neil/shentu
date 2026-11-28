@@ -1,8 +1,14 @@
-# Rules that predate docs/rules-provenance/ and have no cve record (11-28, integ a3e94f2b).
+# Rules and route models that predate docs/rules-provenance/ and have no cve record (11-28, integ a3e94f2b).
 # A precision record named after one of them is accepted without a cve record of the same id;
-# every other rule needs its cve record first. This list may only shrink: TestProvenance fails
-# when it grows past provenanceLegacyMax, names a rule that no longer exists, or names a rule
-# that now has a cve record (take it out then).
+# every other rule or route model needs its cve record first. This list may only shrink: it must
+# stay a subset of provenanceLegacyFrozen in provenance_test.go, and TestProvenance fails when it
+# names an id that no longer exists or that now has a cve record (take it out then).
+django-urls
+elementor-widget-settings
+elementor-widget-settings-raw
+express-handler
+fastapi-route
+flask-route
 js-cmdi-exec
 js-cmdi-promisified-exec
 js-cmdi-spawn-sh-c
@@ -36,6 +42,7 @@ js-xss-dom
 js-xss-response
 js-xss-response-url
 js-xxe-libxmljs-noent
+laravel-route-closure
 php-cmdi-mail-params
 php-cmdi-process-shell-commandline
 php-cmdi-shell-exec
@@ -130,3 +137,8 @@ python-xss-tornado-write-html
 python-xss-tornado-write-js
 python-xss-tornado-write-url
 python-xxe-parser-entities
+wp-attachment-local-path
+wp-rest-permission
+wp-rest-route
+wp-shortcode
+wp-stored-lookups

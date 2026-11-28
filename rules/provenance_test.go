@@ -15,7 +15,8 @@ import (
 var provenanceTools = regexp.MustCompile(`(?i)\b(semgrep|opengrep|codeql|snyk|sonar\w*|bandit|psalm|phpstan|nuclei|brakeman|gosec|gpt[\w.-]*|chatgpt|claude|gemini|llms?|copilot|openai|anthropic)\b`)
 
 var (
-	provenanceKindLine = regexp.MustCompile(`(?mi)^[ \t]*kind[ \t]*:.*$`) // any spelling, to refuse the wrong ones
+	provenanceKindLate = regexp.MustCompile(`(?mi)^[ \t]*kind[ \t]*:[ \t]*(cve|precision)[ \t]*$`) // a kind line out of place (not a YAML kind: Deployment)
+	provenanceKindLine = regexp.MustCompile(`(?mi)^[ \t]*kind[ \t]*:.*$`)                          // any spelling, to refuse the wrong ones
 	provenanceKind     = regexp.MustCompile(`^Kind: (cve|precision)$`)
 	provenanceCase     = regexp.MustCompile("`bench/cves/((?:CVE|GHSA)-[A-Za-z0-9-]+)\\.toml`")
 	provenanceID       = regexp.MustCompile(`\b(?:CVE-\d{4}-\d+|GHSA(?:-[A-Za-z0-9]{4}){3})\b`)
@@ -23,8 +24,150 @@ var (
 	provenanceNumbers  = regexp.MustCompile(`(?m)^\|[^\n]*[0-9][^\n]*\|[ \t]*$`) // a table row holding a number
 )
 
-// provenanceLegacyMax: provenance-legacy.txt may only shrink.
-const provenanceLegacyMax = 127
+// provenanceLegacyFrozen is provenance-legacy.txt as it was first written (the
+// rules and route models older than the records): the file may only shrink, so
+// it must stay a subset of this list. Never add to it.
+var provenanceLegacyFrozen = []string{
+	"django-urls",
+	"elementor-widget-settings",
+	"elementor-widget-settings-raw",
+	"express-handler",
+	"fastapi-route",
+	"flask-route",
+	"js-cmdi-exec",
+	"js-cmdi-promisified-exec",
+	"js-cmdi-spawn-sh-c",
+	"js-cmdi-spawn-shell",
+	"js-code-eval-eval",
+	"js-code-eval-template-options",
+	"js-deserialization-node-serialize",
+	"js-deserialization-yaml-load",
+	"js-file-upload-client-name",
+	"js-hardcoded-secret-credentials",
+	"js-ldapi-filter",
+	"js-nosqli-mongo-query",
+	"js-open-redirect-framework",
+	"js-open-redirect-host-header",
+	"js-open-redirect-location-header",
+	"js-open-redirect-next",
+	"js-open-redirect-redirect",
+	"js-path-traversal-archive-extract",
+	"js-path-traversal-exists-probe",
+	"js-path-traversal-fs-ops",
+	"js-path-traversal-send-file",
+	"js-sqli-node-http-query",
+	"js-sqli-object-input",
+	"js-sqli-raw-interpolation",
+	"js-sqli-sequelize-literal",
+	"js-ssrf-host-header",
+	"js-ssrf-http-request",
+	"js-weak-crypto-cipher",
+	"js-weak-crypto-password-hash",
+	"js-xss-dom",
+	"js-xss-response",
+	"js-xss-response-url",
+	"js-xxe-libxmljs-noent",
+	"laravel-route-closure",
+	"php-cmdi-mail-params",
+	"php-cmdi-process-shell-commandline",
+	"php-cmdi-shell-exec",
+	"php-code-eval-dynamic-callback",
+	"php-code-eval-eval",
+	"php-code-eval-smarty-string",
+	"php-code-eval-template-string",
+	"php-deserialization-phar-wrapper",
+	"php-deserialization-wp-maybe-unserialize",
+	"php-file-upload-client-name",
+	"php-file-upload-wp-upload-bits",
+	"php-hardcoded-secret-credentials",
+	"php-hardcoded-secret-crypto-key",
+	"php-ldapi-filter",
+	"php-nosqli-mongo-query",
+	"php-open-redirect-redirect",
+	"php-path-traversal-file-include",
+	"php-path-traversal-file-read",
+	"php-path-traversal-file-write",
+	"php-path-traversal-joomla-file",
+	"php-path-traversal-laravel-storage",
+	"php-path-traversal-symfony-file-response",
+	"php-path-traversal-wp-filesystem",
+	"php-path-traversal-wp-template-loader",
+	"php-sqli-codeigniter-query",
+	"php-sqli-doctrine-query-text",
+	"php-sqli-drupal-db-query",
+	"php-sqli-joomla-query",
+	"php-sqli-laravel-raw",
+	"php-sqli-orderby-identifier",
+	"php-sqli-prepare-identifier",
+	"php-sqli-prepare-query-text",
+	"php-sqli-wpdb-unprepared",
+	"php-sqli-yii-query",
+	"php-ssrf-http-client",
+	"php-ssrf-http-request",
+	"php-ssrf-socket-connect",
+	"php-ssrf-url-readers",
+	"php-weak-crypto-cipher",
+	"php-weak-crypto-password-hash",
+	"php-xss-drupal-markup-create",
+	"php-xss-echo-attribute",
+	"php-xss-echo-html",
+	"php-xss-echo-script",
+	"php-xss-echo-url",
+	"php-xss-shortcode-attribute",
+	"php-xss-shortcode-script",
+	"php-xxe-libxml-dtdload",
+	"php-xxe-libxml-noent",
+	"python-cmdi-argument-injection",
+	"python-cmdi-argv-from-input",
+	"python-cmdi-shell",
+	"python-cmdi-shell-built",
+	"python-code-eval-dynamic-import",
+	"python-code-eval-eval",
+	"python-code-eval-jinja-unsandboxed",
+	"python-code-eval-numexpr",
+	"python-code-eval-template-injection",
+	"python-deserialization-downloaded-pickle",
+	"python-deserialization-pickle",
+	"python-deserialization-torch-load",
+	"python-deserialization-yaml-load",
+	"python-file-upload-client-name",
+	"python-hardcoded-secret-credentials",
+	"python-ldapi-filter",
+	"python-nosqli-mongo-query",
+	"python-path-traversal-archive-extract",
+	"python-path-traversal-image-open",
+	"python-path-traversal-send-file",
+	"python-path-traversal-upload-filename",
+	"python-sqli-dbapi-format",
+	"python-sqli-django-kwargs-alias",
+	"python-sqli-orm-raw-query",
+	"python-sqli-pandas-read-sql",
+	"python-sqli-sqlalchemy-text",
+	"python-ssrf-async-client",
+	"python-ssrf-http-request",
+	"python-weak-crypto-cipher",
+	"python-weak-crypto-md5-hash",
+	"python-weak-crypto-password-hash",
+	"python-xss-aiohttp-text-attr",
+	"python-xss-aiohttp-text-html",
+	"python-xss-format-html-preformatted",
+	"python-xss-mark-safe",
+	"python-xss-response",
+	"python-xss-starlette-attr",
+	"python-xss-starlette-html",
+	"python-xss-starlette-js",
+	"python-xss-starlette-url",
+	"python-xss-tornado-write-attr",
+	"python-xss-tornado-write-html",
+	"python-xss-tornado-write-js",
+	"python-xss-tornado-write-url",
+	"python-xxe-parser-entities",
+	"wp-attachment-local-path",
+	"wp-rest-permission",
+	"wp-rest-route",
+	"wp-shortcode",
+	"wp-stored-lookups",
+}
 
 // section is the body of the "## name" section of a record, and whether it has one.
 func section(text, name string) (string, bool) {
@@ -36,7 +179,6 @@ func section(text, name string) (string, bool) {
 // provenanceSet holds what the records are checked against.
 type provenanceSet struct {
 	refs   map[string][]string // each rule's and route model's refs, by id
-	rules  map[string]bool     // the rule ids (route models are not rules)
 	cveFor map[string]bool     // ids that have a cve record
 	legacy map[string]bool     // rules older than the records: a precision record without a cve record is allowed
 	bench  string              // the bench/ folder
@@ -67,7 +209,7 @@ func recordKind(text string) (string, error) {
 		}
 		kind = m[1]
 	}
-	if i := len(head); i < len(text) && provenanceKindLine.MatchString(text[i:]) {
+	if i := len(head); i < len(text) && provenanceKindLate.MatchString(text[i:]) {
 		return "", fmt.Errorf("a Kind line after the first section: it goes between the title and the first section")
 	}
 	if kind == "" {
@@ -87,8 +229,8 @@ func recordKind(text string) (string, error) {
 //   - Kind: precision: a change made to cut false positives, or to the engine
 //     itself, that no CVE was designed from (a citation would be made up). The
 //     file is engine--<short name>.md, or <rule or route model id>--<short
-//     name>.md for a rule that cites a CVE in refs and already has a cve record
-//     (or is in provenance-legacy.txt). A Measured on section names the cases
+//     name>.md for a rule or route model that has refs and already has a cve
+//     record (or is in provenance-legacy.txt). A Measured on section names the cases
 //     the change was designed and measured on, from bench/cves or
 //     bench/cves-ts only, and holds the numbers in a table. A hold-out case may
 //     appear only in a Holdout check section, which shows the change did not
@@ -134,10 +276,10 @@ func checkProvenance(base, text string, ps provenanceSet) []string {
 		case id == "engine":
 		case !known:
 			bad = append(bad, fmt.Sprintf("no rule or route model %q (an engine change is engine--<short name>.md)", id))
-		case ps.rules[id] && len(cited) == 0:
-			bad = append(bad, fmt.Sprintf("%s cites no CVE in refs: a new rule needs a cve record, not a precision one", id))
-		case ps.rules[id] && !ps.cveFor[id] && !ps.legacy[id]:
-			bad = append(bad, fmt.Sprintf("%s has no cve record: a precision record comes after the rule's cve record", id))
+		case len(cited) == 0:
+			bad = append(bad, fmt.Sprintf("%s has no refs: a new rule or route model needs a cve record, not a precision one", id))
+		case !ps.cveFor[id] && !ps.legacy[id]:
+			bad = append(bad, fmt.Sprintf("%s has no cve record: a precision record comes after its cve record", id))
 		}
 		body, ok := section(text, "Measured on")
 		if !ok {
@@ -174,6 +316,25 @@ func checkProvenance(base, text string, ps provenanceSet) []string {
 	return bad
 }
 
+// checkLegacy checks the legacy list's entries: each is in frozen (the list may
+// only shrink, so swapping one id for another is caught too), names a rule or
+// route model that still exists, and one that has no cve record yet.
+func checkLegacy(entries, frozen []string, refs map[string][]string, cveFor map[string]bool) []string {
+	var bad []string
+	for _, l := range entries {
+		_, exists := refs[l]
+		switch {
+		case !slices.Contains(frozen, l):
+			bad = append(bad, fmt.Sprintf("%s was not in the list first written: it may only shrink (a new rule or route model needs a cve record)", l))
+		case !exists:
+			bad = append(bad, fmt.Sprintf("%s is no rule or route model (take it out)", l))
+		case cveFor[l]:
+			bad = append(bad, fmt.Sprintf("%s has a cve record now (take it out)", l))
+		}
+	}
+	return bad
+}
+
 // loadProvenanceSet reads the rules, route models, legacy list and records.
 func loadProvenanceSet(t *testing.T, files []string) provenanceSet {
 	t.Helper()
@@ -181,10 +342,9 @@ func loadProvenanceSet(t *testing.T, files []string) provenanceSet {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ps := provenanceSet{refs: map[string][]string{}, rules: map[string]bool{}, cveFor: map[string]bool{}, legacy: map[string]bool{}, bench: filepath.Join("..", "bench")}
+	ps := provenanceSet{refs: map[string][]string{}, cveFor: map[string]bool{}, legacy: map[string]bool{}, bench: filepath.Join("..", "bench")}
 	for _, r := range rs {
 		ps.refs[r.ID] = r.Refs
-		ps.rules[r.ID] = true
 	}
 	routes, err := LoadRoutes()
 	if err != nil {
@@ -207,20 +367,17 @@ func loadProvenanceSet(t *testing.T, files []string) provenanceSet {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var entries []string
 	for _, l := range strings.Split(string(b), "\n") {
-		if l = strings.TrimSpace(l); l == "" || strings.HasPrefix(l, "#") {
-			continue
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			entries = append(entries, l)
 		}
-		if !ps.rules[l] {
-			t.Errorf("provenance-legacy.txt: %s is no rule (take it out)", l)
-		}
-		if ps.cveFor[l] {
-			t.Errorf("provenance-legacy.txt: %s has a cve record now (take it out)", l)
-		}
-		ps.legacy[l] = true
 	}
-	if len(ps.legacy) > provenanceLegacyMax {
-		t.Errorf("provenance-legacy.txt has %d rules, more than %d: it may only shrink (a new rule needs a cve record)", len(ps.legacy), provenanceLegacyMax)
+	for _, e := range checkLegacy(entries, provenanceLegacyFrozen, ps.refs, ps.cveFor) {
+		t.Errorf("provenance-legacy.txt: %s", e)
+	}
+	for _, l := range entries {
+		ps.legacy[l] = true
 	}
 	return ps
 }
@@ -271,15 +428,17 @@ func TestProvenance(t *testing.T) {
 func TestCheckProvenanceKinds(t *testing.T) {
 	ps := provenanceSet{
 		refs: map[string][]string{
-			"php-sqli-string-concat": {"CVE-2026-56738"}, // has a cve record
-			"php-ssrf-url-readers":   {"CVE-2026-38001"}, // legacy: no record yet
-			"php-new-rule":           {},                 // a new rule, no refs
-			"php-new-cited":          {"CVE-2026-56738"}, // a new rule citing a case, no cve record
-			"elementor-route":        {"CVE-2025-13393"}, // a route model
+			"php-sqli-string-concat": {"CVE-2026-56738"},                                                     // has a cve record
+			"php-ssrf-url-readers":   {"CVE-2026-38001"},                                                     // legacy: no record yet
+			"php-new-rule":           {},                                                                     // a new rule, no refs
+			"php-new-cited":          {"CVE-2026-56738"},                                                     // a new rule citing a case, no cve record
+			"elementor-route":        {"CVE-2025-13393"},                                                     // a route model, no cve record
+			"elementor-cited":        {"CVE-2025-13393"},                                                     // a route model with a cve record
+			"wp-shortcode":           {"https://developer.wordpress.org/reference/functions/add_shortcode/"}, // a legacy route model
+			"route-norefs":           {},                                                                     // a route model without refs
 		},
-		rules:  map[string]bool{"php-sqli-string-concat": true, "php-ssrf-url-readers": true, "php-new-rule": true, "php-new-cited": true},
-		cveFor: map[string]bool{"php-sqli-string-concat": true},
-		legacy: map[string]bool{"php-ssrf-url-readers": true},
+		cveFor: map[string]bool{"php-sqli-string-concat": true, "elementor-cited": true},
+		legacy: map[string]bool{"php-ssrf-url-readers": true, "wp-shortcode": true},
 		bench:  filepath.Join("..", "bench"),
 	}
 	table := "\n| set | base | head |\n|---|---|---|\n| cves | 21 | 21 |\n"
@@ -298,7 +457,12 @@ func TestCheckProvenanceKinds(t *testing.T) {
 		{"precision on the engine", "engine--not-array.md", pre + "- CVE-2026-56738, CVE-2023-6120\n" + table, true},
 		{"precision on a rule with a cve record", "php-sqli-string-concat--fp.md", pre + "- CVE-2026-56738\n" + table, true},
 		{"precision on a legacy rule", "php-ssrf-url-readers--fp.md", pre + "- CVE-2026-56738\n" + table, true},
-		{"precision on a route model", "elementor-route--fp.md", pre + "- CVE-2026-56738\n" + table, true},
+		{"precision on a route model without a cve record", "elementor-route--fp.md", pre + "- CVE-2026-56738\n" + table, false},
+		{"precision on a legacy route model", "wp-shortcode--fp.md", pre + "- CVE-2026-56738\n" + table, true},
+		{"precision on a route model with a cve record", "elementor-cited--fp.md", pre + "- CVE-2026-56738\n" + table, true},
+		{"precision on a route model without refs", "route-norefs--fp.md", pre + "- CVE-2026-56738\n" + table, false},
+		{"a YAML kind in a code block", "engine--x.md", pre + "- CVE-2026-56738\n" + table + "\n## Probes\n```yaml\nkind: Deployment\n```\n", true},
+		{"kind: precision in a later section, lower case", "engine--x.md", pre + "- CVE-2026-56738\n" + table + "\n## Probes\nkind: precision\n", false},
 		{"precision with a cves-ts case", "engine--x.md", pre + "- CVE-2022-23340\n" + table, true},
 		{"precision with a holdout check", "engine--x.md", pre + "- CVE-2026-56738\n" + table + hold, true},
 		{"precision on a new rule without refs", "php-new-rule--x.md", pre + "- CVE-2026-56738\n" + table, false},
@@ -324,5 +488,23 @@ func TestCheckProvenanceKinds(t *testing.T) {
 		if (len(bad) == 0) != c.ok {
 			t.Errorf("%s: problems %v, want ok %v", c.name, bad, c.ok)
 		}
+	}
+}
+
+// The legacy list may only shrink: an id swapped in for one taken out is caught.
+func TestCheckLegacy(t *testing.T) {
+	frozen := []string{"a-rule", "b-rule", "c-route"}
+	refs := map[string][]string{"a-rule": {"CVE-1"}, "b-rule": {"CVE-2"}, "c-route": {"https://x"}, "d-rule": {"CVE-4"}}
+	if bad := checkLegacy([]string{"a-rule", "c-route"}, frozen, refs, nil); len(bad) != 0 {
+		t.Errorf("a subset: %v", bad)
+	}
+	if bad := checkLegacy([]string{"a-rule", "d-rule"}, frozen, refs, nil); len(bad) != 1 {
+		t.Errorf("b-rule swapped for d-rule: %v, want one problem", bad)
+	}
+	if bad := checkLegacy([]string{"a-rule"}, frozen, refs, map[string]bool{"a-rule": true}); len(bad) != 1 {
+		t.Errorf("a-rule has a cve record now: %v, want one problem", bad)
+	}
+	if bad := checkLegacy([]string{"b-rule"}, frozen, map[string][]string{"a-rule": {"CVE-1"}}, nil); len(bad) != 1 {
+		t.Errorf("b-rule no longer exists: %v, want one problem", bad)
 	}
 }

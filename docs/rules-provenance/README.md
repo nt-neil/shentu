@@ -15,17 +15,19 @@ code is quoted only in the few lines needed to show the cause.
 A record's kind is one line between its title and its first section, written
 exactly `Kind: cve` or `Kind: precision`; a record without one is a `cve`
 record. A Kind line anywhere else, a second one, or any other spelling or value
-is refused, never read as `cve`.
+is refused, never read as `cve`; after the first section only a `kind: cve` or
+`kind: precision` line is (a YAML `kind: Deployment` in a code block is fine).
 
 | kind | for | file name | must hold |
 |---|---|---|---|
 | `cve` | a change designed from a CVE: a rule, a source or sink, a route model, or an engine change made so a rule or route model catches that case | `<rule or route model id>--<short name>.md`: an engine change made for a CVE takes the id of the rule or route model that catches it | a Case section naming the `bench/cves/` case; that rule or route model cites it in `refs`; not a hold-out case |
-| `precision` | a change no CVE was designed from: cutting false positives, or the engine itself (a condition, a cap, how a flow is followed), such as #284's `not_array` and `receivers` | `engine--<short name>.md` for an engine change; `<rule or route model id>--<short name>.md` only for a rule that cites a CVE in `refs` and already has its `cve` record | no `refs` (a citation would be made up); a Measured on section naming the cases the change was designed and measured on, from `bench/cves/` or `bench/cves-ts/` only, with the line-by-line summary and the numbers in a table (a `\|---` row and a row with a number) |
+| `precision` | a change no CVE was designed from: cutting false positives, or the engine itself (a condition, a cap, how a flow is followed), such as #284's `not_array` and `receivers` | `engine--<short name>.md` for an engine change; `<rule or route model id>--<short name>.md` only for a rule or route model that has `refs` and already has its `cve` record | no `refs` (a citation would be made up); a Measured on section naming the cases the change was designed and measured on, from `bench/cves/` or `bench/cves-ts/` only, with the line-by-line summary and the numbers in a table (a `\|---` row and a row with a number) |
 
 `engine--` is for `precision` records only. A new rule always starts with a
-`cve` record: `precision` cannot stand in for one. Rules older than these
-records, with no `cve` record yet, are listed in
-`rules/testdata/provenance-legacy.txt`; that list may only shrink.
+`cve` record, and so does a new route model: `precision` cannot stand in for
+one. Rules and route models older than these records, with no `cve` record yet,
+are listed in `rules/testdata/provenance-legacy.txt`; that list may only shrink
+(the test keeps the list as first written and refuses any id not on it).
 
 Hold-out cases stay independent. A `precision` record may name one only in a
 section of its own, `## Holdout check`, showing the change made it no worse;
