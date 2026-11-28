@@ -39,3 +39,19 @@ func TestRiskFindingsCooling(t *testing.T) {
 		t.Errorf("%+v", fs)
 	}
 }
+
+// S-307-1: two patrols, the rules the same: the second pushes nothing.
+// Marking by Key, not coolKey, fails it (the second looks for key#digest).
+func TestTwoPatrolsSameRules(t *testing.T) {
+	alerted := map[string]time.Time{}
+	f := finding{Key: "sudo:nopasswd", Severity: "warning", Summary: "rules a", cooling: "aaaa"}
+	now := time.Now()
+	first := freshFindings([]finding{f}, alerted, 24*time.Hour, now)
+	if len(first) != 1 {
+		t.Fatalf("first patrol: %+v", first)
+	}
+	markAlerted(alerted, first, now)
+	if second := freshFindings([]finding{f}, alerted, 24*time.Hour, now.Add(30*time.Minute)); len(second) != 0 {
+		t.Errorf("second patrol, the same rules, pushed %+v (alerted %v)", second, alerted)
+	}
+}

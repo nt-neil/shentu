@@ -58,6 +58,14 @@ func freshFindings(all []finding, alerted map[string]time.Time, cooldown time.Du
 	return fresh
 }
 
+// markAlerted records the findings sent, by coolKey: what freshFindings
+// reads on the next patrol.
+func markAlerted(alerted map[string]time.Time, sent []finding, now time.Time) {
+	for _, f := range sent {
+		alerted[coolKey(f)] = now
+	}
+}
+
 // coolKey is the cooldown's key of f: Key, and what it joins when its
 // content counts (a rule added to sudo:nopasswd is pushed again).
 func coolKey(f finding) string {
@@ -768,9 +776,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	if carry != "" {
 		clearCarryOver(cfg.StateDir) // said in this report
 	}
-	for _, f := range fresh {
-		st.Alerted[coolKey(f)] = time.Now()
-	}
+	markAlerted(st.Alerted, fresh, time.Now())
 	return st.save(cfg.StateDir)
 }
 
