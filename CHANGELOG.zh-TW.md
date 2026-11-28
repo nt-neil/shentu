@@ -48,6 +48,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - `reference` 規則有幾種寫法判斷不準：指令其實整行寫在程式裡，但拆成幾個中間沒有 `+` 的字串（`os.system('ls ' '-l')`，Python 會自動接成一個），或用 `' '.join()` 接起全是字面值的串列，仍然會報；屬性形式的物件（`h.env.from_string(s)`）只看名稱判斷，就算檔案裡寫了 `h.env = Engine()` 也一樣；`import os as o` 之後的 `o.system(cmd)`，以及換了名稱 import 的函式（`from hashlib import md5 as m` 之後的 `m(x)`），不會報。
 - sudo 規則的指令裡，不是用 `key=value` 寫的密碼（`mysql -p<密碼>`、`--password <密碼>`、`curl -u user:<密碼>`），在 survey 的文字裡不會遮。
 - 在非 Windows 的機器上 replay Windows 主機的記錄時，code audit 的 ASP 檢查、web root 的 ACL 檢查，以及不分大小寫的路徑比對，都還沒有打開，app_vulns 和 app_code_audit 的 path 參數，除非和某個 app path 完全相同，否則會被拒絕（v0.5.9 處理）。
+- route 模型只在註冊它的那個檔案裡找 handler：`elementor/editor/after_save` 的 callback 如果寫在另一個檔案（hook 寫在外掛主檔、函式寫在 include 裡），就不會被當成 handler，那裡的抓取也不會回報。其他 route 模型也有同樣的限制。
 
 ## v0.5.7 — 2026-11-26
 

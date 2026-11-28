@@ -49,7 +49,10 @@
 - Reviewer: see Review.
 
 ## Review
-Pending (the pull request's first round).
+Round 1 at dd1696bf: B0 N0 S3, mergeable; the field's fail-closed reading of the
+first argument was probed (a variable, a constant, a joined or interpolated
+string do not count) and the load-time refusals checked. See
+`elementor-editor-after-save--route.md` for the suggestions taken.
 
 ## Measurement
 Measured with the route model, see `elementor-editor-after-save--route.md`: the

@@ -22,7 +22,8 @@
   as a sanitizer; only the source was missing.
 
 ## Design
-- A route model in `rules/routes/php/wordpress.toml`: `register = ["add_action"]`,
+- A route model in `rules/routes/php/wordpress.toml`: `register = ["add_action", "add_filter"]`
+  (`add_action` is an alias of `add_filter`; both register the callback),
   `hooks = ["elementor/editor/after_save"]`, `handler = 2`, `params = [2]`.
 - Why a route model: Elementor fires this hook for every post built with it, and
   any plugin can hook it. The data is what contributors and up save in the editor.
@@ -35,8 +36,13 @@
 - Not chosen:
   - a source naming the plugin's walker or its `$editor_data` variable: one plugin's names;
   - a route on `add_action` with no hook name: every hook's callback.
-- Known limits: the hook is matched by its literal name only; a plugin registering
-  it through a variable or a constant is not read (fail closed).
+- Known limits:
+  - the hook is matched by its literal name only; a plugin registering it
+    through a variable or a constant is not read (fail closed);
+  - the callback must be in the file that registers it: a callback written in
+    another file (the hook in the main plugin file, the function in an include)
+    is not read as a handler. The other route models share this limit; it is in
+    the CHANGELOG's known issues.
 
 ## Probes
 Fixtures (neutral code, not the plugin's): an after-save callback that walks the
@@ -58,7 +64,12 @@ The route model has one vulnerable and four safe samples, the same cases.
 - Reviewer: see Review.
 
 ## Review
-Pending (the pull request's first round).
+Round 1 at dd1696bf: B0 N0 S3, mergeable. The `hooks` semantics were probed
+through the product path on base and head (exact literal reported; a variable,
+a constant, a joined or interpolated string, another hook and a near name not
+reported); the VM measurement was recomputed from its raw dumps. Suggestions taken before
+merging: `add_filter` registers the callback too (S-291-1, a sample added); a
+callback in another file is a known limit (S-291-2, S-291-3).
 
 ## Measurement
 Full A/B, base e0d8f79d (integ), head 14f308cd (this change), in a throwaway

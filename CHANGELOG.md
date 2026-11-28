@@ -232,6 +232,10 @@ Chinese for the zh-TW pages; keep the two in step.
   web-root ACL check and its case-insensitive path comparison are not turned on yet, and
   app_vulns' and app_code_audit's path argument is refused unless it is one of the app paths
   exactly (v0.5.9).
+- A route model reads a handler only in the file that registers it: an
+  `elementor/editor/after_save` callback written in another file than its `add_action()` (the hook in
+  the main plugin file, the function in an include) is not read as one, so a fetch there is not
+  reported. The other route models share the limit.
 
 ## v0.5.7 — 2026-11-26
 

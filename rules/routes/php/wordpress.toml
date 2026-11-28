@@ -300,7 +300,7 @@ lang = "php"
 applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
 framework = "wordpress"
 title = "Elementor's after-save hook gets the editor data a contributor saved (every element's settings)"
-register = ["add_action"]
+register = ["add_action", "add_filter"]
 hooks = ["elementor/editor/after_save"]
 handler = 2
 params = [2]
@@ -331,6 +331,32 @@ function gallery_after_save($post_id, $editor_data) {
 	gallery_walk($editor_data, $post_id);
 }
 add_action('elementor/editor/after_save', 'gallery_after_save', 10, 2);
+'''
+
+[[route.samples]]
+kind = "vulnerable"
+note = "registered with add_filter, which add_action is an alias of"
+code = '''<?php
+function gallery_walk($elements, $post_id) {
+	foreach ($elements as $el) {
+		if (isset($el['settings']['cover_url'])) {
+			$url = $el['settings']['cover_url'];
+			if ($url && filter_var($url, FILTER_VALIDATE_URL) === false) {
+				$url = '';
+			}
+			if ($url) {
+				update_post_meta($post_id, 'cover_size', getimagesize($url));
+			}
+		}
+		if (!empty($el['elements'])) {
+			gallery_walk($el['elements'], $post_id);
+		}
+	}
+}
+function gallery_after_save($post_id, $editor_data) {
+	gallery_walk($editor_data, $post_id);
+}
+add_filter('elementor/editor/after_save', 'gallery_after_save', 10, 2);
 '''
 
 [[route.samples]]
