@@ -30,9 +30,10 @@ const (
 	CutCallableParam // a callee calls a callable it was given, and the call site passes one it does not show (not a closure literal, nor its own parameter)
 	CutWork          // the file's work cap (Limits.MaxWork): lexing, parsing and analysis of the file
 	CutProjectWork   // the project's work cap for following calls (ProjectOptions.MaxWork)
+	CutHandles       // a file with more property assignments than the handle condition reads (handle.go)
 )
 
-var cutNames = []string{"tokens", "safety-clock", "nesting", "call-work", "summary", "project", "call-depth", "cycle", "params", "ambiguous-call", "summary-work", "summary-height", "summary-params", "summary-inner", "callable-var", "callable-param", "work", "project-work"}
+var cutNames = []string{"tokens", "safety-clock", "nesting", "call-work", "summary", "project", "call-depth", "cycle", "params", "ambiguous-call", "summary-work", "summary-height", "summary-params", "summary-inner", "callable-var", "callable-param", "work", "project-work", "handle-table"}
 
 // String names the causes, comma-separated, in a fixed order.
 func (c Cut) String() string {
