@@ -109,6 +109,11 @@ How the engine reads them:
   is not.
 - A string in a pattern compares its content, whatever the quotes; an unclosed
   one is a prefix: `$_SERVER['HTTP_` matches every `$_SERVER['HTTP_...']`.
+- A pattern that starts with a name and its `(` and leaves an inner call open,
+  `name(name(` (`str_replace(array("\r", "\n"`, `json_decode(file_get_contents('php://input'`),
+  spans the outer call, for a sink, a sanitizer and a source alike: the match
+  ends where `str_replace(...)` does, not the inner `array(...)`. A namespace
+  written before the name (`\str_replace(`, `ns\str_replace(`) counts as part of it.
 - A **sanitizer** is a call whose result is clean (`intval(`, `shlex.quote(`,
   `.resolve(`), a cast or `typeof` (clean operand), or a check. A check is a
   sanitizer that answers yes or no, used as a condition: `in_array($x, $allowed)`,

@@ -275,6 +275,11 @@ Chinese for the zh-TW pages; keep the two in step.
   taken as an array (`$this->x`, `$o->p`, `self::$x`), nor an index of a variable assigned an object
   with `new` (ArrayAccess); only a variable of the function or an index of it.
 
+- Rule patterns: a sanitizer, source or sink written as a call that holds an unclosed inner call
+  (`str_replace(array("\r", "\n"`) matches the whole outer call, as the `[...]` form does. Before,
+  it covered only the inner `array(...)`, so such a sanitizer cleaned nothing. No rule shipped uses
+  one; `php-nosqli-mongo-query`'s `json_decode(file_get_contents('php://input'` source now spans the
+  whole `json_decode(...)` and reports as before.
 - Rules: a function sink's `[[args]]` can name the argument holding a handle (`handle`, with
   `receiver`): `fwrite($fp, ...)` then counts only when `$fp` was made by one of `receiver`
   (`fsockopen()` say): in place, by the nearest assignment before the call in the same function, or,
