@@ -259,6 +259,11 @@ Chinese for the zh-TW pages; keep the two in step.
   every target the whole right side, which over-reports. A file with
   more than 4096 property assignments is given up for this (its scan records the cut
   `handle-table`). Nothing is kept unless a rule uses it, and no shipped rule uses it yet.
+- A new rule class, `crlf` (CWE-93, CWE-77): a line break written into a line of a network protocol.
+  Its first rule, `php-crlf-socket-write`: request input written with `fwrite()` or `fputs()` to a
+  socket (`fsockopen()`, `stream_socket_client()`, through the `handle` condition), as an IMAP
+  command or an HTTP request line, is reported. A write to a file or to a handle of unknown origin
+  is not. A response header set with `header()` is not this class.
 ### Known issues
 
 - A command's own password is not masked when it is only JSON punctuation (`, : { } [ ]` and
@@ -317,6 +322,11 @@ Chinese for the zh-TW pages; keep the two in step.
   `elementor/editor/after_save` callback written in another file than its `add_action()` (the hook in
   the main plugin file, the function in an include) is not read as one, so a fetch there is not
   reported. The other route models share the limit.
+- `php-crlf-socket-write` does not reach Roundcube's IMAP commands (CVE-2026-126813): the id is
+  read through the application's input helper and reaches the socket through methods of objects
+  kept in properties, across several classes. Input a constructor keeps in a property and another
+  method writes is not followed either. A `$`-anchored allowlist of letters and digits counts as a
+  check, though a final line break passes it.
 
 ## v0.5.7 — 2026-11-26
 

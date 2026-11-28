@@ -35,9 +35,9 @@
 <form class="filters" onsubmit="return false" role="search">
   <label>篩選 <input id="q" type="search" placeholder="id、CWE 或關鍵字"></label>
   <label>語言 <select id="fl"><option value="">全部</option><option value="php">PHP</option><option value="python">Python</option><option value="js">JavaScript / TypeScript</option></select></label>
-  <label>類別 <select id="fc"><option value="">全部</option><option value="cmdi">命令注入</option><option value="code-eval">程式碼執行</option><option value="deserialization">不安全的反序列化</option><option value="file-upload">危險的檔案上傳</option><option value="hardcoded-secret">寫死的憑證</option><option value="ldapi">LDAP 注入</option><option value="nosqli">NoSQL 注入</option><option value="open-redirect">開放重新導向</option><option value="path-traversal">路徑穿越</option><option value="sqli">SQL 注入</option><option value="ssrf">伺服器端請求偽造（SSRF）</option><option value="weak-crypto">弱加密</option><option value="xss">跨站腳本（XSS）</option><option value="xxe">XML 外部實體（XXE）</option></select></label>
+  <label>類別 <select id="fc"><option value="">全部</option><option value="cmdi">命令注入</option><option value="code-eval">程式碼執行</option><option value="crlf">CRLF 換行注入</option><option value="deserialization">不安全的反序列化</option><option value="file-upload">危險的檔案上傳</option><option value="hardcoded-secret">寫死的憑證</option><option value="ldapi">LDAP 注入</option><option value="nosqli">NoSQL 注入</option><option value="open-redirect">開放重新導向</option><option value="path-traversal">路徑穿越</option><option value="sqli">SQL 注入</option><option value="ssrf">伺服器端請求偽造（SSRF）</option><option value="weak-crypto">弱加密</option><option value="xss">跨站腳本（XSS）</option><option value="xxe">XML 外部實體（XXE）</option></select></label>
   <label>嚴重度 <select id="fs"><option value="">全部</option><option value="critical">極危</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label>
-  <p class="count" aria-live="polite"><strong id="shown">132</strong> / 132 條規則</p>
+  <p class="count" aria-live="polite"><strong id="shown">133</strong> / 133 條規則</p>
 </form>
 <section class="routes">
   <h2>路由模型</h2>
@@ -189,6 +189,35 @@ class GreetingController extends AbstractController
 }</code></pre></div>
     </div>
     <p class="fix"><strong>修法</strong> Never compile text from a request as a template: render a fixed template file and pass the input as a variable ($twig-&gt;render(&#39;page.html.twig&#39;, [&#39;name&#39; =&gt; $name]), view(&#39;page&#39;, [&#39;name&#39; =&gt; $name])), where it is escaped as data.</p>
+  </details>
+  
+</section>
+
+<section class="group" data-lang="php" data-class="crlf">
+  <h2><span class="g-lang">PHP</span> CRLF 換行注入</h2>
+  
+  <details class="rule" id="php-crlf-socket-write" data-rule-id="php-crlf-socket-write" data-lang="php" data-class="crlf" data-sev="high" data-text="php-crlf-socket-write CWE-93 Request input written into a protocol line sent over a socket (a CRLF in it starts another command)">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-crlf-socket-write</code> <span class="cwe">CWE-93</span><span class="title">Request input written into a protocol line sent over a socket (a CRLF in it starts another command)</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">an IMAP client: a message id from the request goes into a command line; a CRLF in it adds another command</p><pre><code>&lt;?php
+class MailClient {
+    private $fp;
+    public function connect($host) {
+        $this-&gt;fp = stream_socket_client($host . &#39;:143&#39;, $errno, $errstr, 10);
+    }
+    public function fetchHeaders() {
+        $uid = $_GET[&#39;uid&#39;];
+        fwrite($this-&gt;fp, &#34;A1 UID FETCH $uid (BODY.PEEK[HEADER])\r\n&#34;);
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the same line written to a log file, not a socket</p><pre><code>&lt;?php
+function log_fetch() {
+    $fp = fopen(&#39;/var/log/app/fetch.log&#39;, &#39;a&#39;);
+    fwrite($fp, &#34;UID FETCH &#34; . $_GET[&#39;uid&#39;] . &#34;\n&#34;);
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Refuse a value holding a line break (\r or \n) before it goes into a protocol line: check it against an allowlist anchored with \z (not $, which lets a final \n through), or cast it to an integer.</p>
   </details>
   
 </section>

@@ -44,7 +44,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - `php-nosqli-mongo-query`，以及 CodeIgniter、Doctrine、Drupal、Joomla、Yii 的 SQL 規則：從別的檔案接過去的 method sink（`$Db->find(...)`、`->where(...)`），如果專案自己的類別有宣告同名的方法，而且 app_code_audit 讀到的內容都沒有提到那個函式庫（PHP 程式、字串、composer.json、composer.lock，以及 vendor/ 裡的套件名稱；vendor/ 的檔案本身不讀），就不再回報：那是專案自己的方法（例如 WordPress plugin 自己寫的 SQL 類別）。以前任何物件上的同名方法都算。只要有一處提到那個函式庫、專案沒有宣告這個方法，或 app_code_audit 有跳過檔案（跳過的資料夾例如 node_modules/、.git/，超過 8 層的資料夾，大於 1 MiB 或讀不到的規則語言檔案，超過 20,000 個檔案，或掃描沒有跑完），仍然會回報；在同一個檔案裡找到的呼叫也照樣回報。
 - `php-deserialization-wp-maybe-unserialize`：每條路徑上都是 array 的參數不再回報（`maybe_unserialize(array('fields' => $_POST['f']))`、用 key 寫入的 array、`explode()` 的結果），由程式自己的函式把參數原樣傳過去時也一樣：`maybe_unserialize()` 只會 unserialize 字串，array 會原樣傳回。以前 array 裡的輸入照樣算數。取出 array 裡的一個值、由它組成的字串，以及有一條路徑給的是字串，仍然會回報。程式可能用引擎看不到的方式改寫的 array 也照樣回報：最上層（不在任何函式裡）或宣告成 `global` 的變數、檔案裡有 `$$name`、`${...}` 或 `$GLOBALS`，或整個傳給 method、算出來的函式、會用 `&` 接收參數的 PHP 函式、專案沒有宣告的函式（WordPress 本身的函式只有少數已知不用 `&` 接收參數的除外），或專案裡用 `&` 接收參數的函式。
 
-- 規則：函式 sink 的 `[[args]]` 可以指定哪個參數是 handle（`handle`，要和 `receiver` 一起用）。這樣 `fwrite($fp, ...)` 只有在 `$fp` 是 `receiver` 列的函式（例如 `fsockopen()`）產生的時候才算數：直接寫在呼叫裡、同一個函式裡這次呼叫之前最近的一次指派，或者 `$this->fp` 在同一個函式裡沒有指派過時，同一個 class 檔案裡其他地方的指派。看不出來源的 handle 不算：參數、`STDOUT`、方法的回傳值、在別的方法設定的 static 屬性、`$s[0]` 這種寫法，或 `foreach` 的變數；`list()` 會把整個右側給每一個目標，所以會多報。一個檔案的屬性指派超過 4096 筆時，這個檔案就不追（掃描會記下截斷原因 `handle-table`）。沒有規則用到時不會多做任何事；目前還沒有規則用到它。
+- 規則：函式 sink 的 `[[args]]` 可以指定哪個參數是 handle（`handle`，要和 `receiver` 一起用）。這樣 `fwrite($fp, ...)` 只有在 `$fp` 是 `receiver` 列的函式（例如 `fsockopen()`）產生的時候才算數：直接寫在呼叫裡、同一個函式裡這次呼叫之前最近的一次指派，或者 `$this->fp` 在同一個函式裡沒有指派過時，同一個 class 檔案裡其他地方的指派。看不出來源的 handle 不算：參數、`STDOUT`、方法的回傳值、在別的方法設定的 static 屬性、`$s[0]` 這種寫法，或 `foreach` 的變數；`list()` 會把等號後面的整個值給每一個目標，所以會多報。一個檔案的屬性指派超過 4096 筆時，這個檔案就不追（掃描會記下截斷原因 `handle-table`）。沒有規則用到時不會多做任何事；目前還沒有規則用到它。
+- 新的規則類別 `crlf`（CWE-93、CWE-77）：把換行寫進網路連線上送出的一行指令。第一條規則是 `php-crlf-socket-write`：request 輸入用 `fwrite()` 或 `fputs()` 寫進 socket（`fsockopen()`、`stream_socket_client()` 產生的，透過 `handle` 條件判斷），當成 IMAP 指令或 HTTP 請求行送出時會回報。寫進一般檔案、或來源不明的 handle 不回報。用 `header()` 設定的回應 header 不屬於這一類。
 ### 已知問題
 
 - 直接寫在指令參數裡的密碼，下面幾種情況不會遮：密碼全是 JSON 標點（`, : { } [ ]` 和空白）；密碼裡空白之後的部分（command line 是用空白把 argv 接起來的；在 shell 指令行裡加了引號的會整段遮掉）；log 或 shell 的指令紀錄裡，沒有引號的 `;`、`|`、`&` 之後的部分；分成多行寫出的 JSON argv，或前面的字串裡有 `]` 的 JSON argv；以及其他程式的密碼參數（`sshpass -p`、`redis-cli -a`、`ldapsearch -w`、`smbclient -U user%<密碼>`、`mongosh -p`、`htpasswd -b`、curl 的 `--pass` 和 `-E cert:<密碼>`）。
@@ -63,6 +64,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - `reference` 規則有幾種寫法判斷不準：指令其實整行寫在程式裡，但拆成幾個中間沒有 `+` 的字串（`os.system('ls ' '-l')`，Python 會自動接成一個），或用 `' '.join()` 接起全是字面值的串列，仍然會報；屬性形式的物件（`h.env.from_string(s)`）只看名稱判斷，就算檔案裡寫了 `h.env = Engine()` 也一樣；`import os as o` 之後的 `o.system(cmd)`，以及換了名稱 import 的函式（`from hashlib import md5 as m` 之後的 `m(x)`），不會報。
 - 在非 Windows 的機器上 replay Windows 主機的記錄時，code audit 的 ASP 檢查、web root 的 ACL 檢查，以及不分大小寫的路徑比對，都還沒有打開，app_vulns 和 app_code_audit 的 path 參數，除非和某個 app path 完全相同，否則會被拒絕（v0.5.9 處理）。
 - route 模型只在註冊它的那個檔案裡找 handler：`elementor/editor/after_save` 的 callback 如果寫在另一個檔案（hook 寫在外掛主檔、函式寫在 include 裡），就不會被當成 handler，那裡的抓取也不會回報。其他 route 模型也有同樣的限制。
+- `php-crlf-socket-write` 追不到 Roundcube 的 IMAP 指令（CVE-2026-126813）：id 經過應用程式自己的輸入函式讀進來，再透過存在屬性裡的物件、跨多個類別的方法呼叫才寫進 socket。建構子存進屬性、由另一個方法寫出去的輸入也追不到。用 `$` 結尾、只放行英文和數字的白名單會被當成檢查，但結尾的換行仍然可以通過。
 
 ## v0.5.7 — 2026-11-26
 
