@@ -258,7 +258,9 @@ Chinese for the zh-TW pages; keep the two in step.
   variable of the global scope or declared `global`, a file with `$$name`, `${...}` or `$GLOBALS`,
   or one passed whole to a method, a computed callee, a PHP function that takes it by reference, or
   a function the project does not declare (WordPress's own, but for a few that take it by value) or
-  declares with a parameter by reference.
+  declares with a parameter by reference. An object's property or what a call returned is never
+  taken as an array (`$this->x`, `$o->p`, `self::$x`), nor an index of a variable assigned an object
+  with `new` (ArrayAccess); only a variable of the function or an index of it.
 
 - Rules: a function sink's `[[args]]` can name the argument holding a handle (`handle`, with
   `receiver`): `fwrite($fp, ...)` then counts only when `$fp` was made by one of `receiver`
