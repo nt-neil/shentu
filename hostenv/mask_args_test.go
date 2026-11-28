@@ -36,6 +36,7 @@ func TestMaskCommandArgs(t *testing.T) {
 		// JSON string that ends right after -p keeps its line's shape
 		"mysql -pab,cd\\,ef" + s + " shop":            "mysql -p[REDACTED] shop",
 		"mysql -pab" + s + ";rm -rf /tmp/x":           "mysql -p[REDACTED];rm -rf /tmp/x",
+		"mysql -pab\\ " + s + " db":                   "mysql -p[REDACTED] db",
 		"mysql -p\"" + s + " x\"; echo done":          "mysql -p[REDACTED]; echo done",
 		"mysql -p'" + s + "' && " + dl + " https://x": "mysql -p[REDACTED] && " + dl + " https://x",
 		`{"msg":"mysql -p","ip":"192.0.2.9"}`:         `{"msg":"mysql -p","ip":"192.0.2.9"}`,
@@ -77,6 +78,9 @@ func TestMaskCommandArgs(t *testing.T) {
 		"mysql -h db && tar -pcf a.tar dir":                          "mysql -h db && tar -pcf a.tar dir",
 		"ps -p 123 -o comm; mysql -h db":                             "ps -p 123 -o comm; mysql -h db",
 		"docker run -p 8080:80 nginx":                                "docker run -p 8080:80 nginx",
+		"/usr/sbin/mysqld --user=mysql -port=3306":                   "/usr/sbin/mysqld --user=mysql -port=3306",
+		"connecting to mysqlhost -port 3306":                         "connecting to mysqlhost -port 3306",
+		"mariadbd --user=mysql -port=3306":                           "mariadbd --user=mysql -port=3306",
 		`["docker","run","-p","8080:80","nginx"]`:                    `["docker","run","-p","8080:80","nginx"]`,
 		`{"a":["mysql","-h","db"],"b":["docker","run","-p8080:80"]}`: `{"a":["mysql","-h","db"],"b":["docker","run","-p8080:80"]}`,
 		// not secrets

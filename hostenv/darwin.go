@@ -363,7 +363,8 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 				if _, dup := args[n]; dup {
 					ambiguous[n] = true
 				}
-				args[n] = CutString(MaskSecrets(strings.TrimSpace(rest)), MaxCmdline)
+				// ps joins the arguments with spaces: masked word by word (MaskArgv)
+				args[n] = CutString(MaskArgv(strings.Fields(rest)), MaxCmdline)
 				raws[n] = CutString(strings.TrimSpace(rest), MaxRawCmdline)
 			}
 		}

@@ -412,7 +412,7 @@ func winKernelProcess(p WinProcess) bool {
 }
 
 func capCmdline(s string) string {
-	s = MaskSecrets(s)
+	s = MaskWinCmdline(s) // argument by argument (N-286-4)
 	if len(s) > MaxCmdline {
 		s = s[:MaxCmdline] + "…"
 	}

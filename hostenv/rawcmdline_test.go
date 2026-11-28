@@ -23,7 +23,8 @@ func TestDarwinProcessesRawCmdline(t *testing.T) {
 	if p.RawCmdline != line || p.MatchCmdline() != line {
 		t.Errorf("as written: %q", p.RawCmdline)
 	}
-	if !strings.Contains(p.Cmdline, "[REDACTED]") || strings.Contains(p.Cmdline, pool) {
+	// ps's args are masked word by word (N-286-4): -p' is the password.
+	if !strings.Contains(p.Cmdline, "mysql -p[REDACTED] -o") {
 		t.Errorf("output not masked: %q", p.Cmdline)
 	}
 	e := rec.got[(&entry{Op: "cmd", Argv: macPsArgsArgv}).key()]

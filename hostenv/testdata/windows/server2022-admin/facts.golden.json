@@ -6115,7 +6115,7 @@
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "\"C:\\Program Files\\Microsoft SDKs\\Service Fabric\\Tools\\ServiceFabricLocalClusterManager\\ServiceFabricLocalClusterManager.exe\" ",
+        "cmdline": "\"C:\\Program Files\\Microsoft SDKs\\Service Fabric\\Tools\\ServiceFabricLocalClusterManager\\ServiceFabricLocalClusterManager.exe\"",
         "user": "host1\\user1",
         "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
       },
@@ -6403,7 +6403,7 @@
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "\"C:\\Windows\\AzureArcSetup\\Systray\\AzureArcSysTray.exe\" ",
+        "cmdline": "\"C:\\Windows\\AzureArcSetup\\Systray\\AzureArcSysTray.exe\"",
         "user": "host1\\user1",
         "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
       },

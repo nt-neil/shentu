@@ -488,9 +488,10 @@ func ParseProcStatus(b []byte) ProcStatus {
 const MaxCmdline = 512
 
 // ParseCmdline turns NUL-separated /proc/<pid>/cmdline into one masked
-// line, cut at MaxCmdline bytes on a character boundary.
+// line, cut at MaxCmdline bytes on a character boundary. It is masked
+// argument by argument (MaskArgv), before the arguments are joined.
 func ParseCmdline(b []byte) string {
-	return CutString(MaskSecrets(strings.TrimSpace(strings.ReplaceAll(string(b), "\x00", " "))), MaxCmdline)
+	return CutString(strings.TrimSpace(MaskArgv(strings.Split(strings.TrimRight(string(b), "\x00"), "\x00"))), MaxCmdline)
 }
 
 // ParseRawCmdline is ParseCmdline unmasked, cut at MaxRawCmdline: what a
