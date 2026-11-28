@@ -18,7 +18,9 @@ import (
 //   - any $$name, ${...} or $GLOBALS in the file, or parse_str() with one
 //     argument;
 //   - passing it whole to a call that may take it by reference and put a
-//     string there (arrCallUnsure).
+//     string there (arrCallUnsure);
+//   - a variable the file assigns an object made with new (newBound): its
+//     index is ArrayAccess's.
 //
 // Worked out once per name.
 func (a *analysis) arrUnsure(name string) bool {
@@ -29,7 +31,7 @@ func (a *analysis) arrUnsure(name string) bool {
 		a.arrRef = map[string]bool{}
 	}
 	t := a.ftoks
-	u := a.writtenOtherwise(name) || a.arrDynamic() || globalScoped(t, name)
+	u := a.writtenOtherwise(name) || a.arrDynamic() || globalScoped(t, name) || newBound(t, name)
 	for i := 1; i+1 < len(t) && !u; i++ {
 		if t[i].Kind != Var || t[i].Text != name || !(t[i+1].op(",") || t[i+1].op(")")) {
 			continue
@@ -47,6 +49,15 @@ func (a *analysis) arrUnsure(name string) bool {
 	}
 	a.arrRef[name] = u
 	return u
+}
+
+// arrPath reports whether a value read under key may keep its arr mark: a
+// variable of the function, or an index of one ($a, $a['k']). A member of an
+// object ($this->x, $o->p) or what a call returned ($o->get()) may not: the
+// object may be shared with another variable or rewritten by a method the
+// analysis does not follow, so its array may be a string by then.
+func arrPath(key string) bool {
+	return !strings.Contains(key, sepCh+".") && !strings.Contains(key, sepCh+"()")
 }
 
 // arrDynamic reports whether the file writes variables by a name it computes
@@ -99,6 +110,24 @@ func globalScoped(t []Token, name string) bool {
 				if t[k-1].word("global") {
 					return true // global $a, $x;
 				}
+			}
+		}
+	}
+	return false
+}
+
+// newBound reports whether the file assigns the variable an object made with
+// new ($o = new Bag()): $o['k'] is then ArrayAccess's offsetGet, which may
+// return anything, not an index of an array.
+func newBound(t []Token, name string) bool {
+	for i := 0; i+2 < len(t); i++ {
+		if t[i].Kind == Var && t[i].Text == name && (t[i+1].op("=") || t[i+1].op("??=")) {
+			j := i + 2
+			if t[j].op("&") && j+1 < len(t) {
+				j++
+			}
+			if t[j].word("new") {
+				return true
 			}
 		}
 	}
