@@ -513,6 +513,7 @@ func (c LinuxCollector) ssh(src Source) Obs[SSHConfig] {
 func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 	cfg := SSHConfig{ConfigPath: config, Settings: SSHDDefaults()}
 	got := map[string]bool{}
+	matchSeen, matchUnknown := false, false
 	h := sha256.New()
 	reason := Reason("")
 	unknown := func(p string, err error) {
@@ -520,6 +521,7 @@ func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 			reason = Classify(err)
 		}
 		cfg.Unread = append(cfg.Unread, p+" ("+whyUnread(err)+")")
+		matchUnknown = true // what was not read may hold a Match
 		for k := range cfg.Settings {
 			if !got[k] {
 				cfg.Settings[k], got[k] = "unknown", true
@@ -546,9 +548,13 @@ func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 		}
 		h.Write(b)
 		dirs, sawMatch := ParseSSHDConfig(b)
+		matchSeen = matchSeen || sawMatch
 		for _, d := range dirs {
 			if d.Key == "include" {
 				pat := d.Value
+				if strings.ContainsAny(pat, "%~") { // a token sshd expands: which files is not known here
+					matchUnknown = true
+				}
 				if !strings.HasPrefix(pat, "/") {
 					pat = path.Join(path.Dir(config), pat)
 				}
@@ -565,12 +571,22 @@ func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 			}
 			if _, want := cfg.Settings[d.Key]; want && !got[d.Key] {
 				cfg.Settings[d.Key], got[d.Key] = d.Value, true
+				cfg.Set = append(cfg.Set, d.Key)
 			}
 		}
 		return !sawMatch || depth > 0 // an included file's Match ends that file only
 	}
 	read(config, 0)
 	cfg.Hash = hex.EncodeToString(h.Sum(nil))[:16]
+	switch {
+	case matchSeen:
+		cfg.Match = "yes"
+	case matchUnknown:
+		cfg.Match = "unknown"
+	default:
+		cfg.Match = "none"
+	}
+	sort.Strings(cfg.Set)
 	if len(cfg.Unread) > 0 {
 		return Partial(cfg, reason, "some sshd config files unreadable; their settings are \"unknown\"")
 	}

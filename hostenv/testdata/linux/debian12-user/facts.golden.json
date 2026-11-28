@@ -4822,7 +4822,8 @@
         "unread": [
           "/etc/ssh/sshd_config.d/50-cloud-init.conf (permission denied)"
         ],
-        "hash": "121bac24ff921329"
+        "hash": "121bac24ff921329",
+        "match": "unknown"
       }
     },
     "rdp": {

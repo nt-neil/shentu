@@ -4870,7 +4870,12 @@
           "pubkeyauthentication": "yes",
           "x11forwarding": "yes"
         },
-        "hash": "d0589b7cfb2a62de"
+        "hash": "d0589b7cfb2a62de",
+        "set": [
+          "passwordauthentication",
+          "x11forwarding"
+        ],
+        "match": "none"
       }
     },
     "rdp": {
