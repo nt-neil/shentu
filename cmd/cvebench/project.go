@@ -96,16 +96,29 @@ func projectScanner(eng *engine.Engine, files []string, read func(string) ([]byt
 		return nil, nil, false
 	}
 	noSkip := reflect.Zero(calls.Type().In(2)) // every rule in this pass
-	return func(rel string, src []byte) scanned {
-		var s scanned
+	return productScan(func(rel string, src []byte) ([]engine.Finding, bool, error) {
 		o := own.Call([]reflect.Value{reflect.ValueOf(engine.LangOf(rel)), reflect.ValueOf(rel), reflect.ValueOf(src)})
 		fs, _ := o[0].Interface().([]engine.Finding)
-		s.timed = o[1].Bool()
 		err, _ := o[2].Interface().(error)
-		s.errs = append(s.errs, err)
+		return fs, o[1].Bool(), err
+	}, func(rel string, src []byte) (engine.CallsPart, error) {
 		c := calls.Call([]reflect.Value{reflect.ValueOf(rel), reflect.ValueOf(src), noSkip})
 		part, _ := c[0].Interface().(engine.CallsPart)
-		err, _ = c[1].Interface().(error)
+		err, _ := c[1].Interface().(error)
+		return part, err
+	}), namesIncomplete, true
+}
+
+// productScan is the product path's scan of one file: own is the file on its
+// own (ScanTimed), calls what following calls across files finds
+// (ScanCallsPart), merged as app_code_audit does.
+func productScan(own func(string, []byte) ([]engine.Finding, bool, error), calls func(string, []byte) (engine.CallsPart, error)) func(string, []byte) scanned {
+	return func(rel string, src []byte) scanned {
+		var s scanned
+		fs, timed, err := own(rel, src)
+		s.timed = timed
+		s.errs = append(s.errs, err)
+		part, err := calls(rel, src)
 		s.errs = append(s.errs, callsErr(part, err))
 		s.timed = s.timed || part.Timed
 		// merged as app_code_audit does: once per rule, path and line
@@ -118,7 +131,7 @@ func projectScanner(eng *engine.Engine, files []string, read func(string) ([]byt
 			}
 		}
 		return s
-	}, namesIncomplete, true
+	}
 }
 
 // callsErr is the error a calls pass counts as: a cap that cut a rule's calls

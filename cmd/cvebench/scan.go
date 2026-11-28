@@ -48,6 +48,10 @@ type scanResult struct {
 	NamesIncomplete bool
 }
 
+// newScanner makes the scan of one file for a path that follows calls across
+// files: projectScanner, or a stand-in in a test.
+var newScanner = projectScanner
+
 func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 	var r scanResult
 	start := time.Now()
@@ -108,7 +112,7 @@ func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 	}
 	namesIncomplete := func() bool { return false }
 	if scanPath != pathPerFile {
-		if ps, ni, ok := projectScanner(eng, files, read, scanPath, opts); ok {
+		if ps, ni, ok := newScanner(eng, files, read, scanPath, opts); ok {
 			scanOne, namesIncomplete = ps, ni
 		}
 	}

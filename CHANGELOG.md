@@ -113,7 +113,9 @@ Chinese for the zh-TW pages; keep the two in step.
 - file_changes and log_search's hard-link check read the host as the other checks do, through the
   host source: a replay or another host's survey reads that host's files, not the machine running
   the check, a Linux or macOS host's recording read on a Windows machine too (its paths keep their
-  "/": the walks, the log allowlist and the site-packages search spell them as the host does). The host source's file details now carry the status-change time (ctime, which
+  "/": the walks, the log allowlist, the site-packages search, the WordPress plugin search,
+  app_vulns' and app_code_audit's path argument, and the audit resuming where it stopped spell them
+  as the host does). The host source's file details now carry the status-change time (ctime, which
   file_changes counts as before: a file whose mtime was set back still shows) and the hard links;
   these checks are made on Unix only (on Windows the details say they do not apply, never 0).
 - A file app_code_audit, app_vulns' lock-file search or the WordPress plugin search would read that
@@ -186,6 +188,9 @@ Chinese for the zh-TW pages; keep the two in step.
   that app_code_audit still shows. The rules are the same; the bench's fixed false positives
   usually rise, closer to what a user sees (measured on v0.5.8's cases: nothing reported
   fewer). The report's header names the scan path and the project caps.
+- bench: the baselines are rerun on the product scan path (`baseline.md` for cves, and now
+  `baseline-holdout.md`, `baseline-cves-ts.md`); the one before was the first run, on 59 cases,
+  scanned file by file.
 - `php-nosqli-mongo-query` and the CodeIgniter, Doctrine, Drupal, Joomla and Yii SQL rules: a
   method sink (`$Db->find(...)`, `->where(...)`) reached from another file is not reported when the
   project's own classes declare a method of that name and nothing app_code_audit reads names the
@@ -238,7 +243,9 @@ Chinese for the zh-TW pages; keep the two in step.
 - In a sudo rule's commands, a password not written as `key=value` (`mysql -p<secret>`,
   `--password <secret>`, `curl -u user:<secret>`) is not masked in the survey's texts.
 - On a non-Windows machine replaying a Windows host's recording, the code audit's ASP check, its
-  web-root ACL check and its case-insensitive path comparison are not turned on yet (v0.5.9).
+  web-root ACL check and its case-insensitive path comparison are not turned on yet, and
+  app_vulns' and app_code_audit's path argument is refused unless it is one of the app paths
+  exactly (v0.5.9).
 
 ## v0.5.7 — 2026-11-26
 
