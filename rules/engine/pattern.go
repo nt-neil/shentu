@@ -325,6 +325,12 @@ func (p *pat) callParen() int {
 			stack = stack[:len(stack)-1]
 		}
 	}
+	// str_replace(array("\r", "\n": a pattern that starts with a name and its
+	// "(" and leaves that "(" open is that call, not the inner array( it
+	// writes out; the match covers the whole str_replace(...).
+	if len(stack) > 1 && stack[0] == 1 && p.toks[0].Kind == Ident && p.toks[1].op("(") {
+		return 1
+	}
 	for k := len(stack) - 1; k >= 0; k-- {
 		if p.toks[stack[k]].op("(") {
 			return stack[k]
