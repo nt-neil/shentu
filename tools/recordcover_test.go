@@ -120,18 +120,45 @@ func TestRecordingCoversSurvey(t *testing.T) {
 
 // hostReadsBypass are the reads of the machine in tools and checks that do
 // not go through hostSource, so a recording does not hold them (S-305-1),
-// counted per file. One more, or one gone, fails TestNoHostReadsBypass: a
-// new one is to go through hostSource or be added here with its reason.
-var hostReadsBypass = map[string]int{
-	"tools/alas.go":      7, // shentu's own cache of Amazon Linux advisories
-	"tools/codeaudit.go": 1, // shentu's state directory
-	"tools/codecalls.go": 6, // shentu's kept audit results and its own executable
-	"tools/files.go":     2, // certbot's certificates (cert_expiry): not recorded (known issue)
-	"tools/firewall.go":  3, // nft on this machine: block_ip acts, it does not read the host
-	"tools/imagepkgs.go": 6, // Docker's and containerd's image stores: not recorded (known issue)
+// line by line ("file: the line", trimmed), each with its reason. A line
+// more, or one gone or changed, fails TestNoHostReadsBypass: a new one is
+// to go through hostSource or be listed here with its reason. hostenv
+// (the host source itself, Live) and detect (the logs it reads, its state)
+// are not scanned (a known issue).
+var hostReadsBypass = map[string]struct {
+	N   int // the times the line is there
+	Why string
+}{
+	"tools/alas.go: if info, err := os.Stat(\"/var/lib/shentu\"); err == nil && info.IsDir() && os.Geteuid() == 0 {":      {1, "shentu's own cache of Amazon Linux advisories"},
+	"tools/alas.go: if c, err := os.Open(cached); err == nil {":                                                           {1, "shentu's own cache of Amazon Linux advisories"},
+	"tools/alas.go: f, err := os.Open(p)":                                                                                 {1, "shentu's own cache of Amazon Linux advisories"},
+	"tools/alas.go: return os.Open(path)":                                                                                 {1, "shentu's own cache of Amazon Linux advisories"},
+	"tools/alas.go: old, _ := filepath.Glob(filepath.Join(dir, \"alas-*\"))":                                              {1, "shentu's own cache of Amazon Linux advisories"},
+	"tools/alas.go: tmps, _ := filepath.Glob(filepath.Join(dir, \".alas-*\"))":                                            {1, "shentu's own cache of Amazon Linux advisories"},
+	"tools/alas.go: if st, err := os.Stat(f); err == nil && time.Since(st.ModTime()) > time.Hour {":                       {1, "shentu's own cache of Amazon Linux advisories"},
+	"tools/codeaudit.go: if info, err := os.Stat(\"/var/lib/shentu\"); err == nil && info.IsDir() && os.Geteuid() == 0 {": {1, "shentu's state directory"},
+	"tools/codecalls.go: if info, err := os.Stat(exe); err == nil {":                                                      {1, "shentu's kept audit results and its own executable"},
+	"tools/codecalls.go: b, err := os.ReadFile(name)":                                                                     {2, "shentu's kept audit results and its own executable"},
+	"tools/codecalls.go: names, _ := filepath.Glob(filepath.Join(dir, \"codecalls-*.json\"))":                             {1, "shentu's kept audit results and its own executable"},
+	"tools/codecalls.go: if info, err := os.Lstat(n); err == nil && info.Mode().IsRegular() {":                            {1, "shentu's kept audit results and its own executable"},
+	"tools/codecalls.go: if _, err := os.Lstat(f); errors.Is(err, fs.ErrNotExist) {":                                      {1, "shentu's kept audit results and its own executable"},
+	"tools/files.go: return filepath.EvalSymlinks(root)":                                                                  {1, "a Windows web root resolved on this machine, the host itself (watchRoot)"},
+	"tools/files.go: m, _ := filepath.Glob(g)":                                                                            {1, "certbot's certificates (cert_expiry): not recorded (known issue)"},
+	"tools/files.go: b, err := os.ReadFile(f)":                                                                            {1, "certbot's certificates (cert_expiry): not recorded (known issue)"},
+	"tools/firewall.go: if exec.CommandContext(ctx, \"nft\", \"list\", \"table\", \"inet\", nftTable).Run() == nil {":     {1, "nft on this machine: block_ip acts, it does not read the host"},
+	"tools/firewall.go: cmd := exec.CommandContext(ctx, \"nft\", \"-f\", \"-\")":                                          {1, "nft on this machine: block_ip acts, it does not read the host"},
+	"tools/firewall.go: if out, err := exec.CommandContext(ctx, \"nft\", args...).CombinedOutput(); err != nil {":         {1, "nft on this machine: block_ip acts, it does not read the host"},
+	"tools/imagepkgs.go: if _, err := os.Lstat(dockerDaemonJSON); err == nil {":                                           {1, "Docker's and containerd's image stores: not recorded (known issue)"},
+	"tools/imagepkgs.go: _, err := os.Lstat(content)":                                                                     {1, "Docker's and containerd's image stores: not recorded (known issue)"},
+	"tools/imagepkgs.go: st, err := os.Lstat(p)":                                                                          {1, "Docker's and containerd's image stores: not recorded (known issue)"},
+	"tools/imagepkgs.go: switch _, err := os.Lstat(root); {":                                                              {1, "Docker's and containerd's image stores: not recorded (known issue)"},
+	"tools/imagepkgs.go: if _, err := os.Lstat(p); errors.Is(err, fs.ErrNotExist) {":                                      {1, "Docker's and containerd's image stores: not recorded (known issue)"},
+	"tools/imagepkgs.go: err := filepath.WalkDir(d, func(p string, e fs.DirEntry, err error) error {":                     {1, "Docker's and containerd's image stores: not recorded (known issue)"},
+	"tools/overlay_linux.go: st, ok := fi.Sys().(*syscall.Stat_t)":                                                        {1, "an overlay layer's whiteout and opaque marks of the image stores: not recorded (known issue)"},
+	"tools/overlay_linux.go: if n, err := syscall.Getxattr(p, a, buf); err == nil && n == 1 && buf[0] == 'y' {":           {1, "an overlay layer's whiteout and opaque marks of the image stores: not recorded (known issue)"},
 }
 
-var hostReadRe = regexp.MustCompile(`\bos\.(ReadFile|Open|OpenFile|ReadDir|Stat|Lstat|Readlink)\(|\bexec\.(Command|CommandContext|LookPath)\(|\bfilepath\.(Walk|WalkDir|Glob)\(|\bioutil\.`)
+var hostReadRe = regexp.MustCompile(`\bos\.(ReadFile|Open|OpenFile|ReadDir|Stat|Lstat|Readlink|DirFS)\(|\bexec\.(Command|CommandContext|LookPath)\(|\bfilepath\.(Walk|WalkDir|Glob|EvalSymlinks)\(|\bioutil\.|\bsyscall\.|\bunix\.`)
 
 func TestNoHostReadsBypass(t *testing.T) {
 	got := map[string]int{}
@@ -148,23 +175,27 @@ func TestNoHostReadsBypass(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if c := len(hostReadRe.FindAll(b, -1)); c > 0 {
-				got[filepath.ToSlash(filepath.Join("tools", n))] = c
+			name := filepath.ToSlash(n)
+			if dir == "." {
+				name = "tools/" + name
+			} else {
+				name = strings.TrimPrefix(name, "../")
+			}
+			for _, l := range strings.Split(string(b), "\n") {
+				if hostReadRe.MatchString(l) {
+					got[name+": "+strings.TrimSpace(l)]++
+				}
 			}
 		}
 	}
-	norm := map[string]int{}
-	for k, v := range got {
-		norm[strings.Replace(k, "tools/../", "", 1)] = v
-	}
-	for k, v := range norm {
-		if hostReadsBypass[k] != v {
-			t.Errorf("%s reads the machine without hostSource %d times, the list says %d: go through hostSource, or list it with its reason", k, v, hostReadsBypass[k])
+	for k, n := range got {
+		if hostReadsBypass[k].N != n {
+			t.Errorf("reads the machine without hostSource %d times, listed %d: %s\n(go through hostSource, or list the line with its reason)", n, hostReadsBypass[k].N, k)
 		}
 	}
-	for k, v := range hostReadsBypass {
-		if _, ok := norm[k]; !ok {
-			t.Errorf("%s is listed (%d) but has none: take it off the list", k, v)
+	for k, w := range hostReadsBypass {
+		if got[k] == 0 {
+			t.Errorf("listed (%d) but not there (gone or changed): %s", w.N, k)
 		}
 	}
 }

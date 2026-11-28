@@ -94,9 +94,12 @@ func TestAuditMemoryUnderCgroup(t *testing.T) {
 		t.Skip("builds and scans a large project")
 	}
 	if raceBuild {
-		// -race slows the audit so much that its time runs out before memory
-		// reaches the limit this test is about (S-306).
-		t.Skip("the race detector's slowness spends the audit's time first")
+		// Skipped under -race (S-306, S-310-2): the race build slows the
+		// audit so much that its time runs out before memory reaches the
+		// limit this test is about; the memory a race build uses (its shadow
+		// memory) says nothing of the product's; and the test has no
+		// concurrent state of its own for the detector to check.
+		t.Skip("the race detector's slowness spends the audit's time first, and its memory is not the product's")
 	}
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		// The guarantee is the systemd cgroup's memory budget (Linux); macOS
