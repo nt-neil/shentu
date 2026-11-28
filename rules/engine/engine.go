@@ -46,6 +46,10 @@ type Finding struct {
 // Engine holds compiled rules. It is safe for concurrent use.
 type Engine struct {
 	byLang map[string][]*crule
+	// handleRaw: the receivers of every PHP rule's handle condition (handle.go),
+	// compiled as handlePats; none, and a project keeps no property table.
+	handleRaw  []string
+	handlePats []*pat
 	// yieldLevel orders the second pass so that a rule comes before the rules
 	// it yields to (yields.go): a rule no other rule yields to is at 0, one
 	// that is yielded to is one past the rules yielding to it.
@@ -78,6 +82,8 @@ type crule struct {
 	textSources, textSinks []*pat // text inside string literals
 	sanitizers             []*pat
 	args                   map[*pat]*argCond
+	handleRaw              []string            // the receivers of the rule's handle conditions, as written (handle.go); none: no state is kept
+	handlePats             []*pat              // handleRaw compiled
 	argsMore               map[*pat][]*argCond // a sink's further [[args]] blocks: a finding when any one holds
 	leading                bool                // some sink needs a fixed prefix, so values track raw input
 	ctypes                 bool                // some args block has unless_content_type: record Content-Type statements (ctype.go)
@@ -103,6 +109,7 @@ type argCond struct {
 	unlessAt       string   // where unless looks: "" anywhere, "start", "top" (rules.Args.UnlessAt)
 	receiver       []*pat   // a method sink counts only on a receiver these name (receiver.go)
 	handle         int      // with receiver, for a function sink: the argument (from 1) holding the handle (handle.go)
+	handleRecv     []string // with handle: receiver as written, one per pattern of receiver
 	notReceiver    []*pat   // nor on an object surely of one of these classes (receiver.go)
 	recvFrom       []*pat   // only on a receiver made by one of these, or of one of recvNames (recvMadeBy)
 	recvNames      []string // the names recvFrom takes when the file does not show what made the receiver
@@ -123,6 +130,14 @@ func New(rs []rules.Rule) (*Engine, error) {
 			return nil, fmt.Errorf("%s: %w", r.ID, err)
 		}
 		e.byLang[r.Lang] = append(e.byLang[r.Lang], c)
+		if r.Lang == "php" {
+			for k, raw := range c.handleRaw {
+				if !slices.Contains(e.handleRaw, raw) {
+					e.handleRaw = append(e.handleRaw, raw)
+					e.handlePats = append(e.handlePats, c.handlePats[k])
+				}
+			}
+		}
 		for _, ac := range c.args {
 			for _, m := range ac.unlessImports {
 				e.watchFor("m:" + m)
@@ -261,6 +276,9 @@ func compileRule(r rules.Rule) (*crule, error) {
 	for _, a := range r.Args {
 		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, fixedExt: a.FixedExt, recvNames: a.ReceiverNames, identPh: a.IdentPlaceholder, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup, handle: a.Handle}
+		if a.Handle > 0 {
+			ac.handleRecv = a.Receiver
+		}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":
 			return nil, fmt.Errorf("args: unless_at %q is not start or top", a.UnlessAt)
@@ -346,6 +364,12 @@ func compileRule(r rules.Rule) (*crule, error) {
 		for _, x := range ac.context {
 			if x == ctxURL {
 				c.leading = true // track fixed prefixes: a value that starts with one cannot pick a scheme
+			}
+		}
+		for k, raw := range ac.handleRecv {
+			if !slices.Contains(c.handleRaw, raw) {
+				c.handleRaw = append(c.handleRaw, raw)
+				c.handlePats = append(c.handlePats, ac.receiver[k])
 			}
 		}
 	}
@@ -487,7 +511,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	mws := koaMiddleware(base, toks, tree, ff, proj) // Koa's app.use(fn): fn's context is followed as a handler's (reqalias.go)
 	defs := phpDefines(base, toks)
 	if proj != nil {
-		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), hdefs: fileHandleDefs(base, toks), rcls: fileRecvClasses(base, toks), ifacts: e.importFacts(base, toks), defs: defs})
+		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), hprops: e.fileHandleProps(base, toks), rcls: fileRecvClasses(base, toks), ifacts: e.importFacts(base, toks), defs: defs})
 	}
 	var out []Finding
 	add := func(r *crule, lines ...[]loc) {

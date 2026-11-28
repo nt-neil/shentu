@@ -39,7 +39,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - cvebench 預設改用和 app_code_audit 相同的掃描方式（`-scanpath product`）：先逐檔掃描，再追蹤跨檔呼叫，兩者的結果合併。以前它直接用跨檔呼叫來判斷每條流向（`Project.Scan`，現在是 `-scanpath project`），所以檢查寫在另一個檔案時，結果會被拿掉，但 app_code_audit 仍然會顯示。規則沒有改變；bench 的修正版誤報通常會變多，數字更接近使用者實際看到的（用 v0.5.8 的案例量測，結果是少報 0）。報告最前面會寫明掃描方式和專案的上限。
 - bench：比較用的基準改用和 app_code_audit 相同的掃描方式（`-scanpath product`）重新量測（cves 是 `baseline.md`，另外新增 `baseline-holdout.md`、`baseline-cves-ts.md`）；先前的基準是第一次量測，只有 59 案，逐檔掃描。
 
-- 規則：函式 sink 的 `[[args]]` 可以指定哪個參數是 handle（`handle`，要和 `receiver` 一起用）。這樣 `fwrite($fp, ...)` 只有在檔案裡看得到 `$fp`（或在別的方法、另一個檔案的 class 裡設定的 `$this->fp`）是 `receiver` 列的函式（例如 `fsockopen()`）產生的，才算數；看不出來源的 handle 不算。目前還沒有規則用到它。
+- 規則：函式 sink 的 `[[args]]` 可以指定哪個參數是 handle（`handle`，要和 `receiver` 一起用）。這樣 `fwrite($fp, ...)` 只有在 `$fp` 是 `receiver` 列的函式（例如 `fsockopen()`）產生的時候才算數：直接寫在呼叫裡、同一個函式裡這次呼叫之前最近的一次指派，或者 `$this->fp` 在同一個 class 檔案裡其他地方的指派。看不出來源的 handle 不算：參數、`STDOUT`、方法的回傳值、在別的方法設定的 static 屬性、`$s[0]` 這種寫法，或 `foreach` 的變數。一個檔案的屬性指派超過 4096 筆時，這個檔案就不追（掃描會記下截斷原因 `handle-table`）。沒有規則用到時不會多做任何事；目前還沒有規則用到它。
 ### 已知問題
 
 - 直接寫在指令參數裡的密碼，下面幾種情況不會遮：密碼全是 JSON 標點（`, : { } [ ]` 和空白）；密碼裡空白之後的部分（command line 是用空白把 argv 接起來的；在 shell 指令行裡加了引號的會整段遮掉）；log 或 shell 的指令紀錄裡，沒有引號的 `;`、`|`、`&` 之後的部分；分成多行寫出的 JSON argv，或前面的字串裡有 `]` 的 JSON argv；以及其他程式的密碼參數（`sshpass -p`、`redis-cli -a`、`ldapsearch -w`、`smbclient -U user%<密碼>`、`mongosh -p`、`htpasswd -b`、curl 的 `--pass` 和 `-E cert:<密碼>`）。

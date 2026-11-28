@@ -17,17 +17,29 @@ Kind: precision
 
 ## Design
 - `handle = N` in `[[args]]`, with `receiver`: the call counts only when
-  argument N, followed back through the file's assignments a few steps, names
-  one of `receiver` (`fsockopen(`, `stream_socket_client(`).
-- PHP: `$x = ...` and `$this->x = ...` are read (right sides of up to 32 tokens,
-  copied, so a file's tokens need not stay in memory); other languages use the
-  receiver's table (`x`, `self.x`).
-- A project keeps each PHP file's table, so a method analysed from another file
-  (a client class whose `connect()` sets `$this->fp` and whose `put()` writes to
-  it) reads its own file's assignments.
-- Unlike `receiver`, a handle whose origin the file does not show does not count:
-  a parameter, `STDOUT`, a handle from another file. That misses a socket passed
-  in from elsewhere, rather than reporting every file write (a known limit).
+  argument N was made by one of `receiver` (`fsockopen(`, `stream_socket_client(`):
+  - in place: `fwrite(fsockopen(...), ...)`;
+  - by the nearest assignment before the call in the same function: the
+    analysis records, at each assignment, which receivers made the value
+    (also through another name, a chained assignment or a ternary), and the next
+    assignment replaces it. So another function's `$fp` of the same name, or a
+    `$fp` reopened as a file after `fclose`, does not count (review round 1);
+  - for `$this->x`, by an assignment to the property anywhere in its file: a
+    project keeps, per PHP file, which receivers each property's assignments
+    call. Names only, no tokens; a method analysed from another file reads its
+    class's own file.
+- Cost: nothing is recorded or kept unless a loaded rule has a handle condition.
+  A file with more than 4096 property assignments gets no table: its handles are
+  not known (not reported) and its scan records the cut `handle-table`. A
+  crafted 1 MiB file of property assignments is read in under 1 MiB of
+  allocation (`TestHandleCost`); round 1 measured the first version copying 5
+  million tokens (361 MB) for it.
+- Unlike `receiver`, a handle whose origin the code does not show does not count.
+  Known limits, all missed rather than reported: a parameter, `STDOUT`, a
+  method's return value (`$this->fp = $this->connect()`), a static property set
+  in another method (`self::$conn`), an array element, a `foreach` variable,
+  `list()`. A rule using the field states the limits its cases meet in its own
+  record.
 - `handle` without `receiver`, or a negative `handle`, is refused when the rules
   load.
 
@@ -37,19 +49,20 @@ A test rule (sources `$_GET`, sinks `fwrite(`, `fputs(`, `handle = 1`,
 
 | fixture | expected | new build |
 |---|---|---|
-| `$fp = fsockopen(...); fwrite($fp, $_GET[...])` | reported | reported |
-| `fputs(($fp), ...)` after `@fsockopen(...)` | reported | reported |
-| `$sock = stream_socket_client(...); $fp = $sock; fwrite($fp, ...)` | reported | reported |
-| `$this->fp = stream_socket_client(...)` in `connect()`, `fputs($this->fp, ...)` in `put()` | reported | reported |
-| the same class in another file than the request | reported | reported |
-| `$fp = fopen('log.txt', 'a'); fwrite($fp, ...)` | not reported | not reported |
-| `fopen('php://stdout', 'w')`, `STDOUT` | not reported | not reported |
-| `function put($fp) { fwrite($fp, ...) }` (origin unknown) | not reported | not reported |
-| input only in `fsockopen()`'s host, a fixed line written | not reported | not reported |
+| `$fp = fsockopen(...); fwrite($fp, $_GET[...])`; with `@` and parentheses | reported | reported |
+| through another name; a chained assignment; a ternary of two sockets; in place | reported | reported |
+| `$this->fp` set in `connect()`, written in `put()`; the same class in another file | reported | reported |
+| `self::$conn` set and written in one method | reported | reported |
+| a file, `fclose`, then a socket before the write | reported | reported |
+| `fopen('log.txt')`; `php://stdout`; `STDOUT` | not reported | not reported |
+| function a's `$fp = fopen(...)` written, function b's `$fp = fsockopen(...)` | not reported | not reported |
+| a socket, `fclose`, then `$fp = fopen(...)` before the write | not reported | not reported |
+| a parameter; `$this->fp = $this->open()`; `self::$conn` set in another method | not reported (known limits) | not reported |
+| more than 4096 `$this->x =` in the file | not reported, cut `handle-table` | as expected |
 
-Checked by mutation: without the project's per-file table the cross-file
-fixture is missed; with an unknown origin counted as a socket, the stdout and
-parameter fixtures are reported. Both fail `TestHandleCondition*`.
+Checked by mutation: without replacing a variable's record on reassignment, the
+reopened file is reported; without the cap, the cost and cut tests fail;
+without the property table, the property and cross-file cases are missed.
 
 ## Process
 - Rule lane: found the gap while designing the protocol-injection rule, asked
@@ -60,7 +73,13 @@ parameter fixtures are reported. Both fail `TestHandleCondition*`.
 - Reviewer: see Review.
 
 ## Review
-Pending.
+Round 1 at ac10f454: B0 N1 S3. N-295-1: the first version built a table for
+every PHP file even with no rule using it, copying each assignment's right side;
+a crafted 1 MiB file cost 361 MB. It also kept one table per file, so another
+function's `$fp`, or one reassigned before the write, could count. Fixed as in
+Design (cost zero without a handle rule; names, not tokens; a per-file cap with a
+cut; function scope with the nearest assignment). S-295-1 to S-295-3: the known
+limits are written out, and this record follows what the code does.
 
 ## Measured on
 Full A/B in the throwaway Linux bench VM: base 216b6988, head 08ee0ac6 (this

@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/nt-neil/shentu/rules"
@@ -36,6 +38,18 @@ func TestHandleCondition(t *testing.T) {
 		{"stdout", "<?php\n$out = fopen('php://stdout', 'w');\nfwrite($out, $_GET['p']);\nfwrite(STDOUT, $_GET['p']);\n", false},
 		{"parameter of unknown origin", "<?php\nfunction put($fp) {\n  fwrite($fp, $_GET['p']);\n}\n", false},
 		{"socket, input as the handle only", "<?php\n$fp = fsockopen($_GET['h'], 80);\nfwrite($fp, 'PING');\n", false},
+		// another function's $fp of the same name (review H1)
+		{"another function's socket", "<?php\nfunction a() {\n  $fp = fopen('log.txt', 'a');\n  fwrite($fp, $_GET['p']);\n}\nfunction b() {\n  $fp = fsockopen($host, 80);\n  fwrite($fp, 'PING');\n}\n", false},
+		// the nearest assignment before the sink counts (review H3)
+		{"reopened as a file", "<?php\n$fp = fsockopen($host, 80);\nfclose($fp);\n$fp = fopen('f.txt', 'w');\nfwrite($fp, $_GET['p']);\n", false},
+		{"a file, then a socket", "<?php\n$fp = fopen('f.txt', 'w');\nfclose($fp);\n$fp = fsockopen($host, 80);\nfwrite($fp, $_GET['p']);\n", true},
+		{"in place", "<?php\nfwrite(fsockopen($host, 80), $_GET['p']);\n", true},
+		{"through a ternary", "<?php\n$fp = $ssl ? stream_socket_client($u) : fsockopen($h, 80);\nfwrite($fp, $_GET['p']);\n", true},
+		{"a chained assignment", "<?php\n$a = $fp = fsockopen($h, 80);\nfwrite($a, $_GET['p']);\n", true},
+		// known limits: not followed, so not reported
+		{"a method's return value", "<?php\nclass C {\n  function open() { return fsockopen($this->h, 80); }\n  function put() { $this->fp = $this->open(); fputs($this->fp, $_GET['p']); }\n}\n", false},
+		{"a static property in the same method", "<?php\nclass C {\n  static $conn;\n  function put() { self::$conn = fsockopen($h, 80); fputs(self::$conn, $_GET['p']); }\n}\n", true},
+		{"a static property set in another method", "<?php\nclass C {\n  static $conn;\n  function open() { self::$conn = fsockopen($h, 80); }\n  function put() { fputs(self::$conn, $_GET['p']); }\n}\n", false},
 	} {
 		fs, err := e.Scan("php", "a.php", []byte(c.src))
 		if err != nil {
@@ -77,5 +91,58 @@ func TestHandleNeedsReceiver(t *testing.T) {
 	if _, err := New([]rules.Rule{{ID: "x", Lang: "php", Class: "cmdi", Severity: "high", Title: "t", Sources: []string{"$_GET"}, Sinks: []string{"fwrite("},
 		Args: []rules.Args{{Arg: &two, Handle: 1}}}}); err == nil {
 		t.Error("handle without receiver: accepted")
+	}
+}
+
+// N-295-1: the handle condition costs nothing without a rule that has one, and
+// a file of very many assignments (a crafted 1 MiB file) is read within a
+// bound: no token is copied, and past maxHandleProps the table is given up.
+func TestHandleCost(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("<?php\nclass C { function f() {\n")
+	for b.Len() < 1<<20 {
+		b.WriteString("$this->a=$this->a=$this->a=$this->a=1;\n")
+	}
+	b.WriteString("} }\n")
+	toks := lex("php", b.String(), newBudget(Limits{}))
+
+	plain := engineForTest(t)
+	if h := plain.fileHandleProps("php", toks); h != nil {
+		t.Errorf("no handle rule: a property table was built")
+	}
+	if allocs := testing.AllocsPerRun(3, func() { plain.fileHandleProps("php", toks) }); allocs != 0 {
+		t.Errorf("no handle rule: %v allocations", allocs)
+	}
+
+	e := handleEngine(t)
+	var h *handleProps
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	h = e.fileHandleProps("php", toks)
+	runtime.ReadMemStats(&after)
+	if h == nil || !h.cut {
+		t.Fatalf("past %d property assignments the table is not given up: %+v", maxHandleProps, h)
+	}
+	if got := after.TotalAlloc - before.TotalAlloc; got > 1<<20 {
+		t.Errorf("reading the property table allocated %d bytes, want under 1 MiB", got)
+	}
+}
+
+// A handle read from a file whose property table was given up is not known:
+// not reported, and the scan says so (handle-table).
+func TestHandleTableCut(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("<?php\nclass C {\n  function f() {\n")
+	for i := 0; i <= maxHandleProps; i++ {
+		b.WriteString("    $this->x = 1;\n")
+	}
+	b.WriteString("  }\n  function connect() { $this->fp = fsockopen($h, 80); }\n  function put() { fputs($this->fp, $_GET['p']); }\n}\n")
+	fs, err := handleEngine(t).Scan("php", "a.php", []byte(b.String()))
+	if len(fs) != 0 {
+		t.Errorf("reported %v", fs)
+	}
+	if CutOf(err)&CutHandles == 0 {
+		t.Errorf("cut %q (%v), want handle-table", CutOf(err), err)
 	}
 }

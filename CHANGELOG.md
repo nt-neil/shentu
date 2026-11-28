@@ -218,9 +218,13 @@ Chinese for the zh-TW pages; keep the two in step.
   scanned file by file.
 
 - Rules: a function sink's `[[args]]` can name the argument holding a handle (`handle`, with
-  `receiver`): `fwrite($fp, ...)` then counts only when the file shows `$fp` (or `$this->fp`, set in
-  another method or in a class in another file) made by one of `receiver`, `fsockopen()` say. A
-  handle the file does not show the origin of does not count. No shipped rule uses it yet.
+  `receiver`): `fwrite($fp, ...)` then counts only when `$fp` was made by one of `receiver`
+  (`fsockopen()` say): in place, by the nearest assignment before the call in the same function, or,
+  for `$this->fp`, by an assignment to the property elsewhere in its class's file. A handle whose
+  origin the code does not show does not count (a parameter, `STDOUT`, a method's return value, a
+  static property set in another method, an array element or a `foreach` variable). A file with
+  more than 4096 property assignments is given up for this (its scan records the cut
+  `handle-table`). Nothing is kept unless a rule uses it, and no shipped rule uses it yet.
 ### Known issues
 
 - A command's own password is not masked when it is only JSON punctuation (`, : { } [ ]` and
