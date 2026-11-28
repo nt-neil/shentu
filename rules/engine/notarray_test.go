@@ -240,6 +240,7 @@ func TestNotArrayMembers(t *testing.T) {
 		{"$this->x an array, nothing else", "<?php\nclass C {\n  function run() {\n    $this->x = [$_POST['a']];\n    maybe_unserialize($this->x);\n  }\n}\nadd_action('wp_ajax_x', [new C, 'run']);\n", true},
 		{"a static property", "<?php\nclass C {\n  static $x;\n  function run() {\n    self::$x = [$_POST['a']];\n    maybe_unserialize(self::$x);\n  }\n}\nadd_action('wp_ajax_x', [new C, 'run']);\n", true},
 		{"an index of a local array", ajax("$a = [];\n$a['k'] = [$_POST['a']];\nmaybe_unserialize($a['k']);"), false},
+		{"an index of an object made with new (ArrayAccess)", ajax("$o = new Bag();\n$o['k'] = [$_POST['a']];\nmaybe_unserialize($o['k']);"), true},
 		{"a local array", ajax("$a = [$_POST['a']];\nmaybe_unserialize($a);"), false},
 	} {
 		t.Run(c.name, func(t *testing.T) {

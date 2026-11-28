@@ -248,9 +248,8 @@ Chinese for the zh-TW pages; keep the two in step.
   or one passed whole to a method, a computed callee, a PHP function that takes it by reference, or
   a function the project does not declare (WordPress's own, but for a few that take it by value) or
   declares with a parameter by reference. An object's property or what a call returned is never
-  taken as an array (`$this->x`, `$o->p`, `self::$x`), only a variable of the function or an index
-  of it: earlier in v0.5.8's development `not_array` let such a property pass, and missed one a
-  method or a copy of the object had since made a string. That is taken back here; no release had it.
+  taken as an array (`$this->x`, `$o->p`, `self::$x`), nor an index of a variable assigned an object
+  with `new` (ArrayAccess); only a variable of the function or an index of it.
 
 ### Known issues
 

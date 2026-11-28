@@ -106,9 +106,16 @@ Product path (`ScanTimed`, then `ScanCallsPart`), `rules/engine/notarray_test.go
   the function, or an index of one (`$a['k']`), does, and still through the
   checks above. `$this->x` that stays an array is reported again: that is
   fail closed, accepted by the commander.
-- Tests: `TestNotArrayMembers`, 7 rows on the product path, and
+- An index of a variable the file assigns an object with `new` keeps no mark
+  either (review of #302, S-302-1): `$o['k']` is then ArrayAccess's
+  `offsetGet()`, which may return anything.
+- The CHANGELOG states only the final behavior. The earlier v0.5.8 build
+  that let a property pass was never released, so the record of it stays
+  here (review of #302, S-302-3).
+- Tests: `TestNotArrayMembers`, 8 rows on the product path (one of them the
+  ArrayAccess index), and
   `TestAppCodeAuditNotArrayMembers`, 3 rows through `AppCodeAudit`. With the
-  member rule turned off, the five member rows fail (the static property among them), and the two through `AppCodeAudit`.
+  member rule turned off, the five member rows fail (the static property among them), and the two through `AppCodeAudit`; with `newBound` off, the ArrayAccess row fails.
 
 ## Measured on
 - CVE-2025-14383 (booking 10.14.8 → 10.14.9): the two `maybe_unserialize()` lines above, in both releases.
