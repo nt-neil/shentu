@@ -955,7 +955,7 @@ func (WindowsCollector) Web(src Source) Obs[Web] {
 func winWeb(ws WinSource, svcs []WinService, svcErr error) Obs[Web] {
 	root := `C:\Windows`
 	if v, err := ws.RegValues(KeyCurrentVersion); err == nil {
-		if r := strings.TrimRight(regRaw(v, "SystemRoot"), `\`); r != "" {
+		if r := strings.TrimRight(regString(v, "SystemRoot"), `\`); r != "" { // masked: the root is output too (web roots, unread notes)
 			root = r
 		}
 	}
@@ -1002,7 +1002,7 @@ func IISFastCGI(src Source) ([]string, error) {
 	}
 	root := `C:\Windows`
 	if v, err := ws.RegValues(KeyCurrentVersion); err == nil {
-		if r := strings.TrimRight(regRaw(v, "SystemRoot"), `\`); r != "" {
+		if r := strings.TrimRight(regString(v, "SystemRoot"), `\`); r != "" { // masked: the root is output too (web roots, unread notes)
 			root = r
 		}
 	}
