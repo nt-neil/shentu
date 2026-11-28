@@ -160,7 +160,15 @@ Chinese for the zh-TW pages; keep the two in step.
   entries after it, so a backported fix is no longer reported as open.
 - On Windows, log_search masks a field's value on its own before its name and value together: a
   value starting with a program (`CommandLine=mysql -u root -p<secret>`) is masked; masked only as
-  `Name=value`, the `=` before it hid the program.
+  `Name=value`, the `=` before it hid the program. A masked value's marker stays whole after its
+  field's name (`Password=[REDACTED PRIVATE KEY]`, not `[REDACTED] PRIVATE KEY]`).
+- sudo's rule for cloud-init's default user (every command, no password) is a warning, not info,
+  when sshd lets every user log in with a password: PasswordAuthentication yes, or sshd's default
+  on a known distribution, and no Match block in any sshd config file (every file read; an
+  Include with a %-token or ~ counts as maybe one; with no main sshd_config, as with no sshd or
+  openSUSE's /usr/etc/ssh alone, it is not raised). If that user has a password set (cloud-init
+  locks it by default), whoever guesses it is then root at once. The survey's sshd facts say whether a Match block may change a setting (`match`)
+  and which settings a file sets (`set`).
 - On Windows the checks read a service's command line, a registry string and a scheduled task's
   XML as written, not masked first: an unclosed private key marker in a service's path, a home's
   path or a task's description no longer hides an unquoted service path, a startup folder or the
@@ -250,7 +258,9 @@ Chinese for the zh-TW pages; keep the two in step.
   variable of the global scope or declared `global`, a file with `$$name`, `${...}` or `$GLOBALS`,
   or one passed whole to a method, a computed callee, a PHP function that takes it by reference, or
   a function the project does not declare (WordPress's own, but for a few that take it by value) or
-  declares with a parameter by reference.
+  declares with a parameter by reference. An object's property or what a call returned is never
+  taken as an array (`$this->x`, `$o->p`, `self::$x`), nor an index of a variable assigned an object
+  with `new` (ArrayAccess); only a variable of the function or an index of it.
 
 - Rules: a function sink's `[[args]]` can name the argument holding a handle (`handle`, with
   `receiver`): `fwrite($fp, ...)` then counts only when `$fp` was made by one of `receiver`
@@ -276,6 +286,9 @@ Chinese for the zh-TW pages; keep the two in step.
   another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
   `-E cert:<secret>`).
+- The cloud-init sudo warning reads PasswordAuthentication only: it is raised although
+  `AuthenticationMethods publickey` allows keys alone, and not raised when PasswordAuthentication is
+  no but `KbdInteractiveAuthentication yes` with `UsePAM yes` still takes a password.
 - Drupal installed without Composer (no `composer.lock`) has no host check yet for core's installer
   advisories (SA-CORE-2026-017, SA-CORE-2026-019); one installed with Composer is reported by
   app_vulns through OSV, and marked as exploited when CISA's KEV catalog lists it.

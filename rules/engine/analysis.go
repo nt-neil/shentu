@@ -1578,7 +1578,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		}
 		if key != "" {
 			if e, ok := st[key]; ok {
-				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak, arr: e.arr && !a.arrUnsure(t[start].Text)}
+				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak, arr: e.arr && arrPath(key) && !a.arrUnsure(t[start].Text)}
 				byKeys = e.keys && e.taint
 				ext = e.ext && e.taint
 			} else if byKeys && litIdx {

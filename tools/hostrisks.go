@@ -16,7 +16,11 @@ import (
 // default, safe only when that user logs in with keys alone), and rules
 // for some commands only: info. sudoers not read in full is said, never
 // taken for no such rule.
-func sudoRisks(s hostenv.SudoNoPass) []Risk {
+//
+// sshPassword is whether sshd lets every user log in with a password
+// (sshPasswordLogin): "yes" makes cloud-init's rule a warning, the two
+// together; "no" or "unknown" leave it info.
+func sudoRisks(s hostenv.SudoNoPass, sshPassword string) []Risk {
 	var warn, cloud, some []string
 	for _, r := range s.Rules {
 		switch {
@@ -33,7 +37,11 @@ func sudoRisks(s hostenv.SudoNoPass) []Risk {
 		out = append(out, Risk{"sudo:nopasswd", "warning", "sudo runs every command with no password asked, by these rules: " + ruleList(warn) +
 			"; whoever gets into one of these accounts has the run-as account's power at once: require the password, or limit the no-password rules to the commands needed"})
 	}
-	if len(cloud) > 0 {
+	switch {
+	case len(cloud) > 0 && sshPassword == "yes":
+		out = append(out, Risk{"sudo:nopasswd:cloud-init", "warning", "sudo runs every command with no password asked for cloud-init's default user, by these rules: " + ruleList(cloud) +
+			"; and sshd lets every user log in with a password (PasswordAuthentication yes, no Match block): if that user has a password set (cloud-init locks it by default), whoever guesses or reuses it is root at once, no second password asked. Turn PasswordAuthentication off (keys only), or require sudo's password"})
+	case len(cloud) > 0:
 		out = append(out, Risk{"sudo:nopasswd:cloud-init", "info", "sudo runs every command with no password asked for cloud-init's default user, as the cloud image sets it up, by these rules: " + ruleList(cloud) +
 			"; safe only while that user can log in with a key alone, never a password"})
 	}
@@ -118,4 +126,29 @@ func rebootRisks(r hostenv.RebootPending) []Risk {
 		return []Risk{{uncheckedPrefix + "reboot", "info", "cannot tell whether a reboot is pending: " + r.Unread + " could not be read"}}
 	}
 	return nil
+}
+
+// sshPasswordLogin is whether sshd lets every user log in with a password:
+// "yes", "no", or "unknown". Only with no Match block in any file (all
+// read: a Match User may change it for one user) is the global setting
+// every user's; one a file sets is taken as it is, sshd's default only
+// where it is known: OpenSSH's is yes in every version, and no family read
+// here patches it (an unknown distribution: unknown).
+func sshPasswordLogin(c hostenv.SSHConfig, family string) string {
+	if c.Match != "none" {
+		return "unknown"
+	}
+	v := strings.ToLower(c.Settings["passwordauthentication"])
+	switch {
+	case v == "unknown" || v == "":
+		return "unknown"
+	case slices.Contains(c.Set, "passwordauthentication"):
+		if v == "yes" {
+			return "yes"
+		}
+		return "no"
+	case slices.Contains([]string{"debian", "rhel", "suse", "alpine", "arch"}, family) && v == "yes":
+		return "yes"
+	}
+	return "unknown"
 }

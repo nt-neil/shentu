@@ -208,7 +208,7 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 	if slices.Contains(acc.NotRead, "accounts") { // not an empty, clean-looking list (N-180-1)
 		p.Risks = append(p.Risks, Risk{"accounts:unreadable", "info", "cannot tell the login accounts in full: " + Cut(acc.Note, 200)})
 	}
-	p.Risks = append(p.Risks, sudoRisks(hostenv.SudoNopasswd(src))...)
+	p.Risks = append(p.Risks, sudoRisks(hostenv.SudoNopasswd(src), sshPasswordLogin(linux.SSHD(src, sshdConfig).Value, plat.Family))...)
 	p.Risks = append(p.Risks, rebootRisks(hostenv.Reboot(src, plat.Family, plat.Kernel))...)
 	return p
 }

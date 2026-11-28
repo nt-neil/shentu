@@ -234,6 +234,14 @@ type SSHConfig struct {
 	Settings   map[string]string `json:"settings"` // lower-case keys; "unknown" when a file could not be read
 	Unread     []string          `json:"unread,omitempty"`
 	Hash       string            `json:"hash,omitempty"`
+	// Set lists the settings a file sets (lower-case keys); the others
+	// hold sshd's default.
+	Set []string `json:"set,omitempty"`
+	// Match says whether a Match block may change a setting for some user:
+	// "none" (no Match in any file, every file read), "yes", or "unknown"
+	// (a file or folder not read, past the caps, an Include with a %-token
+	// or ~). Linux only; empty elsewhere.
+	Match string `json:"match,omitempty"`
 }
 
 type RDPConfig struct {
