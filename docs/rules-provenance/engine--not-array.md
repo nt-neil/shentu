@@ -53,7 +53,13 @@ Kind: precision
 - Known limits:
   - an array that goes through a WordPress or plugin function not in
     `wp_byvalue.txt` is still reported;
-  - so is an array at a file's top level.
+  - so is an array at a file's top level;
+  - an index of an object is trusted when the object was made some way other
+    than `$o = new ...` (`$o = (new Bag())`, `$o = $p = new Bag()`,
+    `Bag::make()`, `clone`). Only a class that implements ArrayAccess makes
+    that matter (review of #302, S-302-4). The thorough fix, trusting an index
+    only where the base variable was assigned an array in the function, is
+    planned for v0.5.9.
 
 ## Probes
 Product path (`ScanTimed`, then `ScanCallsPart`), `rules/engine/notarray_test.go`:
