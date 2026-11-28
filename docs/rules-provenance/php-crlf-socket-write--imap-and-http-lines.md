@@ -1,5 +1,9 @@
 # php-crlf-socket-write: request input written into a protocol line sent over a socket
 
+**Status: draft, not to be merged yet.** The rule catches no bench case and its
+measured findings are false positives (see Measurement). The merge conditions
+are at the end.
+
 ## Case
 - CVE-2026-126813 (`bench/cves/CVE-2026-126813.toml`): Composer roundcube/roundcubemail 1.6.20 → 1.6.21, a new class, `crlf`.
 - Cited in the rule's `refs`, so it counts as "rule source".
@@ -55,7 +59,8 @@
     handle the code does not show the origin of, is not reported;
   - sanitizers: integer casts and `intval`/`absint`, `ctype_digit`,
     `ctype_alnum`, and encoders that leave no line break (`rawurlencode`,
-    `urlencode`, `base64_encode`, `bin2hex`). An allowlist regular expression
+    `urlencode`, `base64_encode`, `bin2hex`), and `http_build_query` (it
+    encodes the keys and values it is given). An allowlist regular expression
     of letters, digits, `_` and `-` anchored at both ends counts as a check (the
     engine's own reading).
 - Not chosen:
@@ -68,6 +73,12 @@
     passes it. Told to the rule engine lane;
   - input kept in a property by a constructor and read in another method (the
     1.6.22 entry point) is not followed;
+  - `http_build_query` leaves its third argument, the separator, as written: a
+    separator from the request would keep its line break. It counts as a
+    sanitizer of the whole call all the same;
+  - the rule cannot tell a protocol line from a message body: input written
+    only after the blank line (`\r\n\r\n`) that ends an HTTP request's
+    headers is reported though a line break there adds no header;
   - the handle condition's own limits apply (a method's return value, a static
     property set in another method, arrays, `foreach`; `list()` over-reports).
 
@@ -105,4 +116,46 @@ engine's allowlist reading does not take `[0-9:.]` (it reads letters, digits,
 through the application's input helper and reaches `putLine()` through methods
 of objects kept in properties (`$this->storage`, `$this->conn`) across several
 classes, which the engine does not follow. The case is a known gap with that
-reason. The full A/B is below.
+reason.
+
+A/B in a throwaway Linux VM (the lanes' shared method), base integ 32cadce8,
+head 559586fa (this change with `http_build_query` and the cost gate below).
+Every segment valid; host load peaked at 3.9.
+
+| set | result |
+|---|---|
+| E7 (6 corpora, 2 runs a side) | outputs identical (same md5 on all four); wordpress 163.8 / 162.3 s → 167.8 / 168.8 s (+5.3 s, +3.2%), the other corpora the same |
+| holdout | identical line for line |
+| cves-ts | identical line for line |
+| cves | +20 lines: 14 are other rules' existing findings in the new Roundcube case (the base side has no such case), 6 are this rule's (below) |
+
+The rule's findings in the cves set, read one by one:
+
+| case | line | reading |
+|---|---|---|
+| usc-e-shop 2.9.6, 2.9.7 | `classes/paymentSBPS.main.class.php:1323` | false positive: the input is in the body, after `\r\n\r\n` |
+| usc-e-shop 2.9.6, 2.9.7 | `classes/paymentZeus.class.php:6036` | false positive: body only |
+| usc-e-shop 2.9.6, 2.9.7 | `classes/usceshop.class.php:7270` | false positive: body only |
+| CVE-2026-126813 (Roundcube) | — | missed (known gap) |
+
+An earlier head without `http_build_query` also reported
+`classes/paymentEpsilon.class.php:978` in both versions (a body built with
+`http_build_query`); it is gone.
+
+Cost: the first head cost +7.0 s on wordpress (+4.4%). The cost gate (a file
+that names neither `fsockopen` nor `stream_socket_client`, in any case, keeps no
+handle state and no property table) brought it to +5.3 s. What is left is not
+the table of files without a socket; whether it is the rule itself (`fwrite` and
+`fputs` are common) or the table of the files that open a socket was not split
+yet (see the merge conditions).
+
+## Merge conditions
+Merged only when one of these holds, and the false positives do not grow:
+1. the engine follows the case's flow (input helper, methods of objects kept in
+   properties) so that CVE-2026-126813 is caught; or
+2. the engine tells a protocol line from a body (input only after
+   `\r\n\r\n`), so that the three usc-e-shop lines are no longer reported.
+
+When one holds, the formal measurement also runs the same rule without the
+handle condition as a control. If the cost is still above 2%, its cause is
+found before merging.
