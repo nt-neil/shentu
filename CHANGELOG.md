@@ -158,6 +158,12 @@ Chinese for the zh-TW pages; keep the two in step.
 - On Windows, log_search masks a field's value on its own before its name and value together: a
   value starting with a program (`CommandLine=mysql -u root -p<secret>`) is masked; masked only as
   `Name=value`, the `=` before it hid the program.
+- sudo's rule for cloud-init's default user (every command, no password) is a warning, not info,
+  when sshd lets every user log in with a password: PasswordAuthentication yes, or sshd's default
+  on a known distribution, and no Match block in any sshd config file (every file read; an
+  Include with a %-token or ~ counts as maybe one). Whoever guesses that user's password is then
+  root at once. The survey's sshd facts say whether a Match block may change a setting (`match`)
+  and which settings a file sets (`set`).
 - On Windows the checks read a service's command line, a registry string and a scheduled task's
   XML as written, not masked first: an unclosed private key marker in a service's path, a home's
   path or a task's description no longer hides an unquoted service path, a startup folder or the
