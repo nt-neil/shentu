@@ -67,7 +67,7 @@ jobs:
           skip=$(echo "${names}" | awk 'NF' | paste -sd'|' -)
           if [ -n "${skip}" ]; then go test -skip "^(${skip})$" ./tools/; else go test ./tools/; fi
           # The 19 taken off the list (and the login index's ACL), each PASS or SKIP here, in the log (S-278-4).
-          out=$(go test -count=1 -v -run '^(TestApacheH2Risk|TestLoginIndexAnswers|TestPHPReview1Comments|TestPHPReview1ConfLimit|TestPHPReview1HostingLayouts|TestPHPReview1Includes|TestPHPReview1NoVersion|TestPHPReview1OneBranchTwice|TestPHPReview1PoolsByBranch|TestPHPReview1Scope|TestPHPReview1SeveralVersions|TestPHPReview200ConfReadCaps|TestPHPReview200ConfReadCapsRealFiles|TestPHPRisksCGI|TestPHPRisksFPM|TestPHPRisksNotCoveredNote|TestPHPRisksOrigins|TestPHPRisksStatusPage|TestSitePackagesShadowFoldersAbove|TestSitePackagesSystem|TestLoginIndexSaveACL)$' ./tools/ | grep -E '^--- (PASS|SKIP|FAIL)')
+          out=$(go test -count=1 -v -run '^(TestApacheH2Risk|TestLoginIndexAnswers|TestPHPReview1Comments|TestPHPReview1ConfLimit|TestPHPReview1HostingLayouts|TestPHPReview1Includes|TestPHPReview1NoVersion|TestPHPReview1OneBranchTwice|TestPHPReview1PoolsByBranch|TestPHPReview1Scope|TestPHPReview1SeveralVersions|TestPHPReview200ConfReadCaps|TestPHPReview200ConfReadCapsRealFiles|TestPHPRisksCGI|TestPHPRisksFPM|TestPHPRisksNotCoveredNote|TestPHPRisksOrigins|TestPHPRisksStatusPage|TestSitePackagesShadowFoldersAbove|TestSitePackagesSystem|TestLoginIndexSaveACL)$' ./tools/ | grep -E '^--- (PASS|SKIP|FAIL)') || { echo "${out}"; exit 1; }
           echo "${out}"
           n=$(echo "${out}" | wc -l | tr -d ' ')
           [ "${n}" -eq 21 ] || { echo "expected 21 tests listed, got ${n}"; exit 1; } # S-301-2: a name gone or renamed is said

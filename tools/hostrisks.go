@@ -40,7 +40,7 @@ func sudoRisks(s hostenv.SudoNoPass, sshPassword string) []Risk {
 	switch {
 	case len(cloud) > 0 && sshPassword == "yes":
 		out = append(out, Risk{"sudo:nopasswd:cloud-init", "warning", "sudo runs every command with no password asked for cloud-init's default user, by these rules: " + ruleList(cloud) +
-			"; and sshd lets every user log in with a password (PasswordAuthentication yes, no Match block): whoever guesses or reuses that user's password is root at once, no second password asked. Turn PasswordAuthentication off (keys only), or require sudo's password"})
+			"; and sshd lets every user log in with a password (PasswordAuthentication yes, no Match block): if that user has a password set (cloud-init locks it by default), whoever guesses or reuses it is root at once, no second password asked. Turn PasswordAuthentication off (keys only), or require sudo's password"})
 	case len(cloud) > 0:
 		out = append(out, Risk{"sudo:nopasswd:cloud-init", "info", "sudo runs every command with no password asked for cloud-init's default user, as the cloud image sets it up, by these rules: " + ruleList(cloud) +
 			"; safe only while that user can log in with a key alone, never a password"})

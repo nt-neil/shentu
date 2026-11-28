@@ -63,6 +63,9 @@ func TestCloudInitSudoWithSSHPassword(t *testing.T) {
 			"/etc/ssh/sshd_config.d/a.conf": "Port 22\n"}, []string{"/etc/ssh/sshd_config.d/a.conf"}, "debian", "info"},
 		{"an Include with a %-token", map[string]string{"/etc/ssh/sshd_config": "Include /etc/ssh/%h.conf\nPasswordAuthentication yes\n"}, nil, "debian", "info"},
 		{"PasswordAuthentication no", map[string]string{"/etc/ssh/sshd_config": "PasswordAuthentication no\n"}, nil, "debian", "info"},
+		// N-303-1: no main file (no sshd, or openSUSE's /usr/etc only)
+		{"no sshd_config", map[string]string{}, nil, "debian", "info"},
+		{"only /usr/etc's, no", map[string]string{"/usr/etc/ssh/sshd_config": "PasswordAuthentication no\n"}, nil, "suse", "info"},
 	} {
 		sev, pw := risk(t, c.sshd, c.deny, c.family)
 		if sev != c.want {
@@ -73,7 +76,7 @@ func TestCloudInitSudoWithSSHPassword(t *testing.T) {
 	m := memHost{"/etc/sudoers": "@includedir /etc/sudoers.d\n", "/etc/sudoers.d/90-cloud-init-users": cloud,
 		"/etc/cloud/cloud.cfg": "system_info:\n  default_user:\n    name: ubuntu\n"}
 	for _, r := range sudoRisks(hostenv.SudoNopasswd(dirHost{scriptHost{memHost: m}}), "yes") {
-		if r.Key == "sudo:nopasswd:cloud-init" && (!strings.Contains(r.Summary, "PasswordAuthentication yes") || !strings.Contains(r.Summary, "root at once")) {
+		if r.Key == "sudo:nopasswd:cloud-init" && (!strings.Contains(r.Summary, "PasswordAuthentication yes") || !strings.Contains(r.Summary, "root at once") || !strings.Contains(r.Summary, "if that user has a password set")) {
 			t.Errorf("the warning's text: %q", r.Summary)
 		}
 	}

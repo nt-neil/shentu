@@ -543,6 +543,10 @@ func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
 				unknown(p, err)
+			} else if depth == 0 {
+				// No main file: no sshd, or one configured elsewhere
+				// (openSUSE's /usr/etc/ssh): nothing to say of Match (N-303-1).
+				matchUnknown = true
 			}
 			return true
 		}
