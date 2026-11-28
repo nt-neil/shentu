@@ -29,18 +29,23 @@ func realWinFiles(t *testing.T, files map[string]string) {
 	phpWindows = true
 }
 
+// winFiles puts files on a hand-written Windows host (newPHPWinHost).
+func winFiles(h *phpWinHost, files map[string]string) {
+	for p, c := range files {
+		h.file(p, c)
+	}
+}
+
 // N-1: the configuration is read through phpReadLimited with the file cap
 // and what is left of the total, and what was read counts. On 5cba7db
 // each file was read whole (up to 64 MiB) and only files kept counted.
 func TestPHPReview200ConfReadCaps(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip(`realWinFiles names files C:\Apache24\... in a temporary folder, which only Unix takes as a name: on Windows it is the machine's own C:\`)
-	}
+	// S-278-1: through newPHPWinHost, so it runs on Windows too.
 	max := phpApacheMax
 	t.Cleanup(func() { phpApacheMax = max })
 	phpApacheMax = 1 << 20
 	pad := strings.Repeat("# padding padding padding padding padding padding padding\n", 700<<10/58)
-	realWinFiles(t, map[string]string{
+	winFiles(newPHPWinHost(t), map[string]string{
 		`C:\Apache24\conf\httpd.conf`:     "ServerRoot \"C:/Apache24\"\nLoadModule cgi_module modules/mod_cgi.so\nInclude conf/extra/a.conf\nInclude conf/extra/b.conf\n",
 		`C:\Apache24\conf\extra\a.conf`:   pad,
 		`C:\Apache24\conf\extra\b.conf`:   pad + "ScriptAlias /php/ \"C:/php/\"\n",
@@ -62,7 +67,7 @@ func TestPHPReview200ConfReadCaps(t *testing.T) {
 	t.Cleanup(func() { phpConfMax = conf })
 	phpConfMax, phpApacheMax = 400<<10, 1<<20
 	over := strings.Repeat("# padding padding padding padding padding padding padding\n", 500<<10/58)
-	realWinFiles(t, map[string]string{
+	winFiles(newPHPWinHost(t), map[string]string{
 		`C:\Apache24\conf\httpd.conf`:   "ServerRoot \"C:/Apache24\"\nLoadModule cgi_module modules/mod_cgi.so\nInclude conf/extra/a.conf\nInclude conf/extra/b.conf\nInclude conf/extra/c.conf\n",
 		`C:\Apache24\conf\extra\a.conf`: over,
 		`C:\Apache24\conf\extra\b.conf`: over,
@@ -74,8 +79,15 @@ func TestPHPReview200ConfReadCaps(t *testing.T) {
 		t.Errorf("rejected reads not counted: %q %q", exes, un)
 	}
 	phpConfMax, phpApacheMax = conf, max
+}
 
-	// One file over phpConfMax: no more than the cap is read.
+// The real readers (phpReadApache, phpStatWin) on real files: one file over
+// phpConfMax is read no further than the cap. Unix only (realWinFiles).
+func TestPHPReview200ConfReadCapsRealFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip(`realWinFiles names files C:\Apache24\... in a temporary folder, which only Unix takes as a name: on Windows it is the machine's own C:\`)
+	}
+	realWinFiles(t, map[string]string{`C:\php\php-cgi.exe`: "MZ\x00stub\x00"})
 	big := `C:\Apache24\conf\extra\big.conf`
 	if err := os.WriteFile(big, []byte(strings.Repeat("#", int(phpConfMax)+4096)), 0o600); err != nil {
 		t.Fatal(err)
