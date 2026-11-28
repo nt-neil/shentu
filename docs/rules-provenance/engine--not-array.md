@@ -88,6 +88,28 @@ Product path (`ScanTimed`, then `ScanCallsPart`), `rules/engine/notarray_test.go
   that the analysis did not see. Fixed as above.
 - Round 2 at 07d4ce66: B0 N0 S2. Merged as #284.
 
+## Follow-up: object members
+- After #284 merged, a security review of the merge found that the mark
+  reached object members too. `$this->x` or `$o->p` written with an array
+  kept the mark even when a method of the class, or a copy of the object
+  (`$q = $o; $q->p = ...`), had made it a string since. The arrUnsure checks
+  look at the base variable only, and an object is shared, not copied.
+- Probe on the product path, the same fixtures on e0d8f79d (before #284) and
+  on b088eae6:
+  - `$this->x` rewritten by a method: reported before, not after #284;
+  - an object copied, then its property written: reported before, not after;
+  - a method of the object called: reported before, not after.
+  - These are three missed reports that #284 added. Since v0.5.8 was not
+    released, no release had them.
+- Fix: a value read under a key with a member segment (`$this->x`, `$o->p`,
+  `self::$x`) or a call's result (`$o->get()`) keeps no mark. Only a variable of
+  the function, or an index of one (`$a['k']`), does, and still through the
+  checks above. `$this->x` that stays an array is reported again: that is
+  fail closed, accepted by the commander.
+- Tests: `TestNotArrayMembers`, 7 rows on the product path, and
+  `TestAppCodeAuditNotArrayMembers`, 3 rows through `AppCodeAudit`. With the
+  member rule turned off, the five member rows fail (the static property among them), and the two through `AppCodeAudit`.
+
 ## Measured on
 - CVE-2025-14383 (booking 10.14.8 → 10.14.9): the two `maybe_unserialize()` lines above, in both releases.
 

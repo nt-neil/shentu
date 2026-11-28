@@ -49,6 +49,15 @@ func (a *analysis) arrUnsure(name string) bool {
 	return u
 }
 
+// arrPath reports whether a value read under key may keep its arr mark: a
+// variable of the function, or an index of one ($a, $a['k']). A member of an
+// object ($this->x, $o->p) or what a call returned ($o->get()) may not: the
+// object may be shared with another variable or rewritten by a method the
+// analysis does not follow, so its array may be a string by then.
+func arrPath(key string) bool {
+	return !strings.Contains(key, sepCh+".") && !strings.Contains(key, sepCh+"()")
+}
+
 // arrDynamic reports whether the file writes variables by a name it computes
 // or through $GLOBALS: $$k, ${'x'}, $GLOBALS['x'], parse_str($s) with no
 // array to fill (PHP 7 makes variables of it).

@@ -222,3 +222,35 @@ func TestWPByValueList(t *testing.T) {
 		t.Errorf("%d lines, %d functions", n, len(wpByValue))
 	}
 }
+
+// A member of an object, or what a call returned, keeps no arr mark: the
+// object may be shared or rewritten where the analysis does not follow. Only a
+// variable of the function, or an index of it, does.
+func TestNotArrayMembers(t *testing.T) {
+	e := engineForTest(t)
+	const rule = "php-deserialization-wp-maybe-unserialize"
+	ajax := func(body string) string { return "<?php\nadd_action('wp_ajax_x', function () {\n" + body + "\n});\n" }
+	for _, c := range []struct {
+		name, src string
+		want      bool
+	}{
+		{"$this->x rewritten by a method", "<?php\nclass C {\n  function run() {\n    $this->x = [$_POST['a']];\n    $this->setx();\n    maybe_unserialize($this->x);\n  }\n  function setx() {\n    $this->x = $_POST['b'];\n  }\n}\nadd_action('wp_ajax_x', [new C, 'run']);\n", true},
+		{"an object copied, then its property written", ajax("$o = new stdClass();\n$o->p = [$_POST['a']];\n$q = $o;\n$q->p = $_POST['b'];\nmaybe_unserialize($o->p);"), true},
+		{"a method of the object", ajax("$o = new Box();\n$o->p = [$_POST['a']];\n$o->fill();\nmaybe_unserialize($o->p);"), true},
+		{"$this->x an array, nothing else", "<?php\nclass C {\n  function run() {\n    $this->x = [$_POST['a']];\n    maybe_unserialize($this->x);\n  }\n}\nadd_action('wp_ajax_x', [new C, 'run']);\n", true},
+		{"a static property", "<?php\nclass C {\n  static $x;\n  function run() {\n    self::$x = [$_POST['a']];\n    maybe_unserialize(self::$x);\n  }\n}\nadd_action('wp_ajax_x', [new C, 'run']);\n", true},
+		{"an index of a local array", ajax("$a = [];\n$a['k'] = [$_POST['a']];\nmaybe_unserialize($a['k']);"), false},
+		{"a local array", ajax("$a = [$_POST['a']];\nmaybe_unserialize($a);"), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			pr := e.NewProject([]string{"a.php"}, func(string) ([]byte, error) { return []byte(c.src), nil }, ProjectOptions{})
+			got := false
+			for _, f := range taintOnly(auditPath(t, e, pr, "a.php", []byte(c.src))) {
+				got = got || f.RuleID == rule
+			}
+			if got != c.want {
+				t.Errorf("%s reported: %v, want %v", rule, got, c.want)
+			}
+		})
+	}
+}
