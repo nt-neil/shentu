@@ -77,3 +77,23 @@ func TestTaskXMLAsWritten(t *testing.T) {
 		t.Errorf("output not masked: %+v", tk)
 	}
 }
+
+// S-294-1: log_search's text of an event is masked field by field: an
+// unclosed key BEGIN in a field a client sent hides no field after it (a
+// failed logon's source address). WorkstationName, the client's own, is
+// dropped as the other typed names are.
+func TestParseEventTextFieldByField(t *testing.T) {
+	x := `<Event><System><EventID>4625</EventID><Channel>Security</Channel><TimeCreated SystemTime="2026-11-28T01:00:00Z"/></System><EventData>` +
+		`<Data Name="WorkstationName">WS ` + winKeyBegin() + `</Data><Data Name="LogonProcessName">NtLmSsp ` + winKeyBegin() + `</Data>` +
+		`<Data Name="Password">hunter2x9</Data><Data Name="IpAddress">203.0.113.9</Data><Data Name="IpPort">51000</Data></EventData></Event>`
+	got, err := ParseEventText(x)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "IpAddress=203.0.113.9") || !strings.Contains(got, "IpPort=51000") {
+		t.Errorf("fields after a key BEGIN hidden: %q", got)
+	}
+	if strings.Contains(got, "WorkstationName") || strings.Contains(got, "hunter2x9") || strings.Contains(got, winKeyBegin()) {
+		t.Errorf("a typed name or a secret shown: %q", got)
+	}
+}
