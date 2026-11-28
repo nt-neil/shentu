@@ -82,3 +82,36 @@ param = "return"
 # A browser takes \ for / and drops tab and newline in a URL: /\evil, \\evil
 # and /%09/evil leave the forum as //evil does.
 regex = '^[\s\x00-\x1f]*(?:[a-z][a-z0-9+.\t\n\r-]*:)?[\t\n\r]*[/\\][\t\n\r]*[/\\]'
+
+# SA-CORE-2026-017 (CVE-2026-132165, remote code execution) and
+# SA-CORE-2026-019 (CVE-2026-136716, site takeover): Drupal core's installer,
+# exploited on live sites. Advisories: https://www.drupal.org/sa-core-2026-017,
+# https://www.drupal.org/sa-core-2026-019 (affected: <10.6.23, 11.0-11.3.22,
+# 11.4.0-11.4.13, the union of the two). The installer is /core/install.php;
+# /install.php at the root leads to it. A route only (L1): the request
+# reached the installer of an affected Drupal; the installed core is read
+# from the host (SurfaceDrupal), a tarball install's too.
+[[signature]]
+id = "sa-core-2026-017-019-drupal-installer"
+title = "Drupal core's installer reached over HTTP (SA-CORE-2026-017, SA-CORE-2026-019)"
+class = "code"
+cwe = ["CWE-284"]
+cves = ["CVE-2026-132165", "CVE-2026-136716"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "Packagist"
+package = "drupal/core"
+versions = "<10.6.23"
+[[signature.applies_to]]
+ecosystem = "Packagist"
+package = "drupal/core"
+versions = ">=11.0.0, <11.3.23"
+[[signature.applies_to]]
+ecosystem = "Packagist"
+package = "drupal/core"
+versions = ">=11.4.0, <11.4.14"
+[[signature.route]]
+path = "/core/install.php"
+[[signature.route]]
+path_regex = "^/install\\.php$"

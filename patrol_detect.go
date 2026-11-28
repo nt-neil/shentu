@@ -162,10 +162,10 @@ func writeAtomic(p string, b []byte) error {
 
 // buildSurface is the daily round's surface: the code audit's injection
 // sinks, the application dependencies' and the OS packages'
-// vulnerabilities, and the WordPress plugins installed (matched by
-// signatures written for their versions).
-func buildSurface(audit tools.CodeAudit, apps []tools.AppResult, osVulns []detect.PackageVuln, plugins []tools.WPPlugin) detect.Surface {
-	return detect.Build(tools.SurfaceCode(audit.Findings), append(tools.SurfaceApps(apps), osVulns...), tools.SurfacePlugins(plugins)...)
+// vulnerabilities, and the WordPress plugins and Drupal cores installed
+// (matched by signatures written for their versions).
+func buildSurface(audit tools.CodeAudit, apps []tools.AppResult, osVulns []detect.PackageVuln, plugins []tools.WPPlugin, drupal []tools.DrupalCore) detect.Surface {
+	return detect.Build(tools.SurfaceCode(audit.Findings), append(tools.SurfaceApps(apps), osVulns...), append(tools.SurfacePlugins(plugins), tools.SurfaceDrupal(drupal)...)...)
 }
 
 // Seams for tests.
@@ -708,7 +708,8 @@ func saveDailySurface(cfg *Config, env *tools.Env, audit tools.CodeAudit, web []
 	if len(unreadPlugins) > 0 {
 		partial = append(partial, fmt.Sprintf("WordPress 外掛有 %d 處讀不到（見日報）", len(unreadPlugins)))
 	}
-	surface := keepPrevious(cfg.StateDir, buildSurface(audit, apps, osSurface, plugins), failedApps, osFailed)
+	drupal, _ := tools.DrupalSites(web) // what is not read is the survey's to say (drupalRisks)
+	surface := keepPrevious(cfg.StateDir, buildSurface(audit, apps, osSurface, plugins, drupal), failedApps, osFailed)
 	if err := saveSurface(cfg.StateDir, surface, env.AppPaths, partial, now); err != nil {
 		unchecked += fmt.Sprintf(dt(isZh(cfg), "det_nosave"), err.Error())
 	}

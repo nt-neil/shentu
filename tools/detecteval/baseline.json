@@ -8,7 +8,7 @@
   "normal_requests": 1216,
   "normal_distinct": 363,
   "normal_routes": 152,
-  "graded_sha256": "679a716b0a1df66a22909b881a68056cb55ada1c8bf59e04b98d9c5c3c6862f0",
+  "graded_sha256": "4a0e581223a9a5df673f21e0dd2259c37b4858c7f3cda1bca61d3b49143692e3",
   "stats": {
     "nuclei_commit": "5442582a875f96887bfe403c6de562de460897e7",
     "templates_hash": "259cb2836719cc15521784577b2bdc334d1183a141d7ad7f364dc8e7469edb8c",
@@ -1651,6 +1651,6 @@
       "L1": 1209,
       "none": 7
     },
-    "graded_sha256": "679a716b0a1df66a22909b881a68056cb55ada1c8bf59e04b98d9c5c3c6862f0"
+    "graded_sha256": "4a0e581223a9a5df673f21e0dd2259c37b4858c7f3cda1bca61d3b49143692e3"
   }
 }

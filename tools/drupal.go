@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nt-neil/shentu/detect"
 	"github.com/nt-neil/shentu/hostenv"
 )
 
@@ -349,3 +350,17 @@ func apacheBlocks(text string, htaccess bool) bool {
 // drupalSelfCheck is the advisory's check from outside: a block at a CDN
 // or a managed host is not seen on the host.
 const drupalSelfCheck = "Check from outside (a CDN's or a host's block is not seen here): curl -I https://<site>/core/install.php, curl -IL https://<site>/install.php and curl -I https://<site>/core/install.php/foo should each end with 403 or 404"
+
+// SurfaceDrupal is each installation's core as an installed package of the
+// surface (v0.5.9 item 1 e): Packagist's drupal/core, so a signature
+// written for its versions matches a tarball install as well as a Composer
+// one (whose composer.lock app_vulns reads).
+func SurfaceDrupal(sites []DrupalCore) []detect.InstalledPackage {
+	var out []detect.InstalledPackage
+	for _, s := range sites {
+		if s.Version != "" {
+			out = append(out, detect.InstalledPackage{Source: s.Root, Ecosystem: "Packagist", Package: "drupal/core", Version: s.Version})
+		}
+	}
+	return out
+}
