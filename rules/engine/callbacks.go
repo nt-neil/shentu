@@ -297,6 +297,26 @@ func listOpen(t []Token, c int) bool {
 	return false
 }
 
+// iifeCall returns the index of the "(" that calls the function literal t[f]
+// where it is written: ( [static] Func ) ( ..., with any number of parentheses
+// around; 0 when it is not called so.
+func iifeCall(t []Token, f int) int {
+	l, r := f-1, f+1
+	if l >= 0 && t[l].word("static") {
+		l--
+	}
+	if l < 0 || r >= len(t) || !t[l].op("(") || !t[r].op(")") {
+		return 0
+	}
+	for l > 0 && r+1 < len(t) && t[l-1].op("(") && t[r+1].op(")") {
+		l, r = l-1, r+1
+	}
+	if r+1 < len(t) && t[r+1].op("(") && (l == 0 || !(t[l-1].Kind == Ident || t[l-1].Kind == Var || t[l-1].op(")") || t[l-1].op("]"))) {
+		return r + 1
+	}
+	return 0
+}
+
 // pcallSeeds finds, in a PHP statement, a closure called where it is written
 // ((function ($a) { ... })($x): seeded like a closure literal below) and
 // calls of a function whose summary calls one of its parameters
@@ -315,17 +335,22 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 	}
 	var out map[*fn][]*paramSeed
 	for i := 0; i+1 < len(t); i++ {
-		if t[i].op("(") && i+3 < len(t) && t[i+1].Kind == Func && t[i+2].op(")") && t[i+3].op("(") {
-			// (function ($a) use ($b) { ... })($atts): a closure called where it
-			// is written gets each argument in the parameter of its place
-			args := callArgs(t, i+3)
-			seed := func(k int) val {
-				if k < len(args) {
-					return a.expr(st, args[k], false)
+		if t[i].Kind == Func {
+			// (function ($a) use ($b) { ... })($atts), (static function ...)(...),
+			// ((fn ($a) => ...))(...): a closure called where it is written gets
+			// each argument in the parameter of its place. One returned and then
+			// called ((function () { return function ($a) {...}; })()($x)) is not
+			// followed.
+			if c := iifeCall(t, i); c > 0 {
+				args := callArgs(t, c)
+				seed := func(k int) val {
+					if k < len(args) {
+						return a.expr(st, args[k], false)
+					}
+					return val{}
 				}
-				return val{}
+				out = a.passCallable(st, t[i:i+1], funcs, seed, len(args), false, out)
 			}
-			out = a.passCallable(st, t[i+1:i+2], funcs, seed, len(args), false, out)
 			continue
 		}
 		if !t[i+1].op("(") || t[i].Kind != Ident && t[i].Kind != Var {

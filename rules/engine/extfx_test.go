@@ -62,6 +62,14 @@ func TestParseStrScope(t *testing.T) {
 		{"a method of that name", "$o->parse_str($_GET['q']);", false},
 		{"a static method of that name", "Q::parse_str($_GET['q']);", false},
 		{"no input", "parse_str('file=a.php');", false},
+		{"parse_str with @", "@parse_str($_GET['q']);", true},
+		{"parse_str of the global namespace", "\\parse_str($_GET['q']);", true},
+		{"parse_str in capitals", "PARSE_STR($_GET['q']);", true},
+		{"parse_str whose result is assigned", "$r = parse_str($_GET['q']);", true},
+		{"a result array, the result assigned", "$r = parse_str($_GET['q'], $out);", false},
+		{"extract whose result is assigned", "$n = extract($_GET);", true},
+		{"extract with @, \\ and capitals", "@\\EXTRACT($_GET);", true},
+		{"extract whose result is assigned, EXTR_SKIP", "$n = extract($_GET, EXTR_SKIP);", false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			src := []byte("<?php\nfunction f() {\n  $file = 'default.php';\n  " + c.body + "\n  include $file;\n}\n")
@@ -89,6 +97,11 @@ func TestImmediateClosureArgs(t *testing.T) {
 		{"input in the second place, the second parameter included", "(function ($x, $a) {\n  require_once $a;\n})('safe.php', $_GET['f']);", true},
 		{"input in the second place, the first parameter included", "(function ($a, $x) {\n  require_once $a;\n})('safe.php', $_GET['f']);", false},
 		{"no input passed", "(function ($a) {\n  require_once $a;\n})('safe.php');", false},
+		{"a static closure", "(static function ($a) {\n  require_once $a;\n})($_GET['f']);", true},
+		{"more parentheses around", "((function ($a) {\n  require_once $a;\n}))($_GET['f']);", true},
+		{"a static closure, more parentheses around", "((static function ($a) {\n  require_once $a;\n}))($_GET['f']);", true},
+		{"a closure given to a call whose result is called", "wrap(function ($a) {\n  require_once $a;\n})($_GET['f']);", false},
+		{"returned and then called (not followed)", "(function () {\n  return function ($a) {\n    require_once $a;\n  };\n})()($_GET['f']);", false},
 		{"input in a use variable, a constant passed", "$p = $_GET['f'];\n(function ($a) use ($p) {\n  require_once $a;\n})('safe.php');", false},
 	} {
 		t.Run(c.name, func(t *testing.T) {

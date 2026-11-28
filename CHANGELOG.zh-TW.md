@@ -69,8 +69,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - `reference` 規則有幾種寫法判斷不準：指令其實整行寫在程式裡，但拆成幾個中間沒有 `+` 的字串（`os.system('ls ' '-l')`，Python 會自動接成一個），或用 `' '.join()` 接起全是字面值的串列，仍然會報；屬性形式的物件（`h.env.from_string(s)`）只看名稱判斷，就算檔案裡寫了 `h.env = Engine()` 也一樣；`import os as o` 之後的 `o.system(cmd)`，以及換了名稱 import 的函式（`from hashlib import md5 as m` 之後的 `m(x)`），不會報。
 - 在非 Windows 的機器上 replay Windows 主機的記錄時，code audit 的 ASP 檢查、web root 的 ACL 檢查，以及不分大小寫的路徑比對，都還沒有打開，app_vulns 和 app_code_audit 的 path 參數，除非和某個 app path 完全相同，否則會被拒絕（v0.5.9 處理）。
 - route 模型只在註冊它的那個檔案裡找 handler：`elementor/editor/after_save` 的 callback 如果寫在另一個檔案（hook 寫在外掛主檔、函式寫在 include 裡），就不會被當成 handler，那裡的抓取也不會回報。其他 route 模型也有同樣的限制。
-- PHP：寫出來就直接呼叫的 closure（`(function ($atts) use ($path) { ... })($atts)`），現在和一般的 helper 函式一樣，每個引數都會進到同一個位置的參數：從這裡傳進去的輸入到了 sink，或是在 closure 裡被 `extract()`，都會報。以前參數沒有和引數連起來，所以傳進去的值都不算輸入。
-- PHP：沒有帶結果 array 的 `parse_str($q)` 和 `mb_parse_str($q)`（PHP 8 之前會把每個 key 寫成目前範圍的變數），現在照沒有帶 flag 的 `extract()` 處理：之前定義過的變數，之後就算輸入。帶結果 array、同名的 method，或沒有輸入的字串，都不會寫入變數。
+- PHP：寫出來就直接呼叫的 closure（`(function ($atts) use ($path) { ... })($atts)`，也包括 `static function` 和外面多包幾層括號的寫法），現在和一般的 helper 函式一樣，每個引數都會進到同一個位置的參數：從這裡傳進去的輸入到了 sink，或是在 closure 裡被 `extract()`，都會報。以前參數沒有和引數連起來，所以傳進去的值都不算輸入。由另一個 closure 回傳、再拿來呼叫的 closure（`(function () { return function ($a) { ... }; })()($x)`），目前還不會追。
+- PHP：沒有帶結果 array 的 `parse_str($q)` 和 `mb_parse_str($q)`（PHP 8 之前會把每個 key 寫成目前範圍的變數），現在照沒有帶 flag 的 `extract()` 處理：之前定義過的變數，之後就算輸入。帶結果 array、同名的 method，或沒有輸入的字串，都不會寫入變數。這兩個函式和 `extract()` 的名稱不分大小寫，前面有 `@`、`\` 或 `$r =` 也一樣處理。
 ## v0.5.7 — 2026-11-26
 
 - PHP 規則會讀 `filter_input()`。用 `filter_input(INPUT_GET, ...)`、`INPUT_POST` 或 `INPUT_COOKIE` 取得的值，以及應用程式自己同名的方法（`->filterInput(`、`->filter_input(`）在第一個參數是這幾個常數時取得的值，在每一條會讀 `$_GET`、`$_POST` 或 `$_COOKIE` 的 PHP 規則裡都算請求輸入。第一個參數是變數或其他常數（例如 `INPUT_SERVER`）時不算。數字或 bool 的 filter（`FILTER_VALIDATE_INT`、`FILTER_VALIDATE_BOOL`、`FILTER_SANITIZE_NUMBER_INT` 等，寫成具名參數 `filter:` 也一樣）取得的值不帶輸入，但用 `|` 加上 flag 時不算（`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` 是另一個 filter ID，PHP 7 會當成 `FILTER_DEFAULT`）；`FILTER_SANITIZE_SPECIAL_CHARS` 在把 `htmlspecialchars()` 當清理函式的規則裡算清理過；URL 的 filter 不算清理。

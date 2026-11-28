@@ -71,7 +71,7 @@ func (a *analysis) arrDynamic() bool {
 			switch {
 			case t[i].op("$"), t[i].Kind == Var && t[i].Text == "$GLOBALS":
 				d = true
-			case (t[i].word("parse_str") || t[i].word("mb_parse_str")) && i+1 < len(t) && t[i+1].op("("):
+			case (wordFold(t[i], "parse_str") || wordFold(t[i], "mb_parse_str")) && i+1 < len(t) && t[i+1].op("("):
 				d = len(splitTop(inside(t, i+1, closeOf(t, i+1)), isComma)) < 2
 			}
 		}
