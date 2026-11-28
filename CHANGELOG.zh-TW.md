@@ -38,8 +38,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ### 已知問題
 
-- 直接寫在指令參數裡的密碼，下面幾種情況不會遮：密碼全是 JSON 標點（`, : { } [ ]` 和空白）；密碼裡空白之後的部分（command line 是用空白把 argv 接起來的；在 shell 指令行裡加了引號的會整段遮掉）；log 或 shell 的指令紀錄裡，沒有引號的 `;`、`|`、`&` 之後的部分；分成多行寫出的 JSON argv，或前面的字串裡有 `]` 的 JSON argv；以及其他程式的密碼參數（`sshpass -p`、`redis-cli -a`、`ldapsearch -w`、`smbclient -U user%<密碼>`、`mongosh -p`、`htpasswd -b`、curl 的 `--pass` 和 `-E cert:<密碼>`）。
+- 直接寫在指令參數裡的密碼，下面幾種情況不會遮：密碼全是 JSON 標點（`, : { } [ ]` 和空白）；密碼裡空白之後的部分（command line 是用空白把 argv 接起來的；在 shell 指令行裡加了引號的會整段遮掉）；log 或 shell 的指令紀錄裡，沒有引號的 `;`、`|`、`&`、`)` 或反引號之後的部分；分成多行寫出的 JSON argv，或前面的字串裡有 `]` 的 JSON argv；以及其他程式的密碼參數（`sshpass -p`、`redis-cli -a`、`ldapsearch -w`、`smbclient -U user%<密碼>`、`mongosh -p`、`htpasswd -b`、curl 的 `--pass` 和 `-E cert:<密碼>`）。
 - 有些檢查讀進來的文字仍然是先遮過的：指令的輸出（套件、防火牆規則、macOS 的 listener 和帳號）、PHP error log 和 journald 的訊息（L3），以及 Windows 的排程工作、服務路徑、登錄檔的值和 event data。
+- 一般文字裡（log、shell 的指令紀錄、cron），如果 `mysql` 是傳給參數的使用者名稱（`--user mysql -p5432`、`psql -U mysql -p5432`），會被當成程式名稱，後面的 `-p` 也會被遮掉；行程的 command line 是一個參數一個參數判斷的，不會這樣。
 - log_search 比對的是遮過的文字，被遮罩遮住的內容找不到。如果改成比對原文，從每一次有沒有比對到，就能一點一點試出被遮掉的密碼。
 - 錄下來的 fixture 只存遮過的文字，所以用 fixture 重放時，檢查的判斷可能和在主機上直接跑不一樣：例如參數被遮罩遮住的挖礦程式，以及攻擊偵測拿到的 error log 證據可能比較少（error log 或 journald 訊息裡的位置被遮罩遮住時）。
 - 轉址目標的檢查寫在另一個檔案時（例如 Tornado base class 的 `self.sanitize_next_url()`），仍然會回報：app_code_audit 先逐檔讀，跨檔追蹤看到檢查之後，那筆結果也不會拿掉。

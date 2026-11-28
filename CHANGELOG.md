@@ -211,14 +211,17 @@ Chinese for the zh-TW pages; keep the two in step.
 
 - A command's own password is not masked when it is only JSON punctuation (`, : { } [ ]` and
   spaces), past a space in it (a command line joins argv with spaces; quoted in a shell line it is
-  masked whole), past an unquoted `;`, `|` or `&` in a log line or a shell's history, in a JSON
-  argv printed over several lines or after a string holding `]`, or given to another program's
-  option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
+  masked whole), past an unquoted `;`, `|`, `&`, `)` or backtick in a log line or a shell's
+  history, in a JSON argv printed over several lines or after a string holding `]`, or given to
+  another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
   `-E cert:<secret>`).
 - Some checks still read texts masked when read in: commands' output (packages, the firewall's
   rules, macOS's listeners and accounts), PHP error logs and journald's messages (L3), and on
   Windows scheduled tasks, services' paths, registry values and event data.
+- In text (a log line, a shell's history, a cron line), a user's name of `mysql` given to an option
+  (`--user mysql -p5432`, `psql -U mysql -p5432`) is read as the program, and the `-p` after it is
+  masked; a process's command line, judged argument by argument, is not.
 - log_search matches the masked text: what the mask covers cannot be found. A pattern matched
   against the text as written would tell, match by match, what a masked secret is.
 - A recording (a fixture) holds the masked text only, so a check replayed from it can decide
