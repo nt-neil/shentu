@@ -9,6 +9,8 @@ func TestInsideAnyWindows(t *testing.T) {
 	for p, want := range map[string]bool{
 		`C:\inetpub\wwwroot\uploads\a.aspx`: true, `c:\INETPUB\WWWROOT\x`: true,
 		`C:\inetpub\wwwroot-old\x`: false, `D:\inetpub\wwwroot\x`: false,
+		// another volume's spelling of the same place is not inside (S-282-2)
+		`\\?\C:\inetpub\wwwroot\x`: false, `\\fileserver\share\inetpub\wwwroot\x`: false,
 	} {
 		if got := insideAny(p, roots); got != want {
 			t.Errorf("insideAny(%q) = %v, want %v", p, got, want)

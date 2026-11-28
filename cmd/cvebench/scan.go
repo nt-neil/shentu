@@ -44,6 +44,10 @@ type scanResult struct {
 	Time  time.Duration
 }
 
+// newScanner makes the scan of one file for a path that follows calls across
+// files: projectScanner, or a stand-in in a test.
+var newScanner = projectScanner
+
 func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 	var r scanResult
 	start := time.Now()
@@ -86,7 +90,7 @@ func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 		return scanned{found: fs, errs: []error{err}}
 	}
 	if scanPath != pathPerFile {
-		if ps, ok := projectScanner(eng, files, read, scanPath); ok {
+		if ps, ok := newScanner(eng, files, read, scanPath); ok {
 			scanOne = ps
 		}
 	}
