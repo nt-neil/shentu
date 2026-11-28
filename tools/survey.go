@@ -68,6 +68,9 @@ func NotYet(r Risk) bool { return strings.HasPrefix(r.Key, notYetPrefix) }
 
 // SiteProfile is the survey result. It is stored by patrol as the baseline.
 type SiteProfile struct {
+	// Cooling: for a risk key, what else the patrol's cooldown compares
+	// (the rules a risk joins in one): changed, the risk is pushed again.
+	Cooling       map[string]string `json:"-"`
 	Time          time.Time         `json:"time"`
 	OS            string            `json:"os"`
 	Kernel        string            `json:"kernel"`
@@ -208,7 +211,9 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 	if slices.Contains(acc.NotRead, "accounts") { // not an empty, clean-looking list (N-180-1)
 		p.Risks = append(p.Risks, Risk{"accounts:unreadable", "info", "cannot tell the login accounts in full: " + Cut(acc.Note, 200)})
 	}
-	p.Risks = append(p.Risks, sudoRisks(hostenv.SudoNopasswd(src), sshPasswordLogin(linux.SSHD(src, sshdConfig).Value, plat.Family))...)
+	sudo := hostenv.SudoNopasswd(src)
+	p.Risks = append(p.Risks, sudoRisks(sudo, sshPasswordLogin(linux.SSHD(src, sshdConfig).Value, plat.Family))...)
+	p.Cooling = sudoCooling(sudo)
 	p.Risks = append(p.Risks, rebootRisks(hostenv.Reboot(src, plat.Family, plat.Kernel))...)
 	return p
 }
