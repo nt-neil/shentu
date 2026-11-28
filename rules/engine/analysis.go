@@ -195,6 +195,7 @@ type analysis struct {
 	lits    map[string][]Token // values written in the code, kept for argument conditions (context.go)
 	extLits map[string]bool    // a name every value written in the code gives is an extension ('.png'): fixedExtEnd
 	wrote   map[string]bool    // names the file writes some way recordLit does not follow (writtenOtherwise)
+	setsAny *bool              // the file calls extract() or one-argument parse_str() (setsAnyName)
 	arrRef  map[string]bool    // names whose arr mark cannot be believed (arrUnsure)
 	arrDyn  *bool              // the file writes variables by a computed name or through $GLOBALS (arrDynamic)
 	atsDefs map[string][]Token // $r = shortcode_atts(<array>, ...): the array, for extract($r) (context.go)

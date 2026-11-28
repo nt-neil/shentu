@@ -1088,18 +1088,29 @@ func (a *analysis) writtenOtherwise(name string) bool {
 		a.wrote = map[string]bool{}
 	}
 	t := a.ftoks
-	w := false
+	w := a.setsAnyName()
 	for i := 0; i < len(t) && !w; i++ {
-		switch {
-		case wordFold(t[i], "extract") && i+1 < len(t) && t[i+1].op("("), parseStrScope(t, i):
-			w = true
-		case t[i].Text == name && (t[i].Kind == Var || t[i].Kind == Ident) && i > 0:
+		if t[i].Text == name && (t[i].Kind == Var || t[i].Kind == Ident) && i > 0 {
 			p := t[i-1]
 			w = p.op("&") || p.word("as") || (p.op("[") || p.op(",") || p.op("(")) && destructuredAt(t, i)
 		}
 	}
 	a.wrote[name] = w
 	return w
+}
+
+// setsAnyName reports whether the file calls extract() or parse_str() with
+// one argument, which may set any variable: worked out once per file, not
+// once per name (writtenOtherwise).
+func (a *analysis) setsAnyName() bool {
+	if a.setsAny == nil {
+		t, w := a.ftoks, false
+		for i := 0; i < len(t) && !w; i++ {
+			w = wordFold(t[i], "extract") && i+1 < len(t) && t[i+1].op("(") || parseStrScope(t, i)
+		}
+		a.setsAny = &w
+	}
+	return *a.setsAny
 }
 
 // destructuredAt reports whether the name at t[i] is an item of a [...] or
