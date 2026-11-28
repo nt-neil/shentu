@@ -1,6 +1,10 @@
 package detect
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,5 +50,25 @@ func TestL3ParsesErrorLogAsWritten(t *testing.T) {
 	}
 	if !upgraded([]ErrorEvent{e}) {
 		t.Error("journal: no error-log evidence for the sink")
+	}
+}
+
+// S-292-2: the whole path, a pass reading a real error log through Live
+// (ReadLog): the marker before PHP's location still gives the frame and the
+// sink's error-log evidence. A mask added anywhere on the read fails it.
+func TestRunPassErrorLogAsWritten(t *testing.T) {
+	_, d, in := passSetup(t)
+	at := t0.Add(time.Minute + 5*time.Second).Format("02-Jan-2006 15:04:05")
+	write(t, filepath.Join(d, "php.log"), "["+at+" UTC] PHP Warning:  bad input "+pemMarker()+" in /srv/www/app/x.php on line 12\n", os.O_TRUNC)
+	p, err := RunPass(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	due := p.Due()
+	// The error log's evidence names the sink's file and line: the frame
+	// was read and matched.
+	if len(due) != 1 || due[0].Level != LevelSuccess || !strings.Contains(due[0].Success, "錯誤記錄指向這個 sink") || !strings.Contains(due[0].Success, "app/x.php:12") {
+		t.Fatalf("no error-log evidence for the sink: %+v", due)
 	}
 }
