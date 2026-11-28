@@ -169,11 +169,11 @@ func TestScanCountsCutCallsPass(t *testing.T) {
 	writeTree(t, dir, acrossFiles)
 	saved := newScanner
 	defer func() { newScanner = saved }()
-	newScanner = func(*engine.Engine, []string, func(string) ([]byte, error), string) (func(string, []byte) scanned, bool) {
+	newScanner = func(*engine.Engine, []string, func(string) ([]byte, error), string, engine.ProjectOptions) (func(string, []byte) scanned, func() bool, bool) {
 		return productScan(func(string, []byte) ([]engine.Finding, bool, error) { return nil, false, nil },
 			func(rel string, _ []byte) (engine.CallsPart, error) {
 				return engine.CallsPart{Cut: rel == "app/views.py"}, nil
-			}), true
+			}), func() bool { return false }, true
 	}
 	r := scan(testEngine(t), dir, pathProduct)
 	if r.CallsCut != 1 || r.Unfinished != 0 || r.Clock != 0 {

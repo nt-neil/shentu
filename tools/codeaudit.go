@@ -697,6 +697,12 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	notReached := 0              // rule-language files the injection rules had not reached when it did
 	late := 0                    // ... nor before their own time limit
 	var code []string            // rule-language files, scanned once all are known
+	// For the rules' receivers (N-284-2): the Composer packages under vendor/,
+	// which is not read, and whether a file of a rule language was left out
+	// (a skipped folder, too deep or too big, unread, over the file cap, or
+	// the walk cut short): then no project-wide "never named" holds.
+	var pkgs []string
+	incomplete := false
 	seen := map[string]hostenv.FileStat{}
 	src := hostSource()         // the host read (a replay, another host's survey), not the machine running the audit
 	hash := map[string]string{} // content of the rule-language files, for the results kept between audits
@@ -793,6 +799,12 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
 			}
 			if skipDirs[name] || depth(p, hp.Sep)-base > auditMaxDepth {
+				if name == "vendor" && depth(p, hp.Sep)-base <= auditMaxDepth {
+					got, ok := vendorPackages(src, p, hp.Sep)
+					pkgs, incomplete = append(pkgs, got...), incomplete || !ok
+				} else {
+					incomplete = true
+				}
 				return filepath.SkipDir
 			}
 			return nil
@@ -803,6 +815,17 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			// quiet gap; a link is not followed by design
 			if st.Mode&fs.ModeSymlink == 0 && auditable(name) {
 				notRegular.add(p)
+				incomplete = incomplete || engine.LangOf(name) != ""
+			}
+			return nil
+		}
+		if name == "composer.lock" {
+			// the packages installed, for the rules' receivers; read whole or not at all
+			if b, ok := readAt(src, p, auditMaxSize, st); ok && eng != nil && len(b) > 0 {
+				code = append(code, p)
+				seen[p] = st
+			} else {
+				incomplete = true
 			}
 			return nil
 		}
@@ -830,7 +853,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			return nil
 		}
 		if res.Files >= auditMaxFiles {
-			res.Truncated = true
+			res.Truncated, incomplete = true, true
 			return filepath.SkipAll
 		}
 		b, ok := readAt(src, p, auditMaxSize, st)
@@ -840,6 +863,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			if lang != "" && eng != nil && st.Size > auditMaxSize {
 				partial = append(partial, UnfinishedFile{p, "size", ""})
 			}
+			incomplete = incomplete || lang != ""
 			return nil
 		}
 		res.Files++
@@ -866,6 +890,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	} else {
 		saveWalkPos(posFile, cut)
 	}
+	incomplete = incomplete || cut != nil // the round did not reach every file
 	if eng != nil && len(code) > 0 {
 		// Read again the way the walk did (no symlinks, regular files under the
 		// size cap), and only the file the walk saw: one swapped since is skipped.
@@ -992,7 +1017,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		slowRules, slowFiles := 0, 0
 		if left := time.Until(deadline); left > 0 && ctx.Err() == nil {
 			pr := eng.NewProject(code, read, engine.ProjectOptions{CacheFile: codeIndexFile(), MaxTime: left,
-				MaxHeap: budget.heap, MaxTokens: budget.projectTokens()})
+				MaxHeap: budget.heap, MaxTokens: budget.projectTokens(), Packages: pkgs, Incomplete: incomplete})
 			st.useDigests(pr, []string{"php", "python", "js"})
 			order := make([]string, 0, len(files))
 			var retry []string
@@ -1272,6 +1297,33 @@ func lineAt(b []byte, off int) int { return bytes.Count(b[:off], []byte("\n")) +
 func auditable(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
 	return auditExt[ext] || auditExt[name] || strings.HasPrefix(name, ".env") || name == "settings.py" || engine.LangOf(name) != "" || aspPage(name)
+}
+
+// vendorPackages lists the Composer packages under a vendor/ folder without
+// reading them: vendor/<vendor>/<package>, lower case (composer/ is
+// Composer's own). ok is false when a folder could not be listed.
+func vendorPackages(src hostenv.Source, dir, sep string) ([]string, bool) {
+	vs, err := src.ReadDir(dir)
+	if err != nil {
+		return nil, false
+	}
+	var out []string
+	for _, v := range vs {
+		if v == "composer" || v == "bin" || strings.HasPrefix(v, ".") {
+			continue
+		}
+		ps, err := src.ReadDir(dir + sep + v)
+		if err != nil {
+			// a file (autoload.php), or a vendor folder not listed: its name
+			// still counts (mongodb/*)
+			out = append(out, strings.ToLower(v+"/*"))
+			continue
+		}
+		for _, p := range ps {
+			out = append(out, strings.ToLower(v+"/"+p))
+		}
+	}
+	return out, true
 }
 
 // notRegularCount counts files skipped as no regular file (a FIFO, a

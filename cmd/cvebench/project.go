@@ -66,28 +66,34 @@ type scanned struct {
 // across the release's files when the engine can (Engine.NewProject); ok is
 // false for an engine that only scans file by file. Methods are looked up by
 // name, like the library mode, so that cvebench builds against either engine.
-func projectScanner(eng *engine.Engine, files []string, read func(string) ([]byte, error), path string) (func(string, []byte) scanned, bool) {
+func projectScanner(eng *engine.Engine, files []string, read func(string) ([]byte, error), path string, opts engine.ProjectOptions) (func(string, []byte) scanned, func() bool, bool) {
 	m := reflect.ValueOf(eng).MethodByName("NewProject")
-	if !m.IsValid() || m.Type().NumIn() != 3 || m.Type().In(2) != reflect.TypeOf(projectOptions) {
-		return nil, false
+	if !m.IsValid() || m.Type().NumIn() != 3 || m.Type().In(2) != reflect.TypeOf(opts) {
+		return nil, nil, false
 	}
-	proj := m.Call([]reflect.Value{reflect.ValueOf(files), reflect.ValueOf(read), reflect.ValueOf(projectOptions)})[0]
+	proj := m.Call([]reflect.Value{reflect.ValueOf(files), reflect.ValueOf(read), reflect.ValueOf(opts)})[0]
+	// namesIncomplete: whether the receivers kept every method sink (an engine
+	// without Project.NamesComplete has no receivers)
+	namesIncomplete := func() bool {
+		nc := proj.MethodByName("NamesComplete")
+		return nc.IsValid() && !nc.Call(nil)[0].Bool()
+	}
 	if path == pathProject {
 		scan := proj.MethodByName("Scan")
 		if !scan.IsValid() {
-			return nil, false
+			return nil, nil, false
 		}
 		return func(rel string, src []byte) scanned {
 			out := scan.Call([]reflect.Value{reflect.ValueOf(rel), reflect.ValueOf(src)})
 			fs, _ := out[0].Interface().([]engine.Finding)
 			err, _ := out[1].Interface().(error)
 			return scanned{found: fs, errs: []error{err}}
-		}, true
+		}, namesIncomplete, true
 	}
 	own := reflect.ValueOf(eng).MethodByName("ScanTimed")
 	calls := proj.MethodByName("ScanCallsPart")
 	if !own.IsValid() || !calls.IsValid() {
-		return nil, false
+		return nil, nil, false
 	}
 	noSkip := reflect.Zero(calls.Type().In(2)) // every rule in this pass
 	return productScan(func(rel string, src []byte) ([]engine.Finding, bool, error) {
@@ -100,7 +106,7 @@ func projectScanner(eng *engine.Engine, files []string, read func(string) ([]byt
 		part, _ := c[0].Interface().(engine.CallsPart)
 		err, _ := c[1].Interface().(error)
 		return part, err
-	}), true
+	}), namesIncomplete, true
 }
 
 // productScan is the product path's scan of one file: own is the file on its

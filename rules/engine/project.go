@@ -75,8 +75,13 @@ type Project struct {
 	nestjs               bool                       // some JavaScript file imports NestJS (reqalias.go nestFile)
 	koa                  bool                       // some JavaScript file imports Koa (reqalias.go koaFile)
 	laravel              bool                       // some PHP file uses a class of Illuminate (callbacks.go laravelRequest)
-	routeTo              map[string][]routeTarget   // file → its functions other files register as handlers (routes.go)
-	stack                []*sumFrame                // summaries being worked out, the first asked first (sumstack.go)
+	named                map[string]bool            // receivers names some PHP file names (fileIndex.Named)
+	pkgs                 map[string]bool            // Composer packages composer.json or composer.lock requires, or a vendor/ path holds (lower case)
+	gap                  bool                       // some file was not indexed to its end (unreadable, too big, the file or time limit)
+	methodsOnce          sync.Once
+	methods              map[string]bool          // methods the project's classes declare (lower case): ownMethodOnly
+	routeTo              map[string][]routeTarget // file → its functions other files register as handlers (routes.go)
+	stack                []*sumFrame              // summaries being worked out, the first asked first (sumstack.go)
 	held                 map[*summaries]map[string]heldSum
 	unsure               bool   // the last resolution met a name it could not pin to one file
 	ambig                string // ... a PHP function declared in several files
@@ -97,6 +102,13 @@ type ProjectOptions struct {
 	MaxHeap   uint64        // heap in use past which calls stop crossing files (default 1 GiB)
 	MaxWork   int           // work of following calls across files, all files' calls passes together (default DefaultProjectWork): checked before each file, past it calls stop crossing files (CutProjectWork)
 	MaxTime   time.Duration // a safety net for indexing and following calls (default 15 minutes), well past what MaxWork takes on an ordinary machine (CutClock)
+	// Packages: Composer packages the caller found installed and did not
+	// pass (vendor/<vendor>/<package>, lower case), for the rules' receivers.
+	Packages []string
+	// Incomplete: the caller left out files of the rules' languages (a folder
+	// it skips, a file too big or not read, its own caps): the project then
+	// holds no "never named" for the rules' receivers (Project.ownMethodOnly).
+	Incomplete bool
 }
 
 // DefaultProjectWork is ProjectOptions.MaxWork's default. Every project of E7
@@ -109,7 +121,8 @@ const DefaultProjectWork = 1_500_000_000
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
 // 10: Limited means the work cap or the token limit, no longer the 3-second
 // clock, so a file an old cache did not mark may now be cut.
-const indexVersion = "10"
+// 11: Named (receivers) and RefFuncs (not_array).
+const indexVersion = "11"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -125,6 +138,8 @@ type fileIndex struct {
 	Empty     []string          `json:"e,omitempty"`  // top-level functions with an empty body (stubs: noop.php)
 	Guarded   []string          `json:"g,omitempty"`  // PHP: "f:name" / "c:name" (lower case) declared under if (!function_exists / !class_exists)
 	Laravel   bool              `json:"lv,omitempty"` // PHP: names Illuminate (any case, any use form: use Illuminate\{...}, \Illuminate\...)
+	Named     []string          `json:"rn,omitempty"` // PHP: the rules' receivers names the file names (recvNamed), lower case
+	RefFuncs  []string          `json:"rf,omitempty"` // PHP: top-level functions with a parameter by reference, lower case (mayTakeRef)
 	Routes    []routeRef        `json:"rt,omitempty"` // registrations naming a handler, maybe in another file (routes.go)
 	Sinks     []string          `json:"s,omitempty"`  // rules some sink of which the file may hold (sinkNames): one no file holds finds nothing across files
 }
@@ -177,8 +192,11 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
 		ctx: map[string]*fileCtx{}, sums: map[ruleFile]*summaries{}, kept: map[ruleFile]*keptSums{}, costs: map[[2]string]int{}, seen: map[string]bool{},
-		incl: map[string][]string{}, fnMemo: map[[2]string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{}, sinkRules: map[string]bool{},
-		deadline: time.Now().Add(opt.MaxTime)}
+		incl: map[string][]string{}, fnMemo: map[[2]string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{}, sinkRules: map[string]bool{}, named: map[string]bool{}, pkgs: map[string]bool{},
+		deadline: time.Now().Add(opt.MaxTime), gap: opt.Incomplete}
+	for _, k := range opt.Packages {
+		p.pkgs[strings.ToLower(k)] = true
+	}
 	key := e.indexKey()
 	cache := loadIndexCache(opt.CacheFile, key)
 	fresh := map[string]*fileIndex{}
@@ -186,25 +204,30 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	for _, f := range paths {
 		full := LangOf(f) // jsx, ts and tsx lex on their own and index as js
 		lang := baseLang(full)
+		p.vendorPkg(f)
 		if lang == "" {
-			if path.Base(filepath.ToSlash(f)) == "composer.json" {
+			if base := path.Base(filepath.ToSlash(f)); base == "composer.json" || base == "composer.lock" {
 				if b, err := read(f); err == nil {
 					p.readComposer(f, b)
+				} else {
+					p.gap = true
 				}
 			}
 			continue
 		}
 		if n++; n > opt.MaxFiles {
 			p.stop("the project has more than the file limit", 0)
+			p.gap = true
 			break
 		}
 		if time.Now().After(p.deadline) {
 			p.stop("indexing ran out of time", CutClock)
-			p.byMachine = true
+			p.byMachine, p.gap = true, true
 			break
 		}
 		b, err := read(f)
 		if err != nil {
+			p.gap = true
 			continue
 		}
 		sum := sha256.Sum256(b)
@@ -310,6 +333,10 @@ func (p *Project) IndexDigest(lang string) string {
 		for _, x := range ps {
 			h.Write([]byte(x))
 		}
+		for _, k := range slices.Sorted(maps.Keys(p.pkgs)) {
+			fmt.Fprintf(h, "pkg %q\n", k) // ownMethodOnly
+		}
+		fmt.Fprintf(h, "gap %v\n", p.gap)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -318,6 +345,12 @@ func (p *Project) IndexDigest(lang string) string {
 // or changed since it was indexed) or parse in time: its result holds for
 // this audit but is not one to keep for the next.
 func (p *Project) Unsteady() bool { return p.unsteady }
+
+// NamesComplete reports whether the project knows every name its code and
+// packages give, so a rule's receivers may find a method its own (no gap, no
+// file unread, not stopped; see ownMethodOnly). cvebench counts the cases
+// where it is false.
+func (p *Project) NamesComplete() bool { return !p.gap && p.stopped == "" && len(p.unread) == 0 }
 
 // Stopped tells why calls stopped crossing files, or "" when they did not.
 func (p *Project) Stopped() string { return p.stopped }
@@ -335,6 +368,12 @@ func (p *Project) add(f string, fi *fileIndex) {
 		p.koa = p.koa || baseLang(fi.Lang) == "js" && slices.Contains(koaModules, m.Module)
 	}
 	p.laravel = p.laravel || baseLang(fi.Lang) == "php" && fi.Laravel
+	for _, n := range fi.Named {
+		p.named[n] = true
+	}
+	if fi.Limited {
+		p.gap = true // not read to its end: what it names is not known
+	}
 	s := path.Clean(filepath.ToSlash(f))
 	p.byClean[s] = f
 	for {
@@ -396,8 +435,28 @@ func (p *Project) readComposer(f string, b []byte) {
 		Autoload struct {
 			PSR4 map[string]any `json:"psr-4"`
 		} `json:"autoload"`
+		Require    map[string]any `json:"require"`
+		RequireDev map[string]any `json:"require-dev"`
+		Packages   []struct {
+			Name string `json:"name"`
+		} `json:"packages"`
+		PackagesDev []struct {
+			Name string `json:"name"`
+		} `json:"packages-dev"`
 	}
 	if json.Unmarshal(b, &c) != nil {
+		p.gap = true // what it requires is not known
+		return
+	}
+	for _, m := range []map[string]any{c.Require, c.RequireDev} {
+		for k := range m {
+			p.pkgs[strings.ToLower(k)] = true
+		}
+	}
+	for _, x := range append(c.Packages, c.PackagesDev...) {
+		p.pkgs[strings.ToLower(x.Name)] = true // composer.lock
+	}
+	if path.Base(filepath.ToSlash(f)) != "composer.json" {
 		return
 	}
 	dir := path.Dir(filepath.ToSlash(f))
@@ -467,6 +526,9 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 			if x.f.class == "" {
 				if !x.f.method && !x.local {
 					fi.Funcs = append(fi.Funcs, name)
+					if lang == "php" && slices.ContainsFunc(x.f.params, func(t Token) bool { return t.op("&") }) {
+						fi.RefFuncs = append(fi.RefFuncs, strings.ToLower(name))
+					}
 					if stubBody(x.f.body) && x.f.name != "" && len(infos) == 1 {
 						fi.Empty = append(fi.Empty, name)
 					}
@@ -483,6 +545,7 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 		}
 	}
 	sort.Strings(fi.Funcs)
+	fi.RefFuncs = slices.Compact(slices.Sorted(slices.Values(fi.RefFuncs)))
 	sort.Strings(fi.Empty)
 	sort.Strings(order)
 	for _, n := range order {
@@ -492,6 +555,7 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 	switch lang {
 	case "php":
 		indexPHP(toks, fi)
+		fi.Named = recvNamed(e, toks)
 		fi.Guarded = guardedDecls(tree)
 		fi.Routes = e.routeRefs(lang, tree)
 	case "python":
@@ -1547,7 +1611,7 @@ func (e *Engine) indexKey() string {
 	enc.Encode(e.Limits)
 	for _, lang := range slices.Sorted(maps.Keys(e.byLang)) {
 		for _, r := range e.byLang[lang] {
-			enc.Encode([]any{r.rule.ID, r.rule.Sinks, r.rule.Text}) // fileIndex.Sinks
+			enc.Encode([]any{r.rule.ID, r.rule.Sinks, r.rule.Text, r.rule.Receivers}) // fileIndex.Sinks, fileIndex.Named
 		}
 	}
 	for _, lang := range slices.Sorted(maps.Keys(e.routes)) {

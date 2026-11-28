@@ -225,6 +225,26 @@ Chinese for the zh-TW pages; keep the two in step.
 - bench: the baselines are rerun on the product scan path (`baseline.md` for cves, and now
   `baseline-holdout.md`, `baseline-cves-ts.md`); the one before was the first run, on 59 cases,
   scanned file by file.
+- `php-nosqli-mongo-query` and the CodeIgniter, Doctrine, Drupal, Joomla and Yii SQL rules: a
+  method sink (`$Db->find(...)`, `->where(...)`) reached from another file is not reported when the
+  project's own classes declare a method of that name and nothing app_code_audit reads names the
+  library: not its PHP code, a string in it, composer.json, composer.lock, nor the name of a package
+  under vendor/ (whose files it does not read). The call is the project's own (a WordPress plugin's
+  SQL helper). Before, a method of that name counted on any object. It stays reported when anything
+  names the library, when no class of the project declares the method, and whenever app_code_audit
+  left a file out: a folder it skips (node_modules/, .git/), one more than 8 levels deep, a
+  rule-language file over 1 MiB or not readable, more than 20,000 files, or a walk cut short. A call
+  found in the file it is written in is reported as before.
+- `php-deserialization-wp-maybe-unserialize`: an argument that is an array on every path is not
+  reported (`maybe_unserialize(array('fields' => $_POST['f']))`, an array written by key, `explode()`),
+  also when a function of the code's own passes its parameter on as is: `maybe_unserialize()`
+  unserializes strings only and returns an array as is. Before, the input in the array counted. One
+  value of the array, a string made from it, and a path where the input arrives as a string are
+  still reported, and so is an array the code may write some way the engine does not follow: a
+  variable of the global scope or declared `global`, a file with `$$name`, `${...}` or `$GLOBALS`,
+  or one passed whole to a method, a computed callee, a PHP function that takes it by reference, or
+  a function the project does not declare (WordPress's own, but for a few that take it by value) or
+  declares with a parameter by reference.
 
 - Rules: a function sink's `[[args]]` can name the argument holding a handle (`handle`, with
   `receiver`): `fwrite($fp, ...)` then counts only when `$fp` was made by one of `receiver`

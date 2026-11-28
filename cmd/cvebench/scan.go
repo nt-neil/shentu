@@ -42,6 +42,10 @@ type scanResult struct {
 	// depend on how busy the machine was.
 	Clock int
 	Time  time.Duration
+	// NamesIncomplete: the project did not know every name the release gives
+	// (a folder skipped, a file too deep or too big, one not read), so the
+	// rules' receivers keep every method sink (Project.NamesComplete).
+	NamesIncomplete bool
 }
 
 // newScanner makes the scan of one file for a path that follows calls across
@@ -52,14 +56,25 @@ func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 	var r scanResult
 	start := time.Now()
 	var files []string // relative paths, "/"-separated
+	// As app_code_audit gives the project (receivers): the package names under
+	// vendor/, which is not read, and whether a file of a rule language was left
+	// out (a skipped folder, deeper than the audit goes, too big, not read).
+	opts := projectOptions
 	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			opts.Incomplete = true
 			return nil
 		}
 		rel, _ := filepath.Rel(root, p)
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
 			if rel != "." && skipped(rel) {
+				if path.Base(rel) == "vendor" {
+					pkgs, ok := vendorPackages(p)
+					opts.Packages, opts.Incomplete = append(opts.Packages, pkgs...), opts.Incomplete || !ok
+				} else {
+					opts.Incomplete = true
+				}
 				return filepath.SkipDir
 			}
 			return nil
@@ -67,9 +82,11 @@ func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		if path.Base(rel) == "composer.json" {
+		if b := path.Base(rel); b == "composer.json" || b == "composer.lock" {
 			if info, err := d.Info(); err == nil && info.Size() <= maxScanFile {
-				files = append(files, rel) // PSR-4 autoload, for the engine's project index
+				files = append(files, rel) // PSR-4 autoload and the packages, for the engine's project index
+			} else {
+				opts.Incomplete = true
 			}
 			return nil
 		}
@@ -77,8 +94,12 @@ func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 			return nil
 		}
 		r.Files++
+		if strings.Count(rel, "/") > auditDepth {
+			opts.Incomplete = true // app_code_audit does not go this deep
+		}
 		if info, err := d.Info(); err != nil || info.Size() > maxScanFile {
 			r.Unfinished++
+			opts.Incomplete = true
 			return nil
 		}
 		files = append(files, rel)
@@ -89,9 +110,10 @@ func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 		fs, err := eng.ScanFile(rel, src)
 		return scanned{found: fs, errs: []error{err}}
 	}
+	namesIncomplete := func() bool { return false }
 	if scanPath != pathPerFile {
-		if ps, ok := newScanner(eng, files, read, scanPath); ok {
-			scanOne = ps
+		if ps, ni, ok := newScanner(eng, files, read, scanPath, opts); ok {
+			scanOne, namesIncomplete = ps, ni
 		}
 	}
 	seen := map[string]bool{} // a finding once per release, whichever file's scan found it
@@ -132,8 +154,38 @@ func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 			}
 		}
 	}
+	r.NamesIncomplete = namesIncomplete()
 	r.Time = time.Since(start)
 	return r
+}
+
+// auditDepth is how many folders deep app_code_audit goes (tools auditMaxDepth).
+const auditDepth = 8
+
+// vendorPackages lists the Composer packages under a vendor/ folder as
+// app_code_audit does, without reading them: vendor/<vendor>/<package>, lower
+// case; a vendor folder not listed counts by its name (mongodb/*).
+func vendorPackages(dir string) ([]string, bool) {
+	vs, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, false
+	}
+	var out []string
+	for _, v := range vs {
+		n := v.Name()
+		if n == "composer" || n == "bin" || strings.HasPrefix(n, ".") {
+			continue
+		}
+		ps, err := os.ReadDir(filepath.Join(dir, n))
+		if err != nil {
+			out = append(out, strings.ToLower(n+"/*"))
+			continue
+		}
+		for _, p := range ps {
+			out = append(out, strings.ToLower(n+"/"+p.Name()))
+		}
+	}
+	return out, true
 }
 
 // window is how many lines around a changed range still count as the place of the fix.
