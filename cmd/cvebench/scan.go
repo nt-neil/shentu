@@ -44,7 +44,7 @@ type scanResult struct {
 	Time  time.Duration
 	// NamesIncomplete: the project did not know every name the release gives
 	// (a folder skipped, a file too deep or too big, one not read), so the
-	// rules' receivers keep every method sink (Project.NamesComplete).
+	// PHP rules' receivers keep every method sink (Project.NamesCompleteFor).
 	NamesIncomplete bool
 }
 
@@ -99,7 +99,7 @@ func scan(eng *engine.Engine, root string, scanPath string) scanResult {
 		}
 		if info, err := d.Info(); err != nil || info.Size() > maxScanFile {
 			r.Unfinished++
-			opts.Incomplete = true
+			opts.IncompleteLangs = append(opts.IncompleteLangs, engine.LangOf(rel)) // that language's rules only
 			return nil
 		}
 		files = append(files, rel)

@@ -86,6 +86,10 @@ Chinese for the zh-TW pages; keep the two in step.
   a CVE entry of Debian's or Ubuntu's tracker, are unconfirmed: the overview does not fetch each
   advisory to tell, and `fix_note` says that unconfirmed is not "no fix". Until now the count
   mixed them; `package` set still gives each one's `fixed_version`, without the counts.
+- The patrol's cooldown of `sudo:nopasswd` compares its rules too, every one (not only the three
+  its text shows): when a no-password rule is added or removed while the risk is already reported,
+  it is pushed again within the cooldown; the same rules stay quiet as before. After upgrading, the first patrol
+  pushes a `sudo:nopasswd` already reported once more (its cooldown is kept under a new key).
 - site_profile on Linux and macOS says two more risks. `sudo:nopasswd` (a warning): sudoers lets
   someone run every command with no password: `ALL` anywhere among the commands a NOPASSWD tag
   covers (it holds up to a PASSWD tag), a command alias that is ALL or cannot be told, a command
@@ -130,6 +134,10 @@ Chinese for the zh-TW pages; keep the two in step.
   is no longer masked to `[REDACTED]`. A secret in a command's arguments or a run-as list,
   written as `key=value` or in one of the forms below, is masked in the text itself, so the
   survey's own output (onboard, the saved profile) does not hold it either.
+- `hostfacts -record` records what site_profile reads of the host as well as the facts:
+  cloud-init's configuration (whose default user's sudo rule is told apart), the web servers'
+  package queries, `/run/reboot-required`, Docker's and Podman's sockets. A replay of the
+  recording no longer loses `sudo:nopasswd:cloud-init`.
 - The secret masking (fixtures, logs, what the model is given, Windows checks' command lines)
   now also masks a password given as a command's own argument: `-p<secret>` after a program of
   the mysql family (`mysql`, `mysqldump`, `mysqlcheck`, `mysqladmin`, `mysqlbinlog` and the
@@ -154,7 +162,11 @@ Chinese for the zh-TW pages; keep the two in step.
 - Attack detection reads PHP's error logs and journald's messages as written, not masked first:
   a request's text echoed before PHP's location (an unclosed private key marker) no longer takes
   the location with it, so the sink keeps its error-log evidence. The events keep only times and
-  locations, and nothing from them is output.
+  locations, and nothing from them is output. That evidence counts only from a source the web
+  account cannot write: a journald message from a unit's root process while the application
+  cannot run as root. An error log file (nginx's, Apache's, PHP-FPM's) and PHP's own messages,
+  which FPM's workers write (to a file, syslog or stdout), never count: on a PHP-FPM host a
+  request does not reach L3 by them.
 - rpm's changelog, searched for a CVE's fix backported by the package (nginx, PHP, a bundled
   library), is read as written: an unclosed private key marker in an entry no longer hides the
   entries after it, so a backported fix is no longer reported as open.
@@ -246,9 +258,10 @@ Chinese for the zh-TW pages; keep the two in step.
   under vendor/ (whose files it does not read). The call is the project's own (a WordPress plugin's
   SQL helper). Before, a method of that name counted on any object. It stays reported when anything
   names the library, when no class of the project declares the method, and whenever app_code_audit
-  left a file out: a folder it skips (node_modules/, .git/), one more than 8 levels deep, a
-  rule-language file over 1 MiB or not readable, more than 20,000 files, or a walk cut short. A call
-  found in the file it is written in is reported as before.
+  left a file out: a folder it skips (node_modules/, .git/), one more than 8 levels deep, a PHP
+  file over 1 MiB or not readable (a script or another language's file left out does not count),
+  more than 20,000 files, a walk cut short, or composer.json, composer.lock or vendor/ not read. A
+  call found in the file it is written in is reported as before.
 - `php-deserialization-wp-maybe-unserialize`: an argument that is an array on every path is not
   reported (`maybe_unserialize(array('fields' => $_POST['f']))`, an array written by key, `explode()`),
   also when a function of the code's own passes its parameter on as is: `maybe_unserialize()`
@@ -262,6 +275,11 @@ Chinese for the zh-TW pages; keep the two in step.
   taken as an array (`$this->x`, `$o->p`, `self::$x`), nor an index of a variable assigned an object
   with `new` (ArrayAccess); only a variable of the function or an index of it.
 
+- Rule patterns: a sanitizer, source or sink written as a call that holds an unclosed inner call
+  (`str_replace(array("\r", "\n"`) matches the whole outer call, as the `[...]` form does. Before,
+  it covered only the inner `array(...)`, so such a sanitizer cleaned nothing. No rule shipped uses
+  one; `php-nosqli-mongo-query`'s `json_decode(file_get_contents('php://input'` source now spans the
+  whole `json_decode(...)` and reports as before.
 - Rules: a function sink's `[[args]]` can name the argument holding a handle (`handle`, with
   `receiver`): `fwrite($fp, ...)` then counts only when `$fp` was made by one of `receiver`
   (`fsockopen()` say): in place, by the nearest assignment before the call in the same function, or,
@@ -272,6 +290,16 @@ Chinese for the zh-TW pages; keep the two in step.
   `handle-table`). Nothing is kept unless a rule uses it, and no shipped rule uses it yet.
 ### Known issues
 
+- A recording (`hostfacts -record`) holds what the facts and site_profile read through the host
+  source. What a check reads of the machine directly is not in it: certbot's certificates
+  (cert_expiry), Docker's and containerd's image stores. A test holds the list of such reads in
+  tools and checks, line by line, so a new one is told; hostenv (the host source itself) and attack
+  detection are not scanned. Only Linux fixtures are checked this way so far, and the survey is recorded with
+  no app paths (lock files under `APP_PATHS` are not recorded).
+- A Python package's `RECORD` with a line that opens a quote and never closes it is read as one
+  field from there to its end: the rows after that line are not used, and a `.pth` file they would
+  prove a tool's (setuptools, virtualenv, an editable install) is listed as not proven (reported
+  more, never hidden).
 - A command's own password is not masked when it is only JSON punctuation (`, : { } [ ]` and
   spaces), past a space in it (a command line joins argv with spaces; quoted in a shell line it is
   masked whole), past an unquoted `;`, `|` or `&` in a log line or a shell's
@@ -334,6 +362,12 @@ Chinese for the zh-TW pages; keep the two in step.
   `elementor/editor/after_save` callback written in another file than its `add_action()` (the hook in
   the main plugin file, the function in an include) is not read as one, so a fetch there is not
   reported. The other route models share the limit.
+- PHP: a `foreach ($a as $k => $v)` over an array whose every key is written in the code
+  (`['db.host' => $_POST['h']]`, `array('a' => ...)`, a list, later writes by literal key only) gives
+  `$k` no input: only the values are input. A key header (`"X-Key: {$k}"`) or query part built from
+  such a `$k` was reported. The key is still input when the array is written under a computed key,
+  given input whole (`$a = $_POST`), redefined by `extract()`, passed by reference to a function that
+  may write it, not a literal on one path, or holds a computed key or a spread (`...$a`).
 
 ## v0.5.7 — 2026-11-26
 

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nt-neil/shentu/rules"
@@ -38,6 +39,8 @@ func TestScanReceivers(t *testing.T) {
 		{"composer.lock lists it", map[string]string{"composer.lock": `{"packages": [{"name": "mongodb/mongodb"}]}`}, true, false},
 		{"node_modules/ is skipped", map[string]string{"node_modules/x/i.js": "module.exports = 1\n"}, true, true},
 		{"a file too deep for app_code_audit", map[string]string{"a/b/c/d/e/f/g/h/i/x.php": "<?php\n"}, true, true},
+		{"a script over the size limit", map[string]string{"js/app.min.js": "var a=1;" + strings.Repeat("a=a+1;", maxScanFile/6+1)}, false, false},
+		{"a PHP file over the size limit", map[string]string{"lib/big.php": "<?php\n" + strings.Repeat("$a = 1;\n", maxScanFile/8+1)}, true, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
