@@ -158,6 +158,9 @@ Chinese for the zh-TW pages; keep the two in step.
 - rpm's changelog, searched for a CVE's fix backported by the package (nginx, PHP, a bundled
   library), is read as written: an unclosed private key marker in an entry no longer hides the
   entries after it, so a backported fix is no longer reported as open.
+- On Windows, log_search masks a field's value on its own before its name and value together: a
+  value starting with a program (`CommandLine=mysql -u root -p<secret>`) is masked; masked only as
+  `Name=value`, the `=` before it hid the program.
 - On Windows the checks read a service's command line, a registry string and a scheduled task's
   XML as written, not masked first: an unclosed private key marker in a service's path, a home's
   path or a task's description no longer hides an unquoted service path, a startup folder or the
@@ -263,6 +266,9 @@ Chinese for the zh-TW pages; keep the two in step.
   app_vulns through OSV, marked as exploited.
 - Some checks still read texts masked when read in: on Windows event data (each field masked on
   its own; log_search's text of an event is masked field by field).
+- A secret whose name and value an event gives in two fields (a name in one, the value in the next)
+  is not masked in log_search's text; Windows' own events give none so (CommandLine, ImagePath and
+  ScriptBlockText are one field each).
 - A user's name of `mysql` given to an option in text (a log line, a shell's history, a cron line:
   `--user mysql -p5432`, `psql -U mysql -p5432`) is read as the program, and the `-p` after it is
   masked (a process's command line, judged argument by argument, is not); a file named `.mysql`

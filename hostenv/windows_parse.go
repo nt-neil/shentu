@@ -225,9 +225,11 @@ func ParseEventText(s string) (string, error) {
 		}
 		// Each field masked on its own (S-294-1): an unclosed key BEGIN in
 		// one a client sent (a logon's names) masked every field after it,
-		// the source address among them. Name and value together, so a
-		// field named for a secret is masked as key=value.
-		b.WriteString(" " + MaskSecrets(name+"="+value))
+		// the source address among them. The value first (a program at its
+		// start: CommandLine=mysql -p..., whose name the = before it would
+		// hide), then name and value together (a field named for a secret,
+		// as key=value).
+		b.WriteString(" " + MaskSecrets(name+"="+MaskSecrets(value)))
 	}
 	for _, d := range x.EventData.Data {
 		field(d.Name, d.Value)
