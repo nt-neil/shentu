@@ -39,6 +39,8 @@ func TestAppCodeAuditReceivers(t *testing.T) {
 		{"R6 only composer.lock lists it", map[string]string{"composer.lock": `{"packages": [{"name": "mongodb/mongodb"}]}`}, nil, true},
 		{"R10 a file that names it cannot be read", map[string]string{"lib/m.php": mongo}, map[string]os.FileMode{"lib/m.php": 0}, true},
 		{"a folder the audit skips", map[string]string{"node_modules/x/index.js": "module.exports = 1\n"}, nil, true},
+		{"composer.json that cannot be read", map[string]string{"composer.json": `{"require": {"mongodb/mongodb": "^1.15"}}`}, map[string]os.FileMode{"composer.json": 0}, true},
+		{"composer.json over the size limit", map[string]string{"composer.json": `{"require": {"mongodb/mongodb": "^1.15"}, "x": "` + strings.Repeat("a", auditMaxSize) + `"}`}, nil, true},
 		{"a script over the size limit: no PHP left out", map[string]string{"js/app.min.js": "var a=1;" + strings.Repeat("a=a+1;", auditMaxSize/6+1)}, nil, false},
 		{"a script that cannot be read: no PHP left out", map[string]string{"js/app.js": "var a = 1;\n"}, map[string]os.FileMode{"js/app.js": 0}, false},
 	} {

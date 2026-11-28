@@ -82,6 +82,32 @@ Kind: precision
   above.
 - Round 2 at 07d4ce66: B0 N0 S2. Merged as #284.
 
+## Follow-up: per-language incompleteness and composer.json
+- x20 held back 18 of the 65 PHP cases. In some of them the only file left out
+  was a minified script over 1 MiB, which cannot name a PHP library. The
+  review of #284 split the reasons in two (#300):
+  - a single file left out (too big, unreadable, not a regular file) holds
+    back only its own language's rules (`ProjectOptions.IncompleteLangs`,
+    `Project.NamesCompleteFor`);
+  - a folder skipped, a folder too deep, the file cap, a walk cut short, or
+    composer.json, composer.lock or vendor/ not read hold back every rule
+    (`Incomplete`).
+- The review of #300 (N-300-0) found that app_code_audit returned early for
+  a composer.json it could not read, or one over 1 MiB, without marking the
+  project incomplete; cvebench did mark it. Both now mark it.
+  `TestAppCodeAuditReceivers` gained a row for each case, both reported.
+- x21 (VM, product path, base b088eae6, head #300):
+  - the CVE set lost 8 more noise lines and gained none, all in one case
+    already triaged above;
+  - Receivers held back went from 18 cases to 8;
+  - E7, the hold-out set and the TypeScript set were unchanged line for line.
+- A known limit stays: the product path's file-by-file pass knows no project,
+  so it still reports a method sink found in the file it is written in. Only
+  what the cross-file pass finds is relaxed. In that case most of its lines
+  are found file by file; that is why x21 relaxed 8 of them and the earlier
+  Project.Scan measurement relaxed them all. Reading the project's names in
+  that pass too is tracked separately.
+
 ## Measured on
 Each line removed was traced to its source and is a false positive. The calls
 are:

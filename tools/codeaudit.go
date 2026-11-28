@@ -870,6 +870,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			if lang != "" {
 				incompleteLangs = append(incompleteLangs, lang)
 			}
+			if name == "composer.json" {
+				incomplete = true // its packages are not known: every rule's receivers (N-300-0)
+			}
 			return nil
 		}
 		res.Files++

@@ -237,8 +237,8 @@ Chinese for the zh-TW pages; keep the two in step.
   names the library, when no class of the project declares the method, and whenever app_code_audit
   left a file out: a folder it skips (node_modules/, .git/), one more than 8 levels deep, a PHP
   file over 1 MiB or not readable (a script or another language's file left out does not count),
-  more than 20,000 files, a walk cut short, or composer.lock or vendor/ not read. A call found in
-  the file it is written in is reported as before.
+  more than 20,000 files, a walk cut short, or composer.json, composer.lock or vendor/ not read. A
+  call found in the file it is written in is reported as before.
 - `php-deserialization-wp-maybe-unserialize`: an argument that is an array on every path is not
   reported (`maybe_unserialize(array('fields' => $_POST['f']))`, an array written by key, `explode()`),
   also when a function of the code's own passes its parameter on as is: `maybe_unserialize()`
