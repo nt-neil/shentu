@@ -75,6 +75,9 @@ func projectScanner(eng *engine.Engine, files []string, read func(string) ([]byt
 	// namesIncomplete: whether the receivers kept every method sink (an engine
 	// without Project.NamesComplete has no receivers)
 	namesIncomplete := func() bool {
+		if nc := proj.MethodByName("NamesCompleteFor"); nc.IsValid() {
+			return !nc.Call([]reflect.Value{reflect.ValueOf("php")})[0].Bool() // receivers are PHP rules'
+		}
 		nc := proj.MethodByName("NamesComplete")
 		return nc.IsValid() && !nc.Call(nil)[0].Bool()
 	}
