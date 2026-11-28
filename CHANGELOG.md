@@ -155,9 +155,19 @@ Chinese for the zh-TW pages; keep the two in step.
   a request's text echoed before PHP's location (an unclosed private key marker) no longer takes
   the location with it, so the sink keeps its error-log evidence. The events keep only times and
   locations, and nothing from them is output.
+- rpm's changelog, searched for a CVE's fix backported by the package (nginx, PHP, a bundled
+  library), is read as written: an unclosed private key marker in an entry no longer hides the
+  entries after it, so a backported fix is no longer reported as open.
 - On Windows, log_search masks a field's value on its own before its name and value together: a
   value starting with a program (`CommandLine=mysql -u root -p<secret>`) is masked; masked only as
   `Name=value`, the `=` before it hid the program.
+- sudo's rule for cloud-init's default user (every command, no password) is a warning, not info,
+  when sshd lets every user log in with a password: PasswordAuthentication yes, or sshd's default
+  on a known distribution, and no Match block in any sshd config file (every file read; an
+  Include with a %-token or ~ counts as maybe one; with no main sshd_config, as with no sshd or
+  openSUSE's /usr/etc/ssh alone, it is not raised). If that user has a password set (cloud-init
+  locks it by default), whoever guesses it is then root at once. The survey's sshd facts say whether a Match block may change a setting (`match`)
+  and which settings a file sets (`set`).
 - On Windows the checks read a service's command line, a registry string and a scheduled task's
   XML as written, not masked first: an unclosed private key marker in a service's path, a home's
   path or a task's description no longer hides an unquoted service path, a startup folder or the
@@ -268,6 +278,12 @@ Chinese for the zh-TW pages; keep the two in step.
   another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
   `-E cert:<secret>`).
+- The cloud-init sudo warning reads PasswordAuthentication only: it is raised although
+  `AuthenticationMethods publickey` allows keys alone, and not raised when PasswordAuthentication is
+  no but `KbdInteractiveAuthentication yes` with `UsePAM yes` still takes a password.
+- Drupal installed without Composer (no `composer.lock`) has no host check yet for core's installer
+  advisories (SA-CORE-2026-017, SA-CORE-2026-019); one installed with Composer is reported by
+  app_vulns through OSV, and marked as exploited when CISA's KEV catalog lists it.
 - Some checks still read texts masked when read in: on Windows event data (each field masked on
   its own; log_search's text of an event is masked field by field).
 - A secret whose name and value an event gives in two fields (a name in one, the value in the next)

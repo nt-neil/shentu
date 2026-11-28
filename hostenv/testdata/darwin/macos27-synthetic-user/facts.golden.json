@@ -336,7 +336,8 @@
           "pubkeyauthentication": "yes",
           "x11forwarding": "no"
         },
-        "hash": "cfbad366740b6b5b"
+        "hash": "cfbad366740b6b5b",
+        "match": "none"
       }
     },
     "rdp": {

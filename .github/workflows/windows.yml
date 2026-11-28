@@ -57,6 +57,8 @@ jobs:
           go test -run 'Bot|TOTP|MarkdownToTelegram|Welcome|Schedule|NextDaily' .
           # Known Windows failures, by exact name and class: .github/windows-known-failures.txt.
           # Each name must still be a test (a renamed or removed one fails the job, S-269-1).
+          # The list must be there: a missing file would skip nothing and say nothing of it (S-278-4).
+          test -f .github/windows-known-failures.txt || { echo "windows-known-failures.txt missing"; exit 1; }
           all=$(go test -list '.*' ./tools/)
           names=$(grep -v '^#' .github/windows-known-failures.txt | awk 'NF {print $1}' || true) # none left: grep finds no line
           for n in ${names}; do
@@ -64,6 +66,11 @@ jobs:
           done
           skip=$(echo "${names}" | awk 'NF' | paste -sd'|' -)
           if [ -n "${skip}" ]; then go test -skip "^(${skip})$" ./tools/; else go test ./tools/; fi
+          # The 19 taken off the list (and the login index's ACL), each PASS or SKIP here, in the log (S-278-4).
+          out=$(go test -count=1 -v -run '^(TestApacheH2Risk|TestLoginIndexAnswers|TestPHPReview1Comments|TestPHPReview1ConfLimit|TestPHPReview1HostingLayouts|TestPHPReview1Includes|TestPHPReview1NoVersion|TestPHPReview1OneBranchTwice|TestPHPReview1PoolsByBranch|TestPHPReview1Scope|TestPHPReview1SeveralVersions|TestPHPReview200ConfReadCaps|TestPHPReview200ConfReadCapsRealFiles|TestPHPRisksCGI|TestPHPRisksFPM|TestPHPRisksNotCoveredNote|TestPHPRisksOrigins|TestPHPRisksStatusPage|TestSitePackagesShadowFoldersAbove|TestSitePackagesSystem|TestLoginIndexSaveACL)$' ./tools/ | grep -E '^--- (PASS|SKIP|FAIL)') || { echo "${out}"; exit 1; }
+          echo "${out}"
+          n=$(echo "${out}" | wc -l | tr -d ' ')
+          [ "${n}" -eq 21 ] || { echo "expected 21 tests listed, got ${n}"; exit 1; } # S-301-2: a name gone or renamed is said
       - name: fuzz VARIANT / SAFEARRAY decoding
         if: ${{ !cancelled() }}
         run: |
