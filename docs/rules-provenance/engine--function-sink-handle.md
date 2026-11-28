@@ -82,33 +82,39 @@ cut; function scope with the nearest assignment). S-295-1 to S-295-3: the known
 limits are written out, and this record follows what the code does.
 
 ## Measured on
-Full A/B in the throwaway Linux bench VM: base 216b6988, head 08ee0ac6 (this
-change). E7 twice per side; cvebench on the three sets. Every segment was
-valid: the host's 1-minute load peaked at 4.0, the VM's at 3.1, and nothing was
-voided. Every case of every set was run; the change builds its per-file table
-for each PHP file, so the PHP cases are the ones it could touch, among them
-CVE-2026-56738 (phpMyFAQ) and CVE-2024-3211 (wp-easycart): no line of any case
-changed.
+Full A/B after review round 1, in the throwaway Linux bench VM: base e9d914f7,
+head 1c8e52ef (this change; integ 9bbd9a9a was merged after, with no rule using
+the field and nothing kept without one). E7 twice per side, cvebench on the
+three sets; every segment valid, the host's 1-minute load peaking at 6.0 (a
+second VM started on the host during the run) and the VM's at 2.8, nothing
+voided. No shipped rule has a handle condition, so the change keeps no state
+and builds no property table on any case; every case of every set was run,
+among them the PHP cases CVE-2026-56738 (phpMyFAQ) and CVE-2024-3211
+(wp-easycart). No line of any case changed.
 
-| set | lines base | lines head | only base | only head | caught base → head | wall time base / head |
-|---|---|---|---|---|---|---|
-| cves (106) | 3324 | 3324 | 0 | 0 | 22 → 22 | 12:40 / 12:36 |
-| cves-ts (18) | 155 | 155 | 0 | 0 | 1 → 1 | 1:58 / 1:56 |
+| set | lines base | lines head | only base | only head | caught base → head | wall time base / head | peak memory base / head |
+|---|---|---|---|---|---|---|---|
+| cves (106) | 3324 | 3324 | 0 | 0 | 22 → 22 | 13:22 / 12:59 | 1.06 / 1.05 GB |
+| cves-ts (18) | 155 | 155 | 0 | 0 | 1 → 1 | 1:59 / 1:55 | 1.10 / 1.09 GB |
 
 The reports are the same apart from the scan time column. E7: all four outputs
-are identical (md5 the same), with the same files, findings and unfinished
-files per corpus. The time per corpus, base runs / head runs:
+identical (md5 the same), with the same files, findings and unfinished files
+per corpus. TIME per corpus, each run's base against the head run after it
+(the host's load rose between the first and the second pair):
 
-| corpus | base | head |
+| corpus | run 1 base / head | run 2 base / head |
 |---|---|---|
-| wordpress | 161.6 s, 157.4 s | 161.3 s, 161.4 s |
-| laravel-framework | 6.2 s, 6.1 s | 6.1 s, 6.1 s |
-| django | 10.5 s, 10.4 s | 10.3 s, 10.3 s |
-| flask, express | 0.6 s, 0.5–0.6 s | 0.6 s, 0.5–0.6 s |
+| wordpress | 158.2 s / 158.1 s | 186.4 s / 180.6 s |
+| laravel-framework | 6.1 s / 7.8 s | 6.8 s / 6.3 s |
+| django | 10.4 s / 11.3 s | 11.4 s / 10.6 s |
+| flask, express | 0.5–0.6 s / 0.6 s | 0.6–0.7 s / 0.6 s |
 
-The peak memory was 1.29–1.38 GB on both sides.
+E7's peak memory was 1.25–1.28 GB for the base runs and 1.29–1.30 GB for the head
+runs. The first version (before round 1) measured the same lines; its cost showed
+only on a crafted file, now bounded (`TestHandleCost`).
 
 ## Holdout check
-Holdout (22 cases) on base and head: 159 lines on both sides, line for line the
-same; caught 3 → 3, fixed false positives 0 → 0. For example CVE-2017-5954 and
+Holdout (22 cases) on base and head, after round 1: 159 lines on both sides,
+line for line the same; caught 3 → 3, fixed false positives 0 → 0; wall time
+0:43 / 0:42. For example CVE-2017-5954 and
 CVE-2021-23352 had the same lines.
