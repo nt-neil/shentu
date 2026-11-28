@@ -37,7 +37,7 @@ func (c LinuxCollector) Firewall(ctx context.Context, src Source, processes []Pr
 			return OK(fw("firewalld", true, "firewalld (running)"))
 		}
 	}
-	res, err := src.Run(ctx, nftListArgv)
+	res, err := RunUnmasked(ctx, src, nftListArgv)
 	switch {
 	case err == nil && res.ExitCode == 0:
 		if chains := strings.Count(string(res.Stdout), "chain "); chains > 0 {
@@ -52,9 +52,9 @@ func (c LinuxCollector) Firewall(ctx context.Context, src Source, processes []Pr
 		return Partial(fw("nftables", false, "no firewall enabled at boot (nftables.service is off); rules added at runtime cannot be read here, ask in chat"),
 			ReasonPermission, "live nftables rules unreadable")
 	}
-	out, err := src.Run(ctx, iptablesArgv)
+	out, err := RunUnmasked(ctx, src, iptablesArgv)
 	if errors.Is(err, fs.ErrNotExist) {
-		out, err = src.Run(ctx, iptablesSbin)
+		out, err = RunUnmasked(ctx, src, iptablesSbin)
 	}
 	if err == nil && out.ExitCode == 0 && strings.Count(string(out.Stdout), "\n") > 3 {
 		return OK(fw("iptables", true, "iptables rules present"))

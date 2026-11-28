@@ -143,6 +143,11 @@ Chinese for the zh-TW pages; keep the two in step.
   refspec (`git push -u main:main`) or `tar -pcf` after it is left. `-P 3306`, `docker run -p
   8080:80`, the `mysqld` and `mariadbd` daemons' `-port=`, `--password-file=/path` and a bare `-p`
   are left as they are.
+- The host survey parses commands' output as written, not masked first (packages and rpm vendors,
+  the firewall's rules, macOS's platform, accounts, processes, listeners, pf and protections): an unclosed private key marker in one process's path, or in
+  an iptables rule's comment, no longer hides the processes or rules after it. The output is
+  parsed as written; the fields kept from it are masked, and so is a command's error text in a
+  message. nginx's and PHP's package queries are read masked (the package manager's text).
 - The cryptominer check matches a process's command line as written (Linux, macOS, Windows): a
   renamed miner whose options follow a password the mask takes whole (`mysql -p' -o stratum+tcp://…
   '`) is still found. Its evidence, and what the model is given, stay masked.
@@ -150,6 +155,10 @@ Chinese for the zh-TW pages; keep the two in step.
   a request's text echoed before PHP's location (an unclosed private key marker) no longer takes
   the location with it, so the sink keeps its error-log evidence. The events keep only times and
   locations, and nothing from them is output.
+- On Windows the checks read a service's command line, a registry string and a scheduled task's
+  XML as written, not masked first: an unclosed private key marker in a service's path, a home's
+  path or a task's description no longer hides an unquoted service path, a startup folder or the
+  task. What they output stays masked.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
@@ -234,13 +243,12 @@ Chinese for the zh-TW pages; keep the two in step.
   another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
   `-E cert:<secret>`).
-- Some checks still read texts masked when read in: commands' output (packages, the firewall's
-  rules, macOS's listeners and accounts), and on Windows scheduled tasks, services' paths,
-  registry values and event data.
-- In text (a log line, a shell's history, a cron line), a user's name of `mysql` given to an option
-  (`--user mysql -p5432`, `psql -U mysql -p5432`) or a file named `.mysql` (`psql -f backup.mysql
-  -p5432`) is read as the program, and the `-p` after it is masked; a process's command line,
-  judged argument by argument, is not.
+- Some checks still read texts masked when read in: on Windows event data (each field masked on
+  its own; log_search's text of an event is masked field by field).
+- A user's name of `mysql` given to an option in text (a log line, a shell's history, a cron line:
+  `--user mysql -p5432`, `psql -U mysql -p5432`) is read as the program, and the `-p` after it is
+  masked (a process's command line, judged argument by argument, is not); a file named `.mysql`
+  (`psql -f backup.mysql -p5432`) is read so in text and in a process's command line alike.
 - log_search matches the masked text: what the mask covers cannot be found. A pattern matched
   against the text as written would tell, match by match, what a masked secret is.
 - A recording (a fixture) holds the masked text only, so a check replayed from it can decide
