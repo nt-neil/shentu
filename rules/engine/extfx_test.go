@@ -100,6 +100,8 @@ func TestImmediateClosureArgs(t *testing.T) {
 		{"a static closure", "(static function ($a) {\n  require_once $a;\n})($_GET['f']);", true},
 		{"more parentheses around", "((function ($a) {\n  require_once $a;\n}))($_GET['f']);", true},
 		{"a static closure, more parentheses around", "((static function ($a) {\n  require_once $a;\n}))($_GET['f']);", true},
+		{"returned where it is called", "return (function ($a) {\n  require_once $a;\n})($_GET['f']);", true},
+		{"echoed where it is called", "echo (function ($a) {\n  require_once $a;\n  return '';\n})($_GET['f']);", true},
 		{"a closure given to a call whose result is called", "wrap(function ($a) {\n  require_once $a;\n})($_GET['f']);", false},
 		{"returned and then called (not followed)", "(function () {\n  return function ($a) {\n    require_once $a;\n  };\n})()($_GET['f']);", false},
 		{"input in a use variable, a constant passed", "$p = $_GET['f'];\n(function ($a) use ($p) {\n  require_once $a;\n})('safe.php');", false},
