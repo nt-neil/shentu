@@ -6,7 +6,7 @@ design choices and the ones left out, the probes, the reviews and the numbers
 before and after. The rules are designed from the vulnerability and its fix
 alone; other tools' rules are not read, ported or adapted.
 
-One file per rule change, named `<rule id>--<short name>.md`. Paths are
+One file per rule change, named `<rule id>--<short name>.md` (or `<route model id>--<short name>.md` for a route model in `rules/routes/`, which cites its case in `refs` the same way). Paths are
 relative to the repository, or to the package root for upstream code. Upstream
 code is quoted only in the few lines needed to show the cause.
 
@@ -22,7 +22,7 @@ code is quoted only in the few lines needed to show the cause.
 | Review | each review round: the head reviewed and its verdict (B blocking, N needed, S suggestion) |
 | Measurement | cvebench in three groups (independent, rule source, holdout) and E7, before and after, with the load at the start and at the peak, and any segment voided and rerun |
 
-A case a rule was designed from is cited in that rule's `refs`, so it counts
+A case a rule or a route model was designed from is cited in its `refs`, so it counts
 in the "rule source" group of the CVE bench, not in "independent"
 (`bench/README.md`). Only `bench/holdout/` measures whether a change carries
 over to cases it was not designed from.

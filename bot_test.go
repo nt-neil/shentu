@@ -418,13 +418,17 @@ func TestBotEmptyAnswerAndPhoto(t *testing.T) {
 }
 
 // The placeholder shows what is being checked and ends as "done"; the answer is its own message.
+// It waits for the answer to end, not a fixed two seconds: listening_ports
+// runs on the machine under test, and on a Windows runner it took longer
+// now and then, so the placeholder was read before it was finished.
 func TestBotProgress(t *testing.T) {
 	model := &hostileModel{replies: []string{call("listening_ports", "{}"), `{"role":"assistant","content":"PORTS-OK"}`}}
 	b, tg := testBot(t, model, false)
 	pairDirectly(t, b)
 	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "ports?"))
-	for i := 0; i < 100 && !strings.Contains(fmt.Sprint(tg.sent()), "PORTS-OK"); i++ {
-		time.Sleep(20 * time.Millisecond)
+	answered(t, b) // the placeholder is finished before the answer is sent
+	if !strings.Contains(fmt.Sprint(tg.sent()), "PORTS-OK") {
+		t.Fatalf("no answer: %q", tg.sent())
 	}
 	tg.mu.Lock()
 	defer tg.mu.Unlock()

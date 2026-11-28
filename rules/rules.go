@@ -243,6 +243,7 @@ type Route struct {
 	Handler   int      `toml:"handler"`  // the argument (from 1) holding the handler; -1: the last
 	Key       string   `toml:"key"`      // the handler is this key of that argument (register_rest_route's 'callback')
 	Path      bool     `toml:"path"`     // the call counts only when its first argument is a path ('/...')
+	Hooks     []string `toml:"hooks"`    // the call counts only when its first argument is one of these string literals, exactly (not with path)
 	Params    []int    `toml:"params"`   // the handler's parameters (from 1) carrying input; empty: all
 	Template  bool     `toml:"template"` // only the parameters the path template names
 	Members   []string `toml:"members"`  // only these members of the parameters (query, params, body)
@@ -264,6 +265,22 @@ type Route struct {
 	Samples      []Sample            `toml:"samples"`
 
 	File string `toml:"-"`
+}
+
+// check refuses a route model whose fields contradict each other.
+func (r Route) check() error {
+	if r.Path && len(r.Hooks) > 0 {
+		return fmt.Errorf("path and hooks both name the first argument; use one")
+	}
+	if len(r.Hooks) > 0 && len(r.Register) == 0 {
+		return fmt.Errorf("hooks without register")
+	}
+	for _, h := range r.Hooks {
+		if strings.TrimSpace(h) == "" || h != strings.TrimSpace(h) {
+			return fmt.Errorf("hooks: %q is not a hook name", h)
+		}
+	}
+	return nil
 }
 
 // LoadRoutes parses the route models. As with rules, unknown keys are an error.
@@ -289,6 +306,9 @@ func LoadRoutes() ([]Route, error) {
 		}
 		for i := range f.Route {
 			f.Route[i].File = path
+			if err := f.Route[i].check(); err != nil {
+				return fmt.Errorf("%s: route %s: %w", path, f.Route[i].ID, err)
+			}
 		}
 		out = append(out, f.Route...)
 		return nil
