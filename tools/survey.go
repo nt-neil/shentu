@@ -218,7 +218,8 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 // surveying the machine it runs on (S-244-4: a lost call would drop
 // containerd from the daily report with no test failing).
 func hostRisksTail(ctx context.Context, src hostenv.Source) []Risk {
-	return append(phpRisks(ctx), ContainerdNotYet(src)...)
+	sites, unread := DrupalSites(WebRoots())
+	return append(append(phpRisks(ctx), ContainerdNotYet(src)...), drupalRisks(sites, unread)...)
 }
 
 func hasPublic(s []Service) bool {
