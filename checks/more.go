@@ -124,7 +124,7 @@ func isMiner(p hostenv.Process) bool {
 	if d := exeDir(exe); p.ExeExists && minerViewers[base] && (d == "/usr/bin" || d == "/bin") {
 		return false
 	}
-	return minerArgs.MatchString(p.Cmdline)
+	return minerArgs.MatchString(p.MatchCmdline()) // as written: a mask must not hide its options (N-286-1)
 }
 
 func miner(f *hostenv.Facts) []Finding {

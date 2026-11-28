@@ -45,7 +45,7 @@ func winProcesses(all bool) ([]Proc, error) {
 			p.Flags = append(p.Flags, "runs_from_temp")
 		}
 		base := strings.TrimSuffix(strings.ToLower(filepath.Base(strings.ReplaceAll(hp.Exe, `\`, "/"))), ".exe")
-		if minerNames[base] || minerArgs.MatchString(hp.Cmdline) {
+		if minerNames[base] || minerArgs.MatchString(hp.MatchCmdline()) { // as written (N-286-1)
 			p.Flags = append(p.Flags, "miner")
 		}
 		if winShells[strings.ToLower(hp.Name)] && name[hp.PPID] == "w3wp.exe" {

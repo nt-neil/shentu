@@ -383,7 +383,7 @@ func (LinuxCollector) Processes(src Source, users map[string]string) (Obs[[]Proc
 			p.Name = strings.TrimSpace(string(cb)) // raw, as ps shows it; status escapes some bytes
 		}
 		if cb, err := src.ReadFile(dir + "/cmdline"); err == nil {
-			p.Cmdline = ParseCmdline(cb)
+			p.Cmdline, p.RawCmdline = ParseCmdline(cb), ParseRawCmdline(cb)
 		}
 		if st, err := Stat(src, dir); err == nil {
 			p.Started = st.ModTime.Format(time.RFC3339)

@@ -233,7 +233,7 @@ func linuxProcesses(all bool) []Proc {
 				p.Flags = append(p.Flags, "runs_from_"+strings.Trim(dir, "/"))
 			}
 		}
-		if minerSigns(p.Exe, p.Cmdline) {
+		if minerSigns(p.Exe, hp.MatchCmdline()) { // as written, not the masked and cut p.Cmdline (N-286-1)
 			p.Flags = append(p.Flags, "miner")
 		}
 		if webUsers[p.User] && shells[filepath.Base(strings.TrimSuffix(p.Exe, " (deleted)"))] {

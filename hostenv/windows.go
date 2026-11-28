@@ -162,6 +162,7 @@ type WinProcess struct {
 	User       string `json:"user,omitempty"` // DOMAIN\name
 	SID        string `json:"sid,omitempty"`
 	Cmdline    string `json:"cmdline,omitempty"` // masked and capped by the source
+	RawCmdline string `json:"-"`                 // as written, for checks only (Process.RawCmdline)
 }
 
 // WinSocket is one row of GetExtendedTcpTable / GetExtendedUdpTable.
@@ -403,7 +404,7 @@ func winProcesses(procs []WinProcess, err error) Obs[[]Process] {
 	var why Reason
 	for _, p := range procs {
 		q := Process{PID: p.PID, PPID: p.PPID, Name: p.Name, Exe: p.Exe, ExeKnown: p.Exe != "",
-			Cmdline: capCmdline(p.Cmdline), User: p.User, UID: p.SID}
+			Cmdline: capCmdline(p.Cmdline), RawCmdline: CutString(p.RawCmdline, MaxRawCmdline), User: p.User, UID: p.SID}
 		if q.ExeKnown {
 			q.ExeExists = !p.ExeMissing
 			q.InTemp = WinInTempDir(p.Exe)
@@ -438,7 +439,7 @@ func winKernelProcess(p WinProcess) bool {
 }
 
 func capCmdline(s string) string {
-	s = MaskSecrets(s)
+	s = MaskWinCmdline(s) // argument by argument (N-286-4)
 	if len(s) > MaxCmdline {
 		s = s[:MaxCmdline] + "…"
 	}
