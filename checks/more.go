@@ -111,7 +111,7 @@ func exeDir(p string) string {
 }
 
 func isMiner(p hostenv.Process) bool {
-	exe := p.Exe
+	exe := p.MatchExe() // as written where the source masked it (N-293-1)
 	if exe == "" {
 		exe = p.Name
 	}
@@ -162,7 +162,7 @@ func shellAsWebUser(f *hostenv.Facts) []Finding {
 	}
 	var out []Finding
 	for _, p := range o.Value {
-		exe := p.Exe
+		exe := p.MatchExe() // as written where the source masked it (N-293-1)
 		if exe == "" {
 			exe = p.Name
 		}
