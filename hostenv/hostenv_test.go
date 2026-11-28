@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -265,13 +266,19 @@ func TestMaskSecretsMatchesRoot(t *testing.T) {
 	if err != nil {
 		t.Skip("root mask.go not found")
 	}
-	lits := regexp.MustCompile("regexp.MustCompile\\(`([^`]*)`\\)").FindAllStringSubmatch(string(b), -1)
+	// Each rule and its replacement (S-286-4: a replacement changed on one
+	// side only would mask differently with the same pattern).
+	lits := regexp.MustCompile("regexp.MustCompile\\(`([^`]*)`\\), (\"(?:[^\"\\\\]|\\\\.)*\")").FindAllStringSubmatch(string(b), -1)
 	if len(lits) != len(secretRules) {
 		t.Fatalf("root has %d rules, hostenv has %d", len(lits), len(secretRules))
 	}
 	for i, l := range lits {
 		if l[1] != secretRules[i].re.String() {
 			t.Errorf("rule %d differs:\nroot    %s\nhostenv %s", i, l[1], secretRules[i].re.String())
+		}
+		repl, err := strconv.Unquote(l[2])
+		if err != nil || repl != secretRules[i].repl {
+			t.Errorf("rule %d's replacement differs: root %s, hostenv %q", i, l[2], secretRules[i].repl)
 		}
 	}
 }

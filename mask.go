@@ -25,23 +25,31 @@ var maskRules = []struct {
 	// key=value / key: value. The value class stops at quotes and backslashes so JSON text stays valid.
 	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\\?"?\s*[=:]\s*\\?"?)[^\s"\\,;]{3,}`), "${1}[REDACTED]"},
 	// S-281-1: a password as a command's own argument, not key=value:
-	// mysql's -p<secret>, --password/--passwd then the next argument, and
-	// curl's or wget's -u/-U/--user/--proxy-user user:<secret> (attached,
-	// with =, or an empty user). A ; | & later on the line does not end the
-	// command (it may be quoted). A value is one shell word: \x, quoted
-	// segments ("a b" or 'a b', at its start or after other characters) and
-	// anything but a space or a quote, so a , ; | & or \ in it is masked
-	// too (argv as ps shows it: a ; there is the password's, not the
-	// shell's; a quoted value's ; after it goes with it, too much rather
-	// than too little). A
-	// "..." holding only JSON punctuation (, : { } [ ] and spaces) ends the
-	// word instead: it is a JSON string's end and the next one's start
+	// the mysql family's -p<secret> (mysql*, mariadb*, any case, .exe),
+	// --password/--passwd then the next argument, and curl's or wget's
+	// -u/-U/--user/--proxy-user user:<secret> (attached, with =, or an empty
+	// user; the program's path may be quoted). The command reaches only to
+	// an unquoted ; | & or the line's
+	// end (git push -u a:b after it is another command's). A value is one
+	// shell word: \x, quoted segments ("a b" or 'a b', at its start or after
+	// other characters) and anything but a space, a quote or ; | &. A "..."
+	// holding only JSON punctuation (, : { } [ ] and spaces) ends the word
+	// instead: it is a JSON string's end and the next one's start
 	// ({"msg":"mysql -pab","ip":...}), and the line keeps its shape for the
-	// parsers after.
-	{regexp.MustCompile(`(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin)\b[^\n]*?\s-p)(?:\\.|[^\s"'\\]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')+`), "${1}[REDACTED]"},
-	{regexp.MustCompile(`(--pass(?:word|wd)\s+)(?:\\.|[^-\s"'\\]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')(?:\\.|[^\s"'\\]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')*`), "${1}[REDACTED]"},
-	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])(?:"[^\s:"]*:|'[^\s:']*:))[^"'\n]*`), "${1}[REDACTED]"},
-	{regexp.MustCompile(`(\b(?:curl|wget)\b[^\n]*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])[^\s:"'\\]*:)(?:\\.|[^\s"'\\]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')+`), "${1}[REDACTED]"},
+	// parsers after. Not masked: a password of only that punctuation, the
+	// part after a space in an unquoted one (argv joined by spaces), and a
+	// pretty-printed JSON argv over several lines.
+	{regexp.MustCompile(`((?i:\b(?:mysql\w*|mariadb[\w-]*)(?:\.exe)?)\b["']?(?:"[^"\n]*"|'[^'\n]*'|[^\n;|&"'])*?\s-p)(?:\\.|[^\s"'\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')+`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(--pass(?:word|wd)\s+)(?:\\.|[^-\s"'\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')(?:\\.|[^\s"'\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')*`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`((?i:\b(?:curl|wget)(?:\.exe)?)\b["']?(?:"[^"\n]*"|'[^'\n]*'|[^\n;|&"'])*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])(?:"[^\s:"]*:|'[^\s:']*:))[^"'\n]*`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`((?i:\b(?:curl|wget)(?:\.exe)?)\b["']?(?:"[^"\n]*"|'[^'\n]*'|[^\n;|&"'])*?(?:\s(?:-u|-U|--user|--proxy-user)(?:\s+|=)|\s-[uU])(?:\\.|[^\s:"'\\])*:)(?:\\.|[^\s"'\;|&]|"[^"\n]*[^"\n,:{}\[\]\s][^"\n]*"|'[^'\n]*')+`), "${1}[REDACTED]"},
+	// The same three in a JSON argv (docker inspect's Path and Args, an
+	// image's Cmd, a healthcheck): a string naming the program, then in the
+	// same array on the same line "-p<secret>", "--password", "<secret>" or
+	// "-u", "user:<secret>".
+	{regexp.MustCompile(`("(?:[^"\n]*[/\\])?(?i:mysql\w*|mariadb[\w-]*)(?:\.exe)?"[^\n\]]*?"-p)(?:\\.|[^"\\\n])+"`), "${1}[REDACTED]\""},
+	{regexp.MustCompile(`("--pass(?:word|wd)"\s*,\s*")(?:\\.|[^-"\\\n])(?:\\.|[^"\\\n])*"`), "${1}[REDACTED]\""},
+	{regexp.MustCompile(`("(?:[^"\n]*[/\\])?(?i:curl|wget)(?:\.exe)?"[^\n\]]*?"(?:(?:-u|-U|--user|--proxy-user)"\s*,\s*"|-[uU]|--(?:proxy-)?user=)(?:\\.|[^"\\\n:])*:)(?:\\.|[^"\\\n])+"`), "${1}[REDACTED]\""},
 }
 
 // mask removes secrets. sudoers' NOPASSWD: and PASSWD: tags in sudoers
