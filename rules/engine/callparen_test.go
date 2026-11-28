@@ -19,6 +19,10 @@ func TestCallParen(t *testing.T) {
 		{"php", "mail(", 1},
 		{"php", `str_replace(array("\r", "\n"`, 1},
 		{"php", "json_decode(file_get_contents('php://input'", 1},
+		{"php", `\str_replace(array("\r", "\n"`, 2},    // \f(g( as f(g(
+		{"php", `ns\str_replace(array("\r", "\n"`, 3},  // ns\f(g(
+		{"php", `A\B\str_replace(array("\r", "\n"`, 5}, // A\B\f(g(
+		{"php", `\mail(`, 2},
 		{"php", "$wpdb->prepare(", 3},
 		{"php", "->where(", 2},
 		{"python", "subprocess.run([", 3},
