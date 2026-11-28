@@ -151,6 +151,10 @@ Chinese for the zh-TW pages; keep the two in step.
 - The cryptominer check matches a process's command line as written (Linux, macOS, Windows): a
   renamed miner whose options follow a password the mask takes whole (`mysql -p' -o stratum+tcp://…
   '`) is still found. Its evidence, and what the model is given, stay masked.
+- Attack detection reads PHP's error logs and journald's messages as written, not masked first:
+  a request's text echoed before PHP's location (an unclosed private key marker) no longer takes
+  the location with it, so the sink keeps its error-log evidence. The events keep only times and
+  locations, and nothing from them is output.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
@@ -227,11 +231,12 @@ Chinese for the zh-TW pages; keep the two in step.
   another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
   `-E cert:<secret>`).
-- Some checks still read texts masked when read in: PHP error logs and journald's messages (L3),
-  and on Windows scheduled tasks, services' paths, registry values and event data.
+- Some checks still read texts masked when read in: on Windows scheduled tasks, services' paths,
+  registry values and event data.
 - In text (a log line, a shell's history, a cron line), a user's name of `mysql` given to an option
-  (`--user mysql -p5432`, `psql -U mysql -p5432`) is read as the program, and the `-p` after it is
-  masked; a process's command line, judged argument by argument, is not.
+  (`--user mysql -p5432`, `psql -U mysql -p5432`) or a file named `.mysql` (`psql -f backup.mysql
+  -p5432`) is read as the program, and the `-p` after it is masked; a process's command line,
+  judged argument by argument, is not.
 - log_search matches the masked text: what the mask covers cannot be found. A pattern matched
   against the text as written would tell, match by match, what a masked secret is.
 - A recording (a fixture) holds the masked text only, so a check replayed from it can decide

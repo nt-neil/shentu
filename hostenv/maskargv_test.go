@@ -34,6 +34,10 @@ func TestMaskArgvSemicolonInPassword(t *testing.T) {
 		// argument (ps joins sh -c's line with spaces)
 		{[]string{"sh", "-c", "x;mysql", "-pab;" + s}, "sh -c x;mysql -p[REDACTED]"},
 		{[]string{"sh", "-c", "$(mysql", "-p" + s + ")"}, "sh -c $(mysql -p[REDACTED]"},
+		// S-286-13: a versioned or wrapped program name
+		{[]string{"/usr/bin/mysql-8.0", "-u", "root", "-pab;" + s}, "/usr/bin/mysql-8.0 -u root -p[REDACTED]"},
+		{[]string{"mysql.real", "-p" + s}, "mysql.real -p[REDACTED]"},
+		{[]string{"mariadb-10.6", "-p" + s, "db"}, "mariadb-10.6 -p[REDACTED] db"},
 		// S-286-10: a user's name is no program
 		{[]string{"psql", "-U", "mysql", "-p5432"}, "psql -U mysql -p5432"},
 		{[]string{"tool", "--user", "mysql", "-p5432"}, "tool --user mysql -p5432"},

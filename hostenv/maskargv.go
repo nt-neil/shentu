@@ -13,7 +13,7 @@ import (
 // is right for a log line or a shell's history but would leave the rest of
 // such a password.
 var (
-	argvMySQL  = regexp.MustCompile(`(?i)(?:^|[^=\w])(?:mysql(?:dump|check|import|show|pump|binlog|_upgrade|slap|admin|sh)?\d*|mariadb(?:-?(?:dump|admin|check|import|show|binlog|upgrade|slap|backup))?)(?:\.exe)?$`)
+	argvMySQL  = regexp.MustCompile(`(?i)(?:^|[^=\w])(?:mysql(?:dump|check|import|show|pump|binlog|_upgrade|slap|admin|sh)?\d*|mariadb(?:-?(?:dump|admin|check|import|show|binlog|upgrade|slap|backup))?)(?:[-.][\w.-]*)?(?:\.exe)?$`) // mysql-8.0, mysql.real, mariadb-10.6 (S-286-13)
 	argvCurl   = regexp.MustCompile(`(?i)(?:^|[^=\w])(?:curl|wget)(?:\.exe)?$`)
 	argvKV     = regexp.MustCompile(`(?i)^(-{0,2}(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)=).{3,}$`)
 	argvUserAt = regexp.MustCompile(`^(?:-[uU]|--(?:proxy-)?user=)[^:]*:`)
