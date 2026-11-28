@@ -97,3 +97,14 @@ func TestParseEventTextFieldByField(t *testing.T) {
 		t.Errorf("a typed name or a secret shown: %q", got)
 	}
 }
+
+// A program at a field's value start is masked: masked only as
+// Name=value, the = before it hid the program's name (#294).
+func TestParseEventTextProgramAtValueStart(t *testing.T) {
+	x := `<Event><System><EventID>4688</EventID><Channel>Security</Channel></System><EventData>` +
+		`<Data Name="CommandLine">mysql -u root -phunter2x9 db</Data><Data Name="IpAddress">203.0.113.9</Data></EventData></Event>`
+	got, err := ParseEventText(x)
+	if err != nil || strings.Contains(got, "hunter2x9") || !strings.Contains(got, "IpAddress=203.0.113.9") {
+		t.Errorf("%q %v", got, err)
+	}
+}
