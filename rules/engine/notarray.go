@@ -62,7 +62,8 @@ func arrPath(key string) bool {
 
 // allLitKeys reports whether every element of an array literal's elements
 // (inner, between its brackets) has a literal key or none: 'db.host' => $v,
-// 3 => $v, $v. A computed key ($k => $v) or a spread (...$a) does not.
+// 3 => $v, $v. A computed key ($k => $v, "k{$k}" => $v) or a spread (...$a)
+// does not.
 func allLitKeys(inner []Token) bool {
 	for _, e := range splitTop(inner, isComma) {
 		if len(e) == 0 {
@@ -71,7 +72,7 @@ func allLitKeys(inner []Token) bool {
 		if e[0].op("...") {
 			return false
 		}
-		if k := indexTop(e, 0, isOp("=>")); k >= 0 && !(k == 1 && (e[0].Kind == Str || e[0].Kind == Num)) {
+		if k := indexTop(e, 0, isOp("=>")); k >= 0 && !(k == 1 && (e[0].Kind == Str && len(e[0].Parts) == 0 || e[0].Kind == Num)) {
 			return false
 		}
 	}

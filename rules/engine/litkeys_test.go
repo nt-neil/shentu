@@ -36,6 +36,11 @@ func TestLitKeysForeach(t *testing.T) {
 		{"one path not literal", "if (isset($_GET['x'])) {\n  $u = ['a' => $_POST['h']];\n} else {\n  $u = $_POST;\n}\n" + loop, true},
 		{"a computed key in the literal", "$u = [$_GET['k'] => $_POST['h']];\n" + loop, true},
 		{"a spread in the literal", "$u = ['a' => $_POST['h'], ...$_POST];\n" + loop, true},
+		{"an interpolated key in the literal", "$k0 = $_GET['k'];\n$u = [\"k{$k0}\" => $_POST['h']];\n" + loop, true},
+		{"a heredoc key in the literal", "$k0 = $_GET['k'];\n$u = [<<<EOT\nk{$k0}\nEOT => $_POST['h']];\n" + loop, true},
+		{"a copy of an array passed by reference", "$u = ['a' => $_POST['h']];\nfill($u);\n$b = $u;\nforeach ($b as $k => $v) {\n  mail('a@example.org', 'S', 'B', \"X-Key: {$k}\");\n}\n}\nfunction fill(&$a) {\n  $a[$_GET['k']] = 1;", true},
+		{"a copy of a literal", "$u = ['a' => $_POST['h']];\n$b = $u;\nforeach ($b as $k => $v) {\n  mail('a@example.org', 'S', 'B', \"X-Key: {$k}\");\n}", false},
+		{"a double-quoted key with no variable", "$u = [\"db.host\" => $_POST['h']];\n" + loop, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			src := "<?php\nfunction f() {\n" + c.body + "\n}\nadd_action('wp_ajax_x', 'f');\n"
