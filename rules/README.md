@@ -253,6 +253,22 @@ How the engine reads them:
     digits, `_` and `-`, an empty replacement and no limit or count leaves only
     those characters, so its result is clean; on a PHP array the keys stay as
     they were, so `foreach ($clean as $k => $v)` still gives input in `$k`;
+  - *(planned for v0.5.9, not in the engine yet)* in the `crlf` rules, a call
+    that removes both line-break characters makes its result clean for that
+    class only:
+    - `str_replace`, `str_ireplace` or `strtr` with a search list that holds both
+      `"\r"` and `"\n"` as literal elements, in any order and among other
+      elements (`array('"', "\r", "\n")`, `["\n", "\r", "\0"]`);
+    - every replacement for those two that is a literal holding neither
+      character (one replacement string for the whole list, or the matching
+      element of a replacement list);
+    - `preg_replace` with a pattern that matches every `\r` and every `\n` (a
+      class or alternation holding both, `/[\r\n]/`, `/\r|\n/`, `/\R/`, `/\s/`)
+      and the same rule for its replacement, without a limit.
+    Removing only one of the two (`"\r\n"` as a single element, `"\n"` alone)
+    is not a clean result. A search or replacement that is not a literal is not
+    read. The call cleans the line breaks only; it is not a sanitizer for any
+    other class;
   - in the rules that list `check_admin_referer`, `check_ajax_referer` or
     `wp_verify_nonce` as sanitizers, a nonce check that gates the code stops the
     rule there: `check_admin_referer(...)` or `check_ajax_referer(...)` as a
