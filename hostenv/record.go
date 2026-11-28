@@ -299,6 +299,16 @@ func writeNew(path string, data []byte) error {
 type Replay struct {
 	info SourceInfo
 	byK  map[string]*entry
+	mu   sync.Mutex
+	miss []string // the requests answered ErrNotRecorded, in order
+}
+
+// Missed is every request the fixture did not hold, as "op path argv":
+// what a check read that the recording left out.
+func (rp *Replay) Missed() []string {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
+	return append([]string(nil), rp.miss...)
 }
 
 func LoadReplay(dir string) (*Replay, error) {
@@ -374,7 +384,11 @@ func (rp *Replay) Info() SourceInfo { return rp.info }
 func (rp *Replay) find(op, path string, argv []string) (*entry, error) {
 	e := rp.byK[(&entry{Op: op, Path: path, Argv: argv}).key()]
 	if e == nil {
-		return nil, fmt.Errorf("%w: %s %s%s", ErrNotRecorded, op, path, strings.Join(argv, " "))
+		k := op + " " + path + strings.Join(argv, " ")
+		rp.mu.Lock()
+		rp.miss = append(rp.miss, k)
+		rp.mu.Unlock()
+		return nil, fmt.Errorf("%w: %s", ErrNotRecorded, k)
 	}
 	return e, nil
 }

@@ -25,6 +25,7 @@ import (
 
 	"github.com/nt-neil/shentu/checks"
 	"github.com/nt-neil/shentu/hostenv"
+	"github.com/nt-neil/shentu/tools"
 )
 
 func main() {
@@ -51,7 +52,6 @@ func (l *list) Set(s string) error { *l = append(*l, s); return nil }
 func run(record, replay string, runChecks, dropArgs bool, users, hosts []string) error {
 	ctx := context.Background()
 	var src hostenv.Source
-	var rec *hostenv.Recorder
 	if replay != "" {
 		rp, err := hostenv.LoadReplay(replay)
 		if err != nil {
@@ -64,18 +64,20 @@ func run(record, replay string, runChecks, dropArgs bool, users, hosts []string)
 			return err
 		}
 		src = live
-		if record != "" {
-			rec = hostenv.NewRecorder(live)
-			src = rec
-		}
 	}
-	facts := hostenv.Collect(ctx, src)
-	if rec != nil {
-		m := &hostenv.Masker{Users: append(humanUsers(facts), users...), Hosts: append(hostNames(), hosts...), DropArgs: dropArgs}
-		if err := rec.Save(record, m); err != nil {
+	var facts *hostenv.Facts
+	if record != "" && replay == "" {
+		// The facts and the survey's reads (tools.RecordHost), masked.
+		var err error
+		facts, err = tools.RecordHost(ctx, src, record, func(f *hostenv.Facts) *hostenv.Masker {
+			return &hostenv.Masker{Users: append(humanUsers(f), users...), Hosts: append(hostNames(), hosts...), DropArgs: dropArgs}
+		})
+		if err != nil {
 			return err
 		}
 		fmt.Fprintln(os.Stderr, "hostfacts: fixture written to", record, "- review it and run gitleaks before committing")
+	} else {
+		facts = hostenv.Collect(ctx, src)
 	}
 	var out any = facts
 	if runChecks {
