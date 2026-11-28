@@ -135,6 +135,10 @@ Chinese for the zh-TW pages; keep the two in step.
   a request's text echoed before PHP's location (an unclosed private key marker) no longer takes
   the location with it, so the sink keeps its error-log evidence. The events keep only times and
   locations, and nothing from them is output.
+- On Windows the checks read a service's command line, a registry string and a scheduled task's
+  XML as written, not masked first: an unclosed private key marker in a service's path, a home's
+  path or a task's description no longer hides an unquoted service path, a startup folder or the
+  task. What they output stays masked.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
