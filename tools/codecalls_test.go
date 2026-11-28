@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nt-neil/shentu/rules/engine"
@@ -17,7 +18,10 @@ import (
 // keptAudit runs the audit with a state directory, recording which files each
 // pass scanned (not taken from the kept results).
 type keptAudit struct {
-	t          *testing.T
+	t *testing.T
+	// mu guards what the fakes write: the audit's workers call them in
+	// parallel (go test -race; a SIGSEGV of TestAppCodeAuditResumes).
+	mu         sync.Mutex
 	dir, state string
 	own, calls []string
 	cutAfter   int        // > 0: the clock runs out after this many files' calls in one audit
@@ -41,21 +45,28 @@ func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
 	t.Cleanup(func() { codeIndexFile, engineScan, projectScan = idx, scan, calls })
 	codeIndexFile = func() string { return filepath.Join(k.state, "codeindex.json") }
 	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, bool, error) {
+		k.mu.Lock()
 		k.own = append(k.own, filepath.Base(p))
+		k.mu.Unlock()
 		return scan(e, lang, p, b)
 	}
 	projectScan = func(pr *engine.Project, p string, b []byte, skip map[string]bool) (engine.CallsPart, error) {
-		k.calls = append(k.calls, filepath.Base(p))
 		var sk []string
 		for r := range skip {
 			sk = append(sk, r)
 		}
 		sort.Strings(sk)
+		k.mu.Lock()
+		k.calls = append(k.calls, filepath.Base(p))
 		k.skips = append(k.skips, sk)
+		n := len(k.calls)
+		k.mu.Unlock()
 		if k.slowFile == filepath.Base(p) && !skip[k.slowRule] {
 			return engine.CallsPart{At: k.slowRule, Timed: true}, nil // the clock always runs out in this rule
 		}
 		res, err := calls(pr, p, b, skip)
+		k.mu.Lock()
+		defer k.mu.Unlock()
 		if k.wasCut[filepath.Base(p)] && len(skip) == 0 {
 			k.restarted = append(k.restarted, filepath.Base(p))
 		}
@@ -76,7 +87,7 @@ func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
 		if k.fileClock == filepath.Base(p) {
 			return engine.CallsPart{Timed: true, FileTime: true}, err
 		}
-		if k.cutAll || k.cutAfter > 0 && len(k.calls) > k.cutAfter {
+		if k.cutAll || k.cutAfter > 0 && n > k.cutAfter {
 			// As if the clock had run out during this file, before any rule was done.
 			return engine.CallsPart{Timed: true}, err
 		}
@@ -88,7 +99,9 @@ func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
 // run audits once and returns the injection findings (base:line rule) and the
 // summary of calls across files ("" when every file's calls were followed).
 func (k *keptAudit) run() (found []string, summary string) {
+	k.mu.Lock()
 	k.own, k.calls, k.skips = nil, nil, nil
+	k.mu.Unlock()
 	for _, f := range AppCodeAudit(context.Background(), []string{k.dir}, nil).Findings {
 		switch {
 		case f.Kind != "injection":
@@ -99,8 +112,10 @@ func (k *keptAudit) run() (found []string, summary string) {
 		}
 	}
 	sort.Strings(found)
+	k.mu.Lock() // the workers are done; read under the lock all the same
 	sort.Strings(k.own)
 	sort.Strings(k.calls)
+	k.mu.Unlock()
 	return found, summary
 }
 
