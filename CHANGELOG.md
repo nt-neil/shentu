@@ -131,6 +131,10 @@ Chinese for the zh-TW pages; keep the two in step.
   or a run-as list (`mysql --password=...`) is masked in the text itself, so the survey's own
   output (onboard, the saved profile) does not hold it either; `-p<secret>`, a password given as
   the next argument and `-u user:<secret>` are not masked (known issue).
+- Attack detection reads PHP's error logs and journald's messages as written, not masked first:
+  a request's text echoed before PHP's location (an unclosed private key marker) no longer takes
+  the location with it, so the sink keeps its error-log evidence. The events keep only times and
+  locations, and nothing from them is output.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
