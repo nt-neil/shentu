@@ -49,8 +49,9 @@
 - Reviewer: see Review.
 
 ## Review
-Pending.
+Pending (the pull request's first round).
 
 ## Measurement
-See `elementor-editor-after-save--route.md`: the field changes nothing alone
-(no shipped route model used it before).
+Measured with the route model, see `elementor-editor-after-save--route.md`: the
+field changes nothing alone (no shipped route model used it before), and E7's
+output is the same with it.

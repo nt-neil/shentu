@@ -58,7 +58,27 @@ The route model has one vulnerable and four safe samples, the same cases.
 - Reviewer: see Review.
 
 ## Review
-Pending.
+Pending (the pull request's first round).
 
 ## Measurement
-Pending.
+Full A/B, base e0d8f79d (integ), head 14f308cd (this change), in a throwaway
+Linux VM (4 CPU, 6 GB) on a separate machine, the measurement environment since
+it was checked line for line against the work machine's runs. E7 twice on each
+side, cvebench on the three sets; every segment valid, the other machine's
+1-minute load peaking at 3.9 and the VM's at 2.9, none voided or rerun.
+
+| set | caught base → head | with sink lines | fixed FP |
+|---|---|---|---|
+| cves, all (106) | 21 → 22 | 25 → 26 | 3 → 3 |
+| cves, rule source | 9/31 → 10/32 | 9 → 10 | 2 → 2 |
+| cves, independent | 12/75 → 12/74 (the same 12 cases) | 16 → 16 | 1 → 1 |
+| holdout (22) | 3 → 3 | 4 → 4 | 0 → 0 |
+| cves-ts (18) | 1 → 1 | 1 → 1 | 1 → 1 |
+
+E7: the same output on all four runs (no line more, none fewer). cvebench lines:
+2 more in cves, none fewer; holdout and cves-ts line for line the same. Both new
+lines are the case itself, featured-image-from-url 5.3.1
+`elementor/widgets/widget.php:94` (`getimagesize($image_url)`):
+php-ssrf-url-readers (the CVE) and php-deserialization-phar-wrapper
+(`getimagesize()` opens a `phar://` URL too, which unserializes its metadata on
+PHP before 8.0). 5.3.2, with `wp_http_validate_url()`, reports neither.
