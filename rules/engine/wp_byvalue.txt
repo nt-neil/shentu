@@ -1,0 +1,33 @@
+# WordPress functions not_array (notarray.go mayTakeRef) takes to receive
+# their arguments by value: an array passed whole to one stays the caller's
+# array. Any other function the project does not declare may take it by
+# reference. One function per line, then why, from its signature in
+# WordPress core (wp-includes).
+maybe_unserialize # ($data): returns what it unserializes, $data is a copy
+maybe_serialize # ($data): returns the serialized string, $data is a copy
+is_serialized # ($data, $strict = true): only reads $data
+is_serialized_string # ($data): only reads $data
+wp_parse_args # ($args, $defaults = array()): returns a new merged array
+wp_parse_list # ($input_list): returns a new array of the items
+wp_list_pluck # ($input_list, $field, $index_key = null): returns a new array
+wp_json_encode # ($value, $flags = 0, $depth = 512): returns the JSON string
+wp_unslash # ($value): returns a stripped copy
+wp_slash # ($value): returns a slashed copy
+map_deep # ($value, $callback): returns a mapped copy
+stripslashes_deep # ($value): returns a stripped copy
+apply_filters # ($hook_name, $value, ...$args): returns the filtered value; callbacks get copies (apply_filters_ref_array is the by-reference form)
+do_action # ($hook_name, ...$arg): callbacks get copies (do_action_ref_array is the by-reference form)
+update_option # ($option, $value, $autoload = null): stores a copy
+add_option # ($option, $value = '', $deprecated = '', $autoload = null): stores a copy
+update_site_option # ($option, $value): stores a copy
+set_transient # ($transient, $value, $expiration = 0): stores a copy
+set_site_transient # ($transient, $value, $expiration = 0): stores a copy
+update_post_meta # ($post_id, $meta_key, $meta_value, $prev_value = ''): stores a copy
+add_post_meta # ($post_id, $meta_key, $meta_value, $unique = false): stores a copy
+update_user_meta # ($user_id, $meta_key, $meta_value, $prev_value = ''): stores a copy
+add_user_meta # ($user_id, $meta_key, $meta_value, $unique = false): stores a copy
+update_term_meta # ($term_id, $meta_key, $meta_value, $prev_value = ''): stores a copy
+add_term_meta # ($term_id, $meta_key, $meta_value, $unique = false): stores a copy
+wp_send_json # ($response, $status_code = null, $flags = 0): sends a copy as JSON and exits
+wp_send_json_success # ($value = null, $status_code = null, $flags = 0): sends a copy as JSON and exits
+wp_send_json_error # ($value = null, $status_code = null, $flags = 0): sends a copy as JSON and exits

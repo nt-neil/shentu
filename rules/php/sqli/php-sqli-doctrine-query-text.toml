@@ -8,6 +8,8 @@ title = "Request input written into a Doctrine DQL or SQL string"
 frameworks = ["symfony", "doctrine"]
 sources = ["$request->query->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->attributes->get(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["->createQuery(", "->createNativeQuery(", "->executeQuery(", "->executeStatement(", "->fetchAllAssociative(", "->fetchAssociative(", "->fetchOne(", "->fetchFirstColumn(", "->fetchAllKeyValue(", "->where(", "->andWhere(", "->orWhere(", "->having(", "->andHaving(", "->addOrderBy(", "->groupBy(", "->addGroupBy("]
+# a method sink of a project that never names the library and declares a method of that name is its own (Project.ownMethodOnly)
+receivers = ["Doctrine", "EntityManager", "EntityManagerInterface", "DBAL", "doctrine/orm", "doctrine/dbal"]
 # ->where(, ->andWhere(, ->orWhere(, ->having(, ->addOrderBy( and ->groupBy(
 # are Yii's calls too: input both read on the same call (Yii's $request->get(,
 # $_GET) is php-sqli-yii-query's (yields.go); Symfony's own input stays here.

@@ -43,6 +43,23 @@ add_action('wp_ajax_nopriv_save_cart', function () {
 });
 '''
 
+# maybe_unserialize() unserializes strings only: an array (array(...), [...], explode()) is returned as is
+[[args]]
+sinks = ["maybe_unserialize("]
+arg = 1
+not_array = true
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+add_action('wp_ajax_save_form', function () {
+    $form = array('fields' => $_POST['form_fields'], 'title' => $_POST['title']);
+    $structure = maybe_unserialize($form);
+    update_option('form_structure', $structure);
+});
+'''
+
 # filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
 [[source_args]]
 sources = ["filter_input(", "->filterInput(", "->filter_input("]

@@ -62,6 +62,7 @@ type summary struct {
 	// leading condition: header("Location: $u")), so an argument that starts
 	// with a fixed text (admin_url('x') . '?a=' . $v) reaches none of them
 	sinkPre    uint64
+	sinkArr    uint64 // parameters whose sinks all take a value that is no array (not_array): an array argument reaches none
 	ret        uint64 // parameters whose input the return value carries
 	retWeak    uint64 // ... only through calls the analysis does not know
 	retEmb     uint64 // ... embedded in a larger string
@@ -82,7 +83,7 @@ type summary struct {
 }
 
 func (s *summary) equal(o *summary) bool {
-	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb || s.sinkPre != o.sinkPre || s.checks != o.checks || s.condChecks != o.condChecks {
+	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb || s.sinkPre != o.sinkPre || s.sinkArr != o.sinkArr || s.checks != o.checks || s.condChecks != o.condChecks {
 		return false
 	}
 	if !maps.EqualFunc(s.pcall, o.pcall, slices.Equal[[]uint64]) || !maps.EqualFunc(s.pcallSrc, o.pcallSrc, slices.Equal[[]bool]) {
@@ -1427,6 +1428,12 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 				s.sinkPre |= 1 << i
 			}
 		}
+		if a.r.notArray && len(r.lines) > 0 {
+			st := state{fi.params[i]: entry{taint: true, arr: true}}
+			if pr := a.runBody(fi, st, false); len(pr.lines) == 0 {
+				s.sinkArr |= 1 << i // as at the sink: maybe_unserialize() of an array
+			}
+		}
 		for l := range r.lines {
 			for len(s.sink) <= i {
 				s.sink = append(s.sink, nil)
@@ -1809,6 +1816,9 @@ func (a *analysis) callSinks(st state, t []Token) {
 				}
 				if s.sinkPre&(1<<q) != 0 && a.fixedStart(st, args[k]) {
 					continue // as at the sink: a fixed start, then the input
+				}
+				if s.sinkArr&(1<<q) != 0 && v.arr {
+					continue // the callee's sinks take no array, and this is one
 				}
 				lines := s.sink[q]
 				if sub := partialArg(st, args[k]); p >= 0 && sub != nil {
