@@ -38,12 +38,19 @@ func TestBudgetUsedStrict(t *testing.T) {
 }
 
 // S-r3-B1: bot.json says the service can act only while it runs.
+// The service is stopped by the fake Telegram once it asks for updates
+// (it then runs, past its start), not after a fixed time: a start of
+// several bot.json writes, an audit line and three calls took longer
+// than a second on a Windows runner now and then, so the test stopped it
+// before it ever asked.
 func TestBotClearsCanActOnExit(t *testing.T) {
 	old := netAdmin
 	netAdmin = func() bool { return true }
 	t.Cleanup(func() { netAdmin = old })
 	b, _ := levelBot(t, nil, [4]int{3, 2, 3, 2})
-	var seen atomic.Bool // no lock held around bot.json's: a handler may hold that one
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // only if it never asks
+	defer cancel()
+	var polled, seen atomic.Bool // no lock held around bot.json's: a handler may hold that one
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/getUpdates") {
 			withBotState(b.cfg.StateDir, func(s *botState) error {
@@ -52,14 +59,17 @@ func TestBotClearsCanActOnExit(t *testing.T) {
 				}
 				return nil
 			})
+			polled.Store(true)
+			cancel()
 		}
 		w.Write([]byte(`{"ok":true,"result":[]}`))
 	}))
 	b.api, b.hc = srv.URL, srv.Client()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
 	b.run(ctx)
 	srv.Close() // waits for a request still being answered
+	if !polled.Load() {
+		t.Fatal("the service never asked for updates")
+	}
 	if !seen.Load() {
 		t.Error("bot.json did not say the running service can act")
 	}
