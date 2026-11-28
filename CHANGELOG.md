@@ -130,6 +130,10 @@ Chinese for the zh-TW pages; keep the two in step.
   is no longer masked to `[REDACTED]`. A secret in a command's arguments or a run-as list,
   written as `key=value` or in one of the forms below, is masked in the text itself, so the
   survey's own output (onboard, the saved profile) does not hold it either.
+- `hostfacts -record` records what site_profile reads of the host as well as the facts:
+  cloud-init's configuration (whose default user's sudo rule is told apart), the web servers'
+  package queries, `/run/reboot-required`, Docker's and Podman's sockets. A replay of the
+  recording no longer loses `sudo:nopasswd:cloud-init`.
 - The secret masking (fixtures, logs, what the model is given, Windows checks' command lines)
   now also masks a password given as a command's own argument: `-p<secret>` after a program of
   the mysql family (`mysql`, `mysqldump`, `mysqlcheck`, `mysqladmin`, `mysqlbinlog` and the
@@ -154,7 +158,11 @@ Chinese for the zh-TW pages; keep the two in step.
 - Attack detection reads PHP's error logs and journald's messages as written, not masked first:
   a request's text echoed before PHP's location (an unclosed private key marker) no longer takes
   the location with it, so the sink keeps its error-log evidence. The events keep only times and
-  locations, and nothing from them is output.
+  locations, and nothing from them is output. That evidence counts only from a source the web
+  account cannot write: a journald message from a unit's root process while the application
+  cannot run as root. An error log file (nginx's, Apache's, PHP-FPM's) and PHP's own messages,
+  which FPM's workers write (to a file, syslog or stdout), never count: on a PHP-FPM host a
+  request does not reach L3 by them.
 - rpm's changelog, searched for a CVE's fix backported by the package (nginx, PHP, a bundled
   library), is read as written: an unclosed private key marker in an entry no longer hides the
   entries after it, so a backported fix is no longer reported as open.
@@ -273,6 +281,10 @@ Chinese for the zh-TW pages; keep the two in step.
   `handle-table`). Nothing is kept unless a rule uses it, and no shipped rule uses it yet.
 ### Known issues
 
+- A Python package's `RECORD` with a line that opens a quote and never closes it is read as one
+  field from there to its end: the rows after that line are not used, and a `.pth` file they would
+  prove a tool's (setuptools, virtualenv, an editable install) is listed as not proven (reported
+  more, never hidden).
 - A command's own password is not masked when it is only JSON punctuation (`, : { } [ ]` and
   spaces), past a space in it (a command line joins argv with spaces; quoted in a shell line it is
   masked whole), past an unquoted `;`, `|` or `&` in a log line or a shell's
