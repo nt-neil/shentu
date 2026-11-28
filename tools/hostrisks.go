@@ -1,8 +1,11 @@
 package tools
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/nt-neil/shentu/hostenv"
@@ -21,17 +24,7 @@ import (
 // (sshPasswordLogin): "yes" makes cloud-init's rule a warning, the two
 // together; "no" or "unknown" leave it info.
 func sudoRisks(s hostenv.SudoNoPass, sshPassword string) []Risk {
-	var warn, cloud, some []string
-	for _, r := range s.Rules {
-		switch {
-		case !r.All:
-			some = append(some, sudoRuleText(r))
-		case r.CloudDefault && r.OneUser():
-			cloud = append(cloud, sudoRuleText(r))
-		default:
-			warn = append(warn, sudoRuleText(r))
-		}
-	}
+	warn, cloud, some := sudoGroups(s)
 	var out []Risk
 	if len(warn) > 0 {
 		out = append(out, Risk{"sudo:nopasswd", "warning", "sudo runs every command with no password asked, by these rules: " + ruleList(warn) +
@@ -107,6 +100,36 @@ func sudoWho(r hostenv.SudoRule) string {
 }
 
 // ruleList is the first three rules, each cut, and how many more.
+// sudoGroups sorts the no-password rules: every command (warn), cloud-init's
+// default user's (cloud), some commands (some).
+func sudoGroups(s hostenv.SudoNoPass) (warn, cloud, some []string) {
+	for _, r := range s.Rules {
+		switch {
+		case !r.All:
+			some = append(some, sudoRuleText(r))
+		case r.CloudDefault && r.OneUser():
+			cloud = append(cloud, sudoRuleText(r))
+		default:
+			warn = append(warn, sudoRuleText(r))
+		}
+	}
+	return warn, cloud, some
+}
+
+// sudoCooling is what the patrol's cooldown of sudo:nopasswd compares
+// besides its key (S2, v0.5.8 acceptance): every rule of it, not only the
+// three its summary shows, so a rule added is pushed again; "" with none.
+func sudoCooling(s hostenv.SudoNoPass) map[string]string {
+	warn, _, _ := sudoGroups(s)
+	if len(warn) == 0 {
+		return nil
+	}
+	sorted := append([]string(nil), warn...)
+	sort.Strings(sorted)
+	h := sha256.Sum256([]byte(strings.Join(sorted, "\n")))
+	return map[string]string{"sudo:nopasswd": hex.EncodeToString(h[:8])}
+}
+
 func ruleList(rules []string) string {
 	shown := rules[:min(3, len(rules))]
 	more := ""

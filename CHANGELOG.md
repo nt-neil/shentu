@@ -86,6 +86,10 @@ Chinese for the zh-TW pages; keep the two in step.
   a CVE entry of Debian's or Ubuntu's tracker, are unconfirmed: the overview does not fetch each
   advisory to tell, and `fix_note` says that unconfirmed is not "no fix". Until now the count
   mixed them; `package` set still gives each one's `fixed_version`, without the counts.
+- The patrol's cooldown of `sudo:nopasswd` compares its rules too, every one (not only the three
+  its text shows): a no-password rule added while the risk is already reported is pushed again
+  within the cooldown; the same rules stay quiet as before. After upgrading, the first patrol
+  pushes a `sudo:nopasswd` already reported once more (its cooldown is kept under a new key).
 - site_profile on Linux and macOS says two more risks. `sudo:nopasswd` (a warning): sudoers lets
   someone run every command with no password: `ALL` anywhere among the commands a NOPASSWD tag
   covers (it holds up to a PASSWD tag), a command alias that is ALL or cannot be told, a command
