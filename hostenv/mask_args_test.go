@@ -39,9 +39,10 @@ func TestMaskCommandArgs(t *testing.T) {
 		// N-286-5: the program after ; | & ( ` $( in shell text, and in a
 		// cron line, a shell script and a shell's history
 		"x;mysql -p" + s + " db":                         "x;mysql -p[REDACTED] db",
-		"(mysql -p" + s + ")":                            "(mysql -p[REDACTED])",
-		"`mysql -p" + s + "`":                            "`mysql -p[REDACTED]`",
-		"$(mysql -p" + s + ")":                           "$(mysql -p[REDACTED])",
+		"(mysql -p" + s + ")":                            "(mysql -p[REDACTED]",
+		"`mysql -p" + s + "`":                            "`mysql -p[REDACTED]",
+		"$(mysql -p" + s + ")":                           "$(mysql -p[REDACTED]",
+		"mysql -pab)" + s + " db":                        "mysql -p[REDACTED] db",
 		"echo|mysql -p" + s + " db":                      "echo|mysql -p[REDACTED] db",
 		"0 3 * * * root out=$(mysqldump -p" + s + " db)": "0 3 * * * root out=$(mysqldump -p[REDACTED] db)",
 		"rows=`mysql -p" + s + " -e \"select 1\"`":       "rows=`mysql -p[REDACTED] -e \"select 1\"`",

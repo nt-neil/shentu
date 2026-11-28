@@ -13,8 +13,8 @@ import (
 // is right for a log line or a shell's history but would leave the rest of
 // such a password.
 var (
-	argvMySQL  = regexp.MustCompile(`(?i)^(?:mysql(?:dump|check|import|show|pump|binlog|_upgrade|slap|admin|sh)?\d*|mariadb(?:-?(?:dump|admin|check|import|show|binlog|upgrade|slap|backup))?)(?:\.exe)?$`)
-	argvCurl   = regexp.MustCompile(`(?i)^(?:curl|wget)(?:\.exe)?$`)
+	argvMySQL  = regexp.MustCompile(`(?i)(?:^|[^=\w])(?:mysql(?:dump|check|import|show|pump|binlog|_upgrade|slap|admin|sh)?\d*|mariadb(?:-?(?:dump|admin|check|import|show|binlog|upgrade|slap|backup))?)(?:\.exe)?$`)
+	argvCurl   = regexp.MustCompile(`(?i)(?:^|[^=\w])(?:curl|wget)(?:\.exe)?$`)
 	argvKV     = regexp.MustCompile(`(?i)^(-{0,2}(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)=).{3,}$`)
 	argvUserAt = regexp.MustCompile(`^(?:-[uU]|--(?:proxy-)?user=)[^:]*:`)
 )
@@ -62,10 +62,11 @@ func maskArgv(args []string, view func(string) string) string {
 		}
 		// A user's name (--user mysql, psql -U mysql) names no program
 		// (S-286-10).
+		// The program may end an argument after a path or a shell's
+		// ; | ( $( or ` (ps joins sh -c's line with spaces: x;mysql).
 		if !argvUserOpt[prev] {
-			base := v[strings.LastIndexAny(v, `/\`)+1:]
-			mysql = mysql || argvMySQL.MatchString(base)
-			curl = curl || argvCurl.MatchString(base)
+			mysql = mysql || argvMySQL.MatchString(v)
+			curl = curl || argvCurl.MatchString(v)
 		}
 		prev = v
 		out = append(out, a)

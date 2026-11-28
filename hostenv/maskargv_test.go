@@ -30,6 +30,10 @@ func TestMaskArgvSemicolonInPassword(t *testing.T) {
 		{[]string{"docker", "run", "-p", "8080:80", "mysql"}, "docker run -p 8080:80 mysql"},
 		{[]string{"mysql", "-p", "shop"}, "mysql -p shop"},
 		{[]string{"tool", "--password", "--next"}, "tool --password --next"},
+		// the security review: a program after a shell's ; ( $( in one
+		// argument (ps joins sh -c's line with spaces)
+		{[]string{"sh", "-c", "x;mysql", "-pab;" + s}, "sh -c x;mysql -p[REDACTED]"},
+		{[]string{"sh", "-c", "$(mysql", "-p" + s + ")"}, "sh -c $(mysql -p[REDACTED]"},
 		// S-286-10: a user's name is no program
 		{[]string{"psql", "-U", "mysql", "-p5432"}, "psql -U mysql -p5432"},
 		{[]string{"tool", "--user", "mysql", "-p5432"}, "tool --user mysql -p5432"},
