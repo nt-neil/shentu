@@ -26,6 +26,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 攻擊偵測讀 PHP 的 error log 和 journald 的訊息時，改成直接讀原文，不再先遮：請求裡被回寫到 PHP 位置前面的文字（例如沒有結尾的私鑰標記），不會再把位置一起遮掉，sink 的 error log 證據就留得住。解析出來的事件只留時間和位置，裡面的內容都不會輸出。
 - 為了找套件有沒有 backport 某個 CVE 的修正（nginx、PHP、內含的函式庫），rpm 的 changelog 改成直接讀原文：某一筆裡有沒有結尾的私鑰標記時，不會再把後面的記錄一起遮掉，已經 backport 的修正也就不會再被報成還沒修。
 - Windows 的 log_search 改成先遮欄位的值，再把名稱和值一起遮一次：值的第一個字是程式名稱時（`CommandLine=mysql -u root -p<密碼>`）也會遮；只把「名稱=值」一起遮的話，前面的 `=` 會讓程式名稱認不出來。
+- cloud-init 預設使用者的 sudo 規則（所有指令都不用密碼），在 sshd 讓每個使用者都能用密碼登入時，從 info 升成 warning。條件是 PasswordAuthentication 為 yes（或在已知的發行版上沒有設定、用的是 sshd 的預設值），而且所有 sshd 設定檔裡都沒有 Match 區塊（每個檔都要讀到；Include 裡有 %-token 或 ~ 時，當成可能有 Match）。沒有 sshd_config 主檔時（沒裝 sshd，或是 openSUSE 這類只有 /usr/etc/ssh 的主機），不會升級。那個使用者如果有設密碼（cloud-init 預設是鎖住的），只要試出密碼就直接是 root。survey 的 sshd facts 也會寫出是否可能有 Match 區塊會改掉設定（`match`），以及哪些設定是設定檔自己寫的（`set`）。
 - Windows 的檢查改成直接讀服務的 command line、登錄檔字串和排程工作 XML 的原文，不再先遮：服務路徑、使用者的 home 路徑或排程工作說明裡有沒有結尾的私鑰標記時，不會再藏住沒加引號的服務路徑、啟動資料夾或那個排程工作。輸出的內容照樣是遮過的。
 - 網站首頁：捲動時才出現的區塊（統計、開放原始碼、最新版本和河道），從中段進入頁面時（例如從連到頁內位置的連結、回到上一頁，或直接跳到中段）不再一直空白。區塊只要有任何一部分看得到就會出現；頁面一打開就看得到的區塊，以及從頁內位置打開的頁面上的每個區塊，都會立刻出現。
 - PHP 規則會追蹤參數不是寫在程式裡的 array 的 `extract()`。`extract($args)`、`extract($_POST)`，或 `extract(wp_parse_args($atts, [...]))`（`$atts` 的每個 key 都會保留）之後，函式裡的每個變數都可能是那份輸入，直到再被指派為止：包括之前定義過的（樣板載入函式的 `$template_name` 會被 `extract($args)` 改寫），以及從沒指派過的（`extract($opts)` 之後的 `$team_id`）。以前一個變數都不會設定，所以 shortcode 的屬性經過這種寫法進到 `include` 或 `call_user_func()` 時不會回報（CVE-2023-6996）。`extract(shortcode_atts($defaults, $atts))` 只會設定 `$defaults` 的 key，也不會改寫 `$defaults` 本身；`EXTR_SKIP` 和 `EXTR_PREFIX_*` 不會改寫任何變數；`extract()` 設定的值，讀它的屬性（`global $wpdb` 之後的 `$wpdb->prefix`）不算輸入，讀它的索引仍然算。flag 照 PHP 的讀法：`EXTR_SKIP` 和 `EXTR_PREFIX_SAME` 不會改寫任何變數，`EXTR_IF_EXISTS` 會改寫但不建立變數，`EXTR_PREFIX_ALL` 和 `EXTR_PREFIX_IF_EXISTS` 只設定名稱以 `prefix_` 起始的變數（prefix 不是寫在程式裡時，任何這種名稱都算）。`extract()` 在 closure 外面新建的變數，closure 只透過它的 `use (...)` 看得到，它的參數是呼叫端給的值。
@@ -49,6 +50,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ### 已知問題
 
 - 直接寫在指令參數裡的密碼，下面幾種情況不會遮：密碼全是 JSON 標點（`, : { } [ ]` 和空白）；密碼裡空白之後的部分（command line 是用空白把 argv 接起來的；在 shell 指令行裡加了引號的會整段遮掉）；log 或 shell 的指令紀錄裡，沒有引號的 `;`、`|`、`&` 之後的部分；分成多行寫出的 JSON argv，或前面的字串裡有 `]` 的 JSON argv；以及其他程式的密碼參數（`sshpass -p`、`redis-cli -a`、`ldapsearch -w`、`smbclient -U user%<密碼>`、`mongosh -p`、`htpasswd -b`、curl 的 `--pass` 和 `-E cert:<密碼>`）。
+- cloud-init sudo 的 warning 只看 PasswordAuthentication：設了 `AuthenticationMethods publickey`、實際上只能用金鑰登入時，仍然會升級（多報）；PasswordAuthentication 是 no，但 `KbdInteractiveAuthentication yes` 加上 `UsePAM yes` 仍然可以用密碼登入時，不會升級（少報）。
 - 沒用 Composer 安裝的 Drupal（沒有 `composer.lock`），這一版對 Drupal core 的 installer 漏洞（SA-CORE-2026-017、SA-CORE-2026-019）還沒有主機面的檢查；用 Composer 安裝的，app_vulns 會透過 OSV 報出來，並在 CISA 的 KEV 收錄時標成已被利用。
 - 有些檢查讀進來的文字仍然是先遮過的：Windows 的 event data（每一欄各自遮；log_search 裡的事件文字也是一欄一欄分開遮）。
 - 事件裡密碼的名稱和值如果分在兩個欄位（名稱在一欄、值在下一欄），在 log_search 的文字裡不會被遮；Windows 內建的事件沒有這種寫法（CommandLine、ImagePath、ScriptBlockText 都是單一欄位）。

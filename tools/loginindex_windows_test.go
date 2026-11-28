@@ -22,6 +22,14 @@ const stateSDDLForTest = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FR;;;OW)"
 // written by save (CreateTemp, then Rename) keeps only the directory's
 // inherited trustees: BA, OWNER RIGHTS, SYSTEM.
 func TestLoginIndexSaveACL(t *testing.T) {
+	// S-301-1: the same SDDL as the root package's stateSDDL.
+	src, err := os.ReadFile(filepath.Join("..", "paths_windows.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := regexp.MustCompile(`const stateSDDL = "([^"]+)"`).FindSubmatch(src); m == nil || string(m[1]) != stateSDDLForTest {
+		t.Fatalf("stateSDDLForTest is not paths_windows.go's stateSDDL: %q", m)
+	}
 	dir := filepath.Join(t.TempDir(), "state")
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -39,20 +47,23 @@ func TestLoginIndexSaveACL(t *testing.T) {
 		t.Fatal(err) // CI runs elevated, as the service does
 	}
 	x := &loginIndex{Version: loginIndexVersion, From: time.Now(), Addrs: map[string]*loginIndexAddr{}}
-	if err := x.save(dir); err != nil {
-		t.Fatal(err)
-	}
-	got, err := windows.GetNamedSecurityInfo(filepath.Join(dir, LoginIndexFile), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := got.String()
-	var sids []string
-	for _, m := range regexp.MustCompile(`\(A;[^;]*;[^;]*;;;([^)]+)\)`).FindAllStringSubmatch(s[strings.Index(s, "D:"):], -1) {
-		sids = append(sids, m[1])
-	}
-	sort.Strings(sids)
-	if strings.Join(sids, ",") != "BA,OW,SY" {
-		t.Errorf("loginindex.json's trustees %v (%s), want BA, OW and SY only", sids, s)
+	// Twice: the second Rename replaces the file the first one made.
+	for i := 1; i <= 2; i++ {
+		if err := x.save(dir); err != nil {
+			t.Fatal(err)
+		}
+		got, err := windows.GetNamedSecurityInfo(filepath.Join(dir, LoginIndexFile), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := got.String()
+		var sids []string
+		for _, m := range regexp.MustCompile(`\(A;[^;]*;[^;]*;;;([^)]+)\)`).FindAllStringSubmatch(s[strings.Index(s, "D:"):], -1) {
+			sids = append(sids, m[1])
+		}
+		sort.Strings(sids)
+		if strings.Join(sids, ",") != "BA,OW,SY" {
+			t.Errorf("save %d: loginindex.json's trustees %v (%s), want BA, OW and SY only", i, sids, s)
+		}
 	}
 }

@@ -51,7 +51,7 @@ func TestSudoRisksBySource(t *testing.T) {
 			h.memHost[p] = c
 		}
 		got := map[string]Risk{}
-		for _, r := range sudoRisks(hostenv.SudoNopasswd(h)) {
+		for _, r := range sudoRisks(hostenv.SudoNopasswd(h), "unknown") {
 			got[r.Key] = r
 		}
 		return got
@@ -103,7 +103,7 @@ func TestSudoRebootRisks(t *testing.T) {
 	for _, f := range []string{"a", "b", "c", "d"} {
 		rules = append(rules, hostenv.SudoRule{File: f, Line: "1", Cmds: []string{"/x"}})
 	}
-	r := sudoRisks(hostenv.SudoNoPass{Rules: rules, Unread: []string{"/etc/sudoers.d (permission denied)"}})
+	r := sudoRisks(hostenv.SudoNoPass{Rules: rules, Unread: []string{"/etc/sudoers.d (permission denied)"}}, "unknown")
 	if len(r) != 2 || r[0].Key != "sudo:nopasswd:some" || r[0].Severity != "info" || !strings.Contains(r[0].Summary, "a: (someone) (only /x, as root); b: (someone) (only /x, as root); c: (someone) (only /x, as root) (and 1 more)") ||
 		!Unchecked(r[1]) || NotYet(r[1]) || !strings.Contains(r[1].Summary, "run Shentu as root") {
 		t.Errorf("%+v", r)
@@ -111,7 +111,7 @@ func TestSudoRebootRisks(t *testing.T) {
 	if r := rebootRisks(hostenv.RebootPending{Unread: "/boot (permission denied)"}); len(r) != 1 || r[0].Key != "unchecked:reboot" || !Unchecked(r[0]) {
 		t.Errorf("%+v", r)
 	}
-	if r := append(sudoRisks(hostenv.SudoNoPass{}), rebootRisks(hostenv.RebootPending{})...); len(r) != 0 {
+	if r := append(sudoRisks(hostenv.SudoNoPass{}, "unknown"), rebootRisks(hostenv.RebootPending{})...); len(r) != 0 {
 		t.Errorf("nothing to say: %+v", r)
 	}
 }
@@ -123,12 +123,12 @@ func TestSudoPushedTextNotMasked(t *testing.T) {
 		"/etc/sudoers":             "@includedir /etc/sudoers.d\n",
 		"/etc/sudoers.d/90-admins": "%admin ALL=NOPASSWD: ALL\ndeploy ALL=NOPASSWD: /usr/bin/systemctl restart app\nDefaults:backup !authenticate\n",
 	}}}
-	for _, r := range sudoRisks(hostenv.SudoNopasswd(h)) {
+	for _, r := range sudoRisks(hostenv.SudoNopasswd(h), "unknown") {
 		if got := hostenv.MaskSecrets(r.Summary); got != r.Summary || strings.Contains(r.Summary, "PASSWD") {
 			t.Errorf("%s: masked to %q", r.Key, got)
 		}
 	}
-	got := sudoRisks(hostenv.SudoNopasswd(h))
+	got := sudoRisks(hostenv.SudoNopasswd(h), "unknown")
 	want := []string{"/etc/sudoers.d/90-admins: %admin (every command, as root)", "/etc/sudoers.d/90-admins: Defaults !authenticate for backup (every command, as root)", "/etc/sudoers.d/90-admins: deploy (only /usr/bin/systemctl restart app, as root)"}
 	all := got[0].Summary + got[len(got)-1].Summary
 	for _, w := range want {
@@ -152,7 +152,7 @@ func TestSudoRiskTextMasksSecrets(t *testing.T) {
 	}}}
 	withHost(t, h)
 	var all []string
-	for _, r := range sudoRisks(hostenv.SudoNopasswd(h)) {
+	for _, r := range sudoRisks(hostenv.SudoNopasswd(h), "unknown") {
 		all = append(all, r.Summary)
 	}
 	s := strings.Join(all, "\n")
