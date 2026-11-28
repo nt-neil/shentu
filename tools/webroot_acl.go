@@ -2,14 +2,14 @@ package tools
 
 import (
 	"errors"
-	"runtime"
 	"strings"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
 
-// webrootACL checks who may write each web root (Windows only; tests flip it).
-var webrootACL = runtime.GOOS == "windows"
+// webrootACL checks who may write each web root: a Windows host's (the host
+// read's GOOS, not the machine running the check; tests replace it).
+var webrootACL = func() bool { return onWindows() }
 
 // winFileSecurity reads a path's owner and writers; tests replace it.
 var winFileSecurity = func(path string) (hostenv.WinFileSecurity, error) {
@@ -25,7 +25,7 @@ var winFileSecurity = func(path string) (hostenv.WinFileSecurity, error) {
 // a web server's content writable by them can be replaced with a
 // webshell. The audit of the files themselves goes on as usual.
 func webrootFindings(webRoots []string) []CodeFinding {
-	if !webrootACL {
+	if !webrootACL() {
 		return nil
 	}
 	var out []CodeFinding

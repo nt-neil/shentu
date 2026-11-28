@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"unicode"
@@ -730,4 +731,9 @@ func pthImports(dir, name string, b []byte) (PthFile, bool) {
 
 // hostPaths are the path operations of the host read: a Linux host's paths
 // keep "/" read on any machine (S-272-2).
-func hostPaths() hostenv.PathOps { return hostenv.PathFor(hostSource()) }
+func hostPaths() hostenv.PathOps {
+	if hostIsLive() {
+		return hostenv.PathForGOOS(runtime.GOOS)
+	}
+	return hostenv.PathFor(hostSource())
+}

@@ -5,21 +5,22 @@ import (
 	"encoding/binary"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"unicode/utf16"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
 
-// IIS support (Phase 2). Everything here is switched on for Windows only,
-// so scans on Unix stay exactly as they were; tests flip the switches.
+// IIS support (Phase 2). Everything here is switched on for a Windows host
+// only (the host read's GOOS, v0.5.9: a Windows recording replayed on Linux
+// has them, a Linux one on Windows does not), so a Unix host's scans stay
+// exactly as they were; tests replace the switches.
 var (
 	// aspAudit reads ASP and ASP.NET pages in the code audit and matches
 	// them against aspWebshellPatterns.
-	aspAudit = runtime.GOOS == "windows"
+	aspAudit = func() bool { return onWindows() }
 	// foldPaths compares web-root paths case-insensitively, as Windows does.
-	foldPaths = runtime.GOOS == "windows"
+	foldPaths = func() bool { return onWindows() }
 	// winSource is the Windows host the Windows checks read: the host read
 	// (hostSource). On Windows that is the live machine, made as it always
 	// was (NewLive with Windows' allowlist); a Windows replay, or another
@@ -62,7 +63,7 @@ func aspText(b []byte) []byte {
 // aspWebshellLine returns the 1-based line of the first ASP webshell
 // pattern in a page IIS would run, or 0.
 func aspWebshellLine(name string, b []byte) int {
-	if !aspAudit || !aspExt[strings.ToLower(filepath.Ext(name))] {
+	if !aspAudit() || !aspExt[strings.ToLower(filepath.Ext(name))] {
 		return 0
 	}
 	t := aspText(b)
@@ -77,7 +78,7 @@ func aspWebshellLine(name string, b []byte) int {
 // aspWebshellMatches returns the matched text of every ASP webshell
 // pattern found (for the hourly file-change scan).
 func aspWebshellMatches(name string, b []byte) []string {
-	if !aspAudit || !aspExt[strings.ToLower(filepath.Ext(name))] {
+	if !aspAudit() || !aspExt[strings.ToLower(filepath.Ext(name))] {
 		return nil
 	}
 	t := aspText(b)
@@ -92,12 +93,12 @@ func aspWebshellMatches(name string, b []byte) []string {
 
 // aspPage reports a page the ASP checks read (on Windows only).
 func aspPage(name string) bool {
-	return aspAudit && aspExt[strings.ToLower(filepath.Ext(name))]
+	return aspAudit() && aspExt[strings.ToLower(filepath.Ext(name))]
 }
 
 // samePath compares two slash-separated paths, ignoring case on Windows.
 func samePath(a, b string) bool {
-	if foldPaths {
+	if foldPaths() {
 		return strings.EqualFold(a, b)
 	}
 	return a == b

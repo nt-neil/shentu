@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -27,7 +28,12 @@ func onMac() bool { return hostSource().Info().GOOS == "darwin" }
 // onWindows is whether the host the tools read is Windows, as onMac: a
 // replayed Linux or macOS fixture is read as that OS on a Windows machine,
 // and a Windows one as Windows anywhere.
-func onWindows() bool { return hostSource().Info().GOOS == "windows" }
+func onWindows() bool {
+	if hostIsLive() {
+		return runtime.GOOS == "windows"
+	}
+	return hostSource().Info().GOOS == "windows"
+}
 
 // macListeners and macProcList read the macOS listeners and processes;
 // tests replace them.

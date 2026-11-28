@@ -156,7 +156,7 @@ func winChecks(t *testing.T) map[string]string {
 	t.Helper()
 	acl := webrootACL
 	t.Cleanup(func() { webrootACL = acl })
-	webrootACL = true
+	webrootACL = func() bool { return true }
 	out := map[string]string{}
 	put := func(k string, v any, err error) {
 		if err != nil {
@@ -259,7 +259,7 @@ func TestWinChecksNeverReadTheMachine(t *testing.T) {
 	}
 	acl := webrootACL
 	t.Cleanup(func() { webrootACL = acl })
-	webrootACL = true
+	webrootACL = func() bool { return true }
 	if f := webrootFindings([]string{`C:\inetpub\example`}); len(f) != 1 || f[0].Kind != "webroot_acl_unknown" ||
 		!strings.Contains(f[0].Detail, "not a Windows source") {
 		t.Errorf("webroot ACL on a Linux host read: %+v", f)

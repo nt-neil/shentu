@@ -177,17 +177,29 @@ func served(p string, webRoots []string) bool {
 	if len(webRoots) > 0 {
 		return insideAny(p, webRoots)
 	}
-	dir := filepath.ToSlash(filepath.Dir(p))
+	dir := hostSlash(hostPaths().Dir(p)) // the host's spelling, as "/" (a Windows recording on Linux too)
 	// /var/www holds one folder per site, so its own "www" does not make a path served.
 	if dir == "/var/www" || strings.HasPrefix(dir, "/var/www/") {
 		dir = dir[len("/var/www"):]
 	}
 	for _, part := range strings.Split(dir, "/") {
+		if foldPaths() {
+			part = strings.ToLower(part)
+		}
 		if webDirNames[part] {
 			return true
 		}
 	}
 	return false
+}
+
+// hostSlash is a host path with "/" between its elements: a Windows host's
+// "\" turned, a Linux or macOS host's left (a "\" is a name's there).
+func hostSlash(p string) string {
+	if hostPaths().Sep == `\` {
+		return strings.ReplaceAll(p, `\`, "/")
+	}
+	return p
 }
 
 var exposedNames = []struct {
@@ -245,7 +257,7 @@ var uploadNames = map[string]bool{"uploads": true, "upload": true, "files": true
 // root; elsewhere (an app path the server's configuration does not name) right
 // under one named like public/ or www/, or under a site folder of /var/www.
 func uploadFolder(p string, webRoots []string) bool {
-	segs := strings.Split(filepath.ToSlash(filepath.Dir(p)), "/")
+	segs := strings.Split(hostSlash(hostPaths().Dir(p)), "/")
 	low := make([]string, len(segs))
 	for i, s := range segs {
 		low[i] = strings.ToLower(s)
@@ -261,7 +273,7 @@ func uploadFolder(p string, webRoots []string) bool {
 	root := ""
 	for _, r := range webRoots {
 		if insideAny(p, []string{r}) && len(r) > len(root) {
-			root = filepath.ToSlash(r)
+			root = hostSlash(hostPaths().Clean(r))
 		}
 	}
 	// Below vendor/, node_modules/, WordPress's own code or a plugin or theme

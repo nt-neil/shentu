@@ -10,14 +10,18 @@ import (
 
 // The code-audit tests use temp folders as web roots, which their own user
 // may write: the web-root check stays off in tests unless one turns it on.
-func init() { webrootACL = false }
+// webrootACLHost is the product's switch (the host read's GOOS), kept
+// before init turns the check off for the package's other tests.
+var webrootACLHost = webrootACL
+
+func init() { webrootACL = func() bool { return false } }
 
 // S2b: one warning per web root that someone besides SYSTEM,
 // Administrators or TrustedInstaller may write, naming them.
 func TestWebrootFindings(t *testing.T) {
 	oldOn, oldSec := webrootACL, winFileSecurity
 	t.Cleanup(func() { webrootACL, winFileSecurity = oldOn, oldSec })
-	webrootACL = true
+	webrootACL = func() bool { return true }
 	winFileSecurity = func(p string) (hostenv.WinFileSecurity, error) {
 		if strings.HasSuffix(p, "shop") {
 			return hostenv.WinFileSecurity{Owner: "S-1-5-32-544", Writers: []string{"S-1-5-18", "S-1-5-32-545", "S-1-5-17"}}, nil
@@ -38,7 +42,7 @@ func TestWebrootFindings(t *testing.T) {
 		!strings.Contains(got[0].Detail, "cannot tell webroot ACL") || len(notChecked(got)) != 1 {
 		t.Errorf("unreadable ACL: %+v", got)
 	}
-	webrootACL = false
+	webrootACL = func() bool { return false }
 	if got := webrootFindings([]string{`D:\sites\shop`}); got != nil {
 		t.Errorf("off outside Windows: %+v", got)
 	}

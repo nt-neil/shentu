@@ -14,7 +14,7 @@ import (
 func withASP(t *testing.T) {
 	t.Helper()
 	a, f := aspAudit, foldPaths
-	aspAudit, foldPaths = true, true
+	aspAudit, foldPaths = func() bool { return true }, func() bool { return true }
 	t.Cleanup(func() { aspAudit, foldPaths = a, f })
 }
 
@@ -48,7 +48,7 @@ func TestASPWebshellPatterns(t *testing.T) {
 			t.Errorf("%s flagged: %s", name, src)
 		}
 	}
-	aspAudit = false
+	aspAudit = func() bool { return false }
 	if aspWebshellLine("chopper.asp", []byte(bad["chopper.asp"])) > 0 || aspWebshellMatches("chopper.asp", []byte(bad["chopper.asp"])) != nil {
 		t.Error("ASP patterns must stay off outside Windows")
 	}
@@ -77,11 +77,11 @@ func TestASPCodeAudit(t *testing.T) {
 		return got
 	}
 	withASP(t)
-	aspAudit, foldPaths = false, false // as on Unix
+	aspAudit, foldPaths = func() bool { return false }, func() bool { return false } // as on Unix
 	if got := kinds(); got["webshell cmd.aspx"] || got["upload_script Uploads/img.ashx"] {
 		t.Errorf("Unix scans must not change: %v", got)
 	}
-	aspAudit, foldPaths = true, true
+	aspAudit, foldPaths = func() bool { return true }, func() bool { return true }
 	got := kinds()
 	for _, k := range []string{"webshell cmd.aspx", "upload_script Uploads/img.ashx"} {
 		if !got[k] {
@@ -95,11 +95,11 @@ func TestASPCodeAudit(t *testing.T) {
 
 func TestSamePath(t *testing.T) {
 	withASP(t)
-	foldPaths = false
+	foldPaths = func() bool { return false }
 	if samePath("C:/inetpub/wwwroot", "c:/INETPUB/wwwroot") {
 		t.Error("Unix paths are case-sensitive")
 	}
-	foldPaths = true
+	foldPaths = func() bool { return true }
 	if !samePath("C:/inetpub/wwwroot", "c:/INETPUB/wwwroot") {
 		t.Error("Windows paths ignore case")
 	}

@@ -8,9 +8,9 @@ import (
 
 // PathOps are path operations as the host read spells its paths: a Linux
 // or macOS host's with "/" (package path) wherever the check runs, a
-// Windows host's as filepath does on Windows (S-272-2: a Linux recording
-// read on a Windows machine joined "\" into its paths). A Windows host
-// read on another OS is spelled as that OS's filepath does: not handled.
+// Windows host's as Windows spells them: filepath on Windows, winPaths
+// elsewhere (S-272-2: a Linux recording read on a Windows machine joined
+// "\" into its paths; v0.5.9: a Windows one read on Linux joined "/").
 type PathOps struct {
 	Join      func(elem ...string) string
 	Dir       func(p string) string
@@ -36,8 +36,16 @@ func PathFor(src Source) PathOps {
 	} else {
 		goos = src.Info().GOOS
 	}
+	return PathForGOOS(goos)
+}
+
+// PathForGOOS is the path operations of a host of goos.
+func PathForGOOS(goos string) PathOps {
 	if goos == "windows" {
-		return nativePaths
+		if runtime.GOOS == "windows" {
+			return nativePaths
+		}
+		return winPaths
 	}
 	return posixPaths
 }
