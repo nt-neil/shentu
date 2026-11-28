@@ -255,7 +255,7 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 	switch LinuxFamily(osr["ID"], osr["ID_LIKE"]) {
 	case "debian":
 		set.Manager = "dpkg"
-		if res, err = src.Run(ctx, dpkgArgv); err == nil && res.ExitCode == 0 {
+		if res, err = RunUnmasked(ctx, src, dpkgArgv); err == nil && res.ExitCode == 0 {
 			items, set.NotChecked, half = ParseDpkgQueryStates(res.Stdout)
 			// Not checked and not fully installed first: a list cut short
 			// for its length keeps them, the configuration-only ones after.
@@ -265,7 +265,7 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 		}
 	case "rhel", "suse":
 		set.Manager = "rpm"
-		if res, err = src.Run(ctx, rpmArgv); err == nil && res.ExitCode == 0 {
+		if res, err = RunUnmasked(ctx, src, rpmArgv); err == nil && res.ExitCode == 0 {
 			items = ParseRpmQA(res.Stdout)
 		}
 	case "alpine":
@@ -281,7 +281,7 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 	case err != nil:
 		return unknownFrom[PackageSet](set.Manager, err), nil
 	case res.ExitCode != 0:
-		return Unknown[PackageSet](ReasonCommandFailed, fmt.Sprintf("%s exit %d: %s", set.Manager, res.ExitCode, firstLine(res.Stderr))), nil
+		return Unknown[PackageSet](ReasonCommandFailed, fmt.Sprintf("%s exit %d: %s", set.Manager, res.ExitCode, MaskSecrets(firstLine(res.Stderr)))), nil
 	}
 	switch set.Manager {
 	case "dpkg":
