@@ -169,6 +169,9 @@ func drupalAffected(sa drupalSA, version string) (affected, known bool) {
 // note for a version that cannot be compared (never taken for a fixed one).
 func drupalRisks(sites []DrupalCore, unread []string) []Risk {
 	var out []Risk
+	var web []phpWebFile
+	var webUnread []string
+	webRead := false
 	for _, s := range sites {
 		var hit []string
 		known := true
@@ -181,7 +184,23 @@ func drupalRisks(sites []DrupalCore, unread []string) []Risk {
 		}
 		switch {
 		case len(hit) > 0:
-			out = append(out, Risk{"drupal:core:" + s.Root, "critical", "Drupal core " + s.Version + " at " + s.Root + " is in the affected range of " + strings.Join(hit, "; ")})
+			if !webRead {
+				web, webUnread = phpWebConf()
+				webRead = true
+			}
+			state, how := drupalInstaller(s, web, webUnread)
+			sum := "Drupal core " + s.Version + " at " + s.Root + " is in the affected range of " + strings.Join(hit, "; ")
+			sev := "critical"
+			switch state {
+			case installerRemoved, installerBlocked:
+				sev = "warning"
+				sum += "; the installer is protected on this host (" + how + "): upgrade still"
+			case installerNotSeen:
+				sum += "; and the host shows no protection of its installer (core/install.php is there, no web server or .htaccess rule denies " + installerPath + "): block or remove it now. " + drupalSelfCheck
+			default:
+				sum += "; whether its installer is protected cannot be told here (" + how + "). " + drupalSelfCheck
+			}
+			out = append(out, Risk{"drupal:core:" + s.Root, sev, sum})
 		case !known:
 			v := s.Version
 			if v == "" {
@@ -210,3 +229,123 @@ func drupalSAIDs() string {
 	}
 	return strings.Join(ids, " and ")
 }
+
+// The installer's protection (v0.5.9 item 1 c): SA-CORE-2026-019 says a
+// site whose installer is secured is not affected, and Drupal's guide
+// secures it by removing core/install.php or blocking /core/install.php at
+// the web server (nginx location ^~ ... return 404 / deny all, Apache
+// <Location> Require all denied) or in the root's .htaccess (<Files
+// install.php> Require all denied). What the host shows of it is read
+// here; a block outside the host (a CDN, a managed host) is not seen.
+const (
+	installerRemoved = "removed" // core/install.php is not there
+	installerBlocked = "blocked" // a web server or .htaccess rule denies it
+	installerNotSeen = "not seen"
+	installerUnknown = "unknown" // the web servers' files not read
+)
+
+var (
+	ngxLocBlock   = regexp.MustCompile(`location\s+(\^~|=|~\*?)?\s*("[^"]*"|'[^']*'|[^\s{]+)\s*\{`)
+	ngxDenies     = regexp.MustCompile(`(?m)(^|[;{\s])(deny\s+all\s*;|return\s+40[34]\b)`)
+	apacheLoc     = regexp.MustCompile(`(?is)<(Location|LocationMatch|Files|FilesMatch)\s+("[^"]*"|[^\s>]+)\s*>(.*?)</(?:Location|LocationMatch|Files|FilesMatch)>`)
+	apacheDenies  = regexp.MustCompile(`(?im)^\s*(Require\s+all\s+denied|Deny\s+from\s+all)\b`)
+	installerPath = "/core/install.php"
+)
+
+// drupalInstaller says how a site's installer stands, and how it was told.
+func drupalInstaller(site DrupalCore, web []phpWebFile, webUnread []string) (state, how string) {
+	src, ops := hostSource(), hostPaths()
+	if _, err := hostenv.Lstat(src, ops.Join(site.Root, "core", "install.php")); errors.Is(err, fs.ErrNotExist) {
+		return installerRemoved, "core/install.php is not there"
+	}
+	if b, err := hostenv.ReadFileMax(src, ops.Join(site.Root, ".htaccess"), 1<<20); err == nil && apacheBlocks(string(b), true) {
+		return installerBlocked, ops.Join(site.Root, ".htaccess")
+	}
+	for _, f := range web {
+		if f.nginx && ngxBlocks(f.text) || !f.nginx && apacheBlocks(f.text, false) {
+			return installerBlocked, f.path
+		}
+	}
+	if len(web) == 0 || len(webUnread) > 0 {
+		return installerUnknown, "the web servers' configuration not read in full"
+	}
+	return installerNotSeen, ""
+}
+
+// ngxBlocks finds a location covering /core/install.php (a prefix or
+// ^~ one, or a regex matching it; not an exact = one, which leaves
+// /core/install.php/foo, as Drupal's guide warns) whose block denies it.
+func ngxBlocks(text string) bool {
+	for _, m := range ngxLocBlock.FindAllStringSubmatchIndex(text, -1) {
+		mod := ""
+		if m[2] >= 0 {
+			mod = text[m[2]:m[3]]
+		}
+		pat := strings.Trim(text[m[4]:m[5]], `"'`)
+		covers := false
+		switch mod {
+		case "", "^~":
+			covers = strings.HasPrefix(installerPath, pat) && pat != "/"
+		case "~", "~*":
+			expr := pat
+			if mod == "~*" {
+				expr = "(?i)" + pat
+			}
+			if re, err := regexp.Compile(expr); err == nil {
+				covers = re.MatchString(installerPath)
+			}
+		}
+		if covers && ngxDenies.MatchString(ngxBlock(text, m[1])) {
+			return true
+		}
+	}
+	return false
+}
+
+// ngxBlock is the text of the block whose { ends at open, to its }.
+func ngxBlock(text string, open int) string {
+	depth := 1
+	for i := open; i < len(text); i++ {
+		switch text[i] {
+		case '{':
+			depth++
+		case '}':
+			if depth--; depth == 0 {
+				return text[open:i]
+			}
+		}
+	}
+	return text[open:]
+}
+
+// apacheBlocks finds a <Location>/<LocationMatch> (a server's file) or a
+// <Files>/<FilesMatch> (an .htaccess, or a server's) covering the installer
+// whose section denies it.
+func apacheBlocks(text string, htaccess bool) bool {
+	for _, m := range apacheLoc.FindAllStringSubmatch(text, -1) {
+		kind, pat := strings.ToLower(m[1]), strings.Trim(m[2], `"`)
+		covers := false
+		switch kind {
+		case "location":
+			covers = !htaccess && strings.HasPrefix(installerPath, pat) && pat != "/"
+		case "locationmatch":
+			if re, err := regexp.Compile(pat); err == nil && !htaccess {
+				covers = re.MatchString(installerPath)
+			}
+		case "files":
+			covers = pat == "install.php"
+		case "filesmatch":
+			if re, err := regexp.Compile(pat); err == nil {
+				covers = re.MatchString("install.php")
+			}
+		}
+		if covers && apacheDenies.MatchString(m[3]) {
+			return true
+		}
+	}
+	return false
+}
+
+// drupalSelfCheck is the advisory's check from outside: a block at a CDN
+// or a managed host is not seen on the host.
+const drupalSelfCheck = "Check from outside (a CDN's or a host's block is not seen here): curl -I https://<site>/core/install.php, curl -IL https://<site>/install.php and curl -I https://<site>/core/install.php/foo should each end with 403 or 404"
