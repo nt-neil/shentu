@@ -159,7 +159,7 @@ func TestFindingReadBackFallsBack(t *testing.T) {
 	}
 	loaded := loadState(dir)
 	r := loaded.Profile.Risks[0]
-	if got := (finding{r.Key, r.Severity, r.Summary, nil, ""}).said(true); got != "SSH accepts passwords" {
+	if got := (finding{r.Key, r.Severity, r.Summary, nil, "", ""}).said(true); got != "SSH accepts passwords" {
 		t.Errorf("risk read back: %q", got)
 	}
 }

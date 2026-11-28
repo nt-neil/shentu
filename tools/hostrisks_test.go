@@ -26,11 +26,15 @@ func TestSurveySudoReboot(t *testing.T) {
 		"/run/reboot-required.pkgs": "linux-image-6.8.0-90-generic\n",
 	}}})
 	got := map[string]Risk{}
-	for _, r := range Survey(context.Background(), &Env{}).Risks {
+	p := Survey(context.Background(), &Env{})
+	for _, r := range p.Risks {
 		got[r.Key] = r
 	}
 	if r := got["sudo:nopasswd"]; r.Severity != "warning" || !strings.Contains(r.Summary, "/etc/sudoers.d/99-ops: admin (every command, as any user)") {
 		t.Errorf("sudo: %+v (risks %v)", r, got)
+	}
+	if p.Cooling["sudo:nopasswd"] == "" { // S2: the patrol's cooldown gets the rules
+		t.Errorf("no cooling for sudo:nopasswd: %v", p.Cooling)
 	}
 	if r := got["reboot:pending"]; r.Severity != "warning" || !strings.Contains(r.Summary, "linux-image-6.8.0-90-generic") {
 		t.Errorf("reboot: %+v (risks %v)", r, got)
@@ -163,5 +167,26 @@ func TestSudoRiskTextMasksSecrets(t *testing.T) {
 	}
 	if strings.Contains(s, strings.Repeat("svc", 40)) {
 		t.Errorf("run-as list not cut: %q", s)
+	}
+}
+
+// S2: sudo:nopasswd's cooling is every rule of it, in any order: a fourth
+// rule (not in the summary, which shows three) changes it.
+func TestSudoCoolingAllRules(t *testing.T) {
+	rule := func(f string) hostenv.SudoRule {
+		return hostenv.SudoRule{File: f, Line: "%x ALL=(ALL) NOPASSWD: ALL", Who: "%x", All: true}
+	}
+	three := hostenv.SudoNoPass{Rules: []hostenv.SudoRule{rule("/etc/sudoers.d/a"), rule("/etc/sudoers.d/b"), rule("/etc/sudoers.d/c")}}
+	four := hostenv.SudoNoPass{Rules: append(append([]hostenv.SudoRule(nil), three.Rules...), rule("/etc/sudoers.d/99-ops"))}
+	turned := hostenv.SudoNoPass{Rules: []hostenv.SudoRule{three.Rules[2], three.Rules[0], three.Rules[1]}}
+	a, b, c := sudoCooling(three)["sudo:nopasswd"], sudoCooling(four)["sudo:nopasswd"], sudoCooling(turned)["sudo:nopasswd"]
+	if a == "" || a == b || a != c {
+		t.Errorf("three %q, four %q, reordered %q", a, b, c)
+	}
+	if sudoRisks(three, "unknown")[0].Summary == sudoRisks(four, "unknown")[0].Summary && a == b {
+		t.Error("the fourth rule is told by neither")
+	}
+	if sudoCooling(hostenv.SudoNoPass{}) != nil {
+		t.Error("no rules, a cooling")
 	}
 }
