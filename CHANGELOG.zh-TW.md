@@ -24,6 +24,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 主機盤點改成直接解析指令輸出的原文，不再先遮（套件和 rpm vendor、防火牆規則、macOS 的平台、帳號、行程、listener、pf 和保護機制）：某個行程的路徑或 iptables 規則的 comment 裡有沒有結尾的私鑰標記時，後面的行程或規則不會再被一起遮掉。解析時用原文，存下來的欄位都有遮，訊息裡引用的指令錯誤文字也會先遮；nginx 和 PHP 的套件查詢照樣讀遮過的文字（那是套件管理程式的輸出）。
 - 挖礦程式的檢查（Linux、macOS、Windows）改成比對行程原本的 command line：改了名字的挖礦程式，就算參數寫在一個會被整段遮掉的密碼後面（`mysql -p' -o stratum+tcp://… '`），也找得到。它的證據和交給模型的內容照樣是遮過的。
 - 攻擊偵測讀 PHP 的 error log 和 journald 的訊息時，改成直接讀原文，不再先遮：請求裡被回寫到 PHP 位置前面的文字（例如沒有結尾的私鑰標記），不會再把位置一起遮掉，sink 的 error log 證據就留得住。解析出來的事件只留時間和位置，裡面的內容都不會輸出。
+- Windows 的 log_search 改成先遮欄位的值，再把名稱和值一起遮一次：值的第一個字是程式名稱時（`CommandLine=mysql -u root -p<密碼>`）也會遮；只把「名稱=值」一起遮的話，前面的 `=` 會讓程式名稱認不出來。
 - Windows 的檢查改成直接讀服務的 command line、登錄檔字串和排程工作 XML 的原文，不再先遮：服務路徑、使用者的 home 路徑或排程工作說明裡有沒有結尾的私鑰標記時，不會再藏住沒加引號的服務路徑、啟動資料夾或那個排程工作。輸出的內容照樣是遮過的。
 - 網站首頁：捲動時才出現的區塊（統計、開放原始碼、最新版本和河道），從中段進入頁面時（例如從連到頁內位置的連結、回到上一頁，或直接跳到中段）不再一直空白。區塊只要有任何一部分看得到就會出現；頁面一打開就看得到的區塊，以及從頁內位置打開的頁面上的每個區塊，都會立刻出現。
 - PHP 規則會追蹤參數不是寫在程式裡的 array 的 `extract()`。`extract($args)`、`extract($_POST)`，或 `extract(wp_parse_args($atts, [...]))`（`$atts` 的每個 key 都會保留）之後，函式裡的每個變數都可能是那份輸入，直到再被指派為止：包括之前定義過的（樣板載入函式的 `$template_name` 會被 `extract($args)` 改寫），以及從沒指派過的（`extract($opts)` 之後的 `$team_id`）。以前一個變數都不會設定，所以 shortcode 的屬性經過這種寫法進到 `include` 或 `call_user_func()` 時不會回報（CVE-2023-6996）。`extract(shortcode_atts($defaults, $atts))` 只會設定 `$defaults` 的 key，也不會改寫 `$defaults` 本身；`EXTR_SKIP` 和 `EXTR_PREFIX_*` 不會改寫任何變數；`extract()` 設定的值，讀它的屬性（`global $wpdb` 之後的 `$wpdb->prefix`）不算輸入，讀它的索引仍然算。flag 照 PHP 的讀法：`EXTR_SKIP` 和 `EXTR_PREFIX_SAME` 不會改寫任何變數，`EXTR_IF_EXISTS` 會改寫但不建立變數，`EXTR_PREFIX_ALL` 和 `EXTR_PREFIX_IF_EXISTS` 只設定名稱以 `prefix_` 起始的變數（prefix 不是寫在程式裡時，任何這種名稱都算）。`extract()` 在 closure 外面新建的變數，closure 只透過它的 `use (...)` 看得到，它的參數是呼叫端給的值。
@@ -48,6 +49,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 - 直接寫在指令參數裡的密碼，下面幾種情況不會遮：密碼全是 JSON 標點（`, : { } [ ]` 和空白）；密碼裡空白之後的部分（command line 是用空白把 argv 接起來的；在 shell 指令行裡加了引號的會整段遮掉）；log 或 shell 的指令紀錄裡，沒有引號的 `;`、`|`、`&` 之後的部分；分成多行寫出的 JSON argv，或前面的字串裡有 `]` 的 JSON argv；以及其他程式的密碼參數（`sshpass -p`、`redis-cli -a`、`ldapsearch -w`、`smbclient -U user%<密碼>`、`mongosh -p`、`htpasswd -b`、curl 的 `--pass` 和 `-E cert:<密碼>`）。
 - 有些檢查讀進來的文字仍然是先遮過的：Windows 的 event data（每一欄各自遮；log_search 裡的事件文字也是一欄一欄分開遮）。
+- 事件裡密碼的名稱和值如果分在兩個欄位（名稱在一欄、值在下一欄），在 log_search 的文字裡不會被遮；Windows 內建的事件沒有這種寫法（CommandLine、ImagePath、ScriptBlockText 都是單一欄位）。
 - 一般文字裡（log、shell 的指令紀錄、cron），如果 `mysql` 是傳給參數的使用者名稱（`--user mysql -p5432`、`psql -U mysql -p5432`），會被當成程式名稱，後面的 `-p` 也會被遮掉；行程的 command line 是一個參數一個參數判斷的，不會這樣。檔名結尾是 `.mysql` 時（`psql -f backup.mysql -p5432`），一般文字和行程的 command line 都會這樣多遮。
 - log_search 比對的是遮過的文字，被遮罩遮住的內容找不到。如果改成比對原文，從每一次有沒有比對到，就能一點一點試出被遮掉的密碼。
 - 錄下來的 fixture 只存遮過的文字，所以用 fixture 重放時，檢查的判斷可能和在主機上直接跑不一樣：例如參數被遮罩遮住的挖礦程式，以及攻擊偵測拿到的 error log 證據可能比較少（error log 或 journald 訊息裡的位置被遮罩遮住時）。
