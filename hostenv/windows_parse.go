@@ -206,6 +206,36 @@ func sshSkeleton(v string) string {
 // searching, and MaskSecrets takes the credentials out). What someone
 // typed at a failed logon never appears: the typed-name fields of
 // typedNameEvents are dropped, and OpenSSH's messages that name a user are
+// splitMarker is a "[REDACTED <KIND>]" marker the key=value rule cut after
+// its first word: only the kinds secretRules write (S-304-1: a value's own
+// capitals, "hunter2Abc CORRECT HORSE]", are not one).
+var splitMarker = func() *regexp.Regexp {
+	var kinds []string
+	seen := map[string]bool{}
+	for _, r := range secretRules {
+		if m := markerKind.FindStringSubmatch(r.repl); m != nil && !seen[m[1]] {
+			seen[m[1]] = true
+			kinds = append(kinds, regexp.QuoteMeta(m[1]))
+		}
+	}
+	return regexp.MustCompile(`\[REDACTED\] (` + strings.Join(kinds, "|") + `)\]`)
+}()
+
+var markerKind = regexp.MustCompile(`^\[REDACTED ([A-Z][A-Z ]*[A-Z])\]$`)
+
+// wholeMarkers puts back whole the markers the value's own masking wrote
+// (in masked) and the second pass cut; a cut-looking text that was there
+// before is left as it reads.
+func wholeMarkers(out, masked string) string {
+	return splitMarker.ReplaceAllStringFunc(out, func(m string) string {
+		whole := "[REDACTED " + splitMarker.FindStringSubmatch(m)[1] + "]"
+		if strings.Contains(masked, whole) {
+			return whole
+		}
+		return m
+	})
+}
+
 // cut to a skeleton (sshSkeleton).
 func ParseEventText(s string) (string, error) {
 	var x eventXML
@@ -229,7 +259,11 @@ func ParseEventText(s string) (string, error) {
 		// start: CommandLine=mysql -p..., whose name the = before it would
 		// hide), then name and value together (a field named for a secret,
 		// as key=value).
-		b.WriteString(" " + MaskSecrets(name+"="+MaskSecrets(value)))
+		// The second pass may take the first's marker for a key's value
+		// (Password=[REDACTED PRIVATE KEY] -> [REDACTED] PRIVATE KEY]): put
+		// the marker back whole; it held no secret (S-298-1).
+		masked := MaskSecrets(value)
+		b.WriteString(" " + wholeMarkers(MaskSecrets(name+"="+masked), masked))
 	}
 	for _, d := range x.EventData.Data {
 		field(d.Name, d.Value)
