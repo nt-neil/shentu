@@ -29,6 +29,7 @@ var (
 		"file-upload":      {"CWE-434"},
 		"weak-crypto":      {"CWE-327", "CWE-328", "CWE-916"},
 		"hardcoded-secret": {"CWE-798", "CWE-259", "CWE-321"},
+		"crlf":             {"CWE-93", "CWE-77"},
 
 		"prototype-pollution": {"CWE-1321"},
 	}
@@ -321,8 +322,11 @@ func checkArgs(t *testing.T, r Rule) {
 				t.Errorf("%s: args %d: sink %q has another block; each further block must name its arg", r.File, i, s)
 			}
 			covered[s] = true
-			if len(a.Receiver) > 0 && !strings.HasPrefix(s, ".") && !strings.HasPrefix(s, "->") {
-				t.Errorf("%s: args %d: receiver needs a method sink starting with . or ->, not %q", r.File, i, s)
+			if len(a.Receiver) > 0 && a.Handle == 0 && !strings.HasPrefix(s, ".") && !strings.HasPrefix(s, "->") {
+				t.Errorf("%s: args %d: receiver needs a method sink starting with . or ->, not %q (or handle, for a function sink)", r.File, i, s)
+			}
+			if a.Handle > 0 && (strings.HasPrefix(s, ".") || strings.HasPrefix(s, "->")) {
+				t.Errorf("%s: args %d: handle is for a function sink, not the method sink %q (receiver alone reads a method's object)", r.File, i, s)
 			}
 			if a.Arg != nil && *a.Arg == 0 && !strings.HasPrefix(s, ".") && !strings.HasPrefix(s, "->") {
 				t.Errorf("%s: args %d: arg 0 (the receiver) needs a method sink starting with . or ->, not %q", r.File, i, s)

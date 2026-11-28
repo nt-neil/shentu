@@ -1,0 +1,105 @@
+id = "php-crlf-socket-write"
+lang = "php"
+class = "crlf"
+cwe = "CWE-93"
+severity = "high"
+tier = "info"
+title = "Request input written into a protocol line sent over a socket (a CRLF in it starts another command)"
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->get(", "filter_input(", "->filterInput(", "->filter_input("]
+sinks = ["fwrite(", "fputs("]
+sanitizers = ["(int)", "intval", "absint", "ctype_digit", "ctype_alnum", "rawurlencode", "urlencode", "base64_encode", "bin2hex"]
+fix = "Refuse a value holding a line break (\\r or \\n) before it goes into a protocol line: check it against an allowlist anchored with \\z (not $, which lets a final \\n through), or cast it to an integer."
+refs = ["CVE-2026-126813"]
+
+# Only a write to a socket: the handle (argument 1) made by fsockopen() or
+# stream_socket_client(), in the same function or, for $this->fp, anywhere in
+# the class's file. A write to a file, or to a handle the code does not show the
+# origin of, is not this rule's.
+[[args]]
+arg = 2
+handle = 1
+receiver = ["fsockopen(", "stream_socket_client("]
+
+[[samples]]
+kind = "vulnerable"
+note = "an IMAP client: a message id from the request goes into a command line; a CRLF in it adds another command"
+code = '''
+<?php
+class MailClient {
+    private $fp;
+    public function connect($host) {
+        $this->fp = stream_socket_client($host . ':143', $errno, $errstr, 10);
+    }
+    public function fetchHeaders() {
+        $uid = $_GET['uid'];
+        fwrite($this->fp, "A1 UID FETCH $uid (BODY.PEEK[HEADER])\r\n");
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a spellcheck client: the language from the request goes into an HTTP request line written to the service"
+code = '''
+<?php
+function spell_check($text) {
+    $fp = fsockopen('spell.example.org', 80, $errno, $errstr, 30);
+    $path = '/checkDocument?lang=' . $_POST['lang'];
+    $out = "POST $path HTTP/1.0\r\nHost: spell.example.org\r\n\r\n" . $text;
+    fwrite($fp, $out);
+    return fread($fp, 8192);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the same line written to a log file, not a socket"
+code = '''
+<?php
+function log_fetch() {
+    $fp = fopen('/var/log/app/fetch.log', 'a');
+    fwrite($fp, "UID FETCH " . $_GET['uid'] . "\n");
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the message id cast to an integer"
+code = '''
+<?php
+function fetch_headers($fp0) {
+    $fp = fsockopen('mail.example.org', 143);
+    $uid = (int) $_GET['uid'];
+    fwrite($fp, "A1 UID FETCH $uid (BODY.PEEK[HEADER])\r\n");
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "digits only, checked before the write"
+code = '''
+<?php
+function fetch_headers() {
+    $fp = fsockopen('mail.example.org', 143);
+    $uid = $_GET['uid'];
+    if (!ctype_digit($uid)) {
+        return false;
+    }
+    fwrite($fp, "A1 UID FETCH $uid (BODY.PEEK[HEADER])\r\n");
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "an allowlist of digits anchored at both ends"
+code = '''
+<?php
+function fetch_headers() {
+    $fp = fsockopen('mail.example.org', 143);
+    $uid = $_GET['uid'];
+    if (!preg_match('/^[0-9]+\z/', $uid)) {
+        return false;
+    }
+    fwrite($fp, "A1 UID FETCH $uid (BODY.PEEK[HEADER])\r\n");
+}
+'''

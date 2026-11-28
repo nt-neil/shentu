@@ -110,13 +110,16 @@ func (e *Engine) fileHandleProps(lang string, toks []Token) *handleProps {
 // handleAssign records, for a rule with a handle condition, which of its
 // receivers made what op assigns to key (rhs), replacing what key held.
 func (a *analysis) handleAssign(st state, key string, rhs []Token, op string) {
+	if op != "=" {
+		return // $fp .= ...: the value is not replaced
+	}
 	for _, r := range a.r.handleRaw {
 		delete(st, handleSt+key+"\x00"+r)
 	}
-	st[handleSt+key+"\x00"] = entry{} // assigned in this function: its property table is not read for key
-	if op != "=" {
-		return
-	}
+	// Assigned in this function: its property table is not read for key. san
+	// holds after a join only when every path assigned it (mergeInto), so one
+	// branch's assignment does not hide the table from the other.
+	st[handleSt+key+"\x00"] = entry{san: true}
 	rhs = stripParens(rhs)
 	for len(rhs) > 0 && rhs[0].op("@") {
 		rhs = rhs[1:]
@@ -124,13 +127,13 @@ func (a *analysis) handleAssign(st state, key string, rhs []Token, op string) {
 	made := madeBy(rhs[:min(len(rhs), maxHandleRHS)], a.r.handleRaw, a.r.handlePats)
 	if from, _, ok := a.pathKey(rhs); ok {
 		for _, r := range a.r.handleRaw {
-			if _, had := st[handleSt+from+"\x00"+r]; had && !slices.Contains(made, r) {
+			if e, had := st[handleSt+from+"\x00"+r]; had && e.taint && !slices.Contains(made, r) {
 				made = append(made, r)
 			}
 		}
 	}
 	for _, r := range made {
-		st[handleSt+key+"\x00"+r] = entry{san: true}
+		st[handleSt+key+"\x00"+r] = entry{taint: true} // taint: made by r on some path that reaches here
 	}
 }
 
@@ -151,11 +154,11 @@ func (a *analysis) handleIs(st state, cond *argCond, arg []Token) bool {
 		return false
 	}
 	for _, r := range cond.handleRecv {
-		if _, had := st[handleSt+key+"\x00"+r]; had {
+		if e, had := st[handleSt+key+"\x00"+r]; had && e.taint {
 			return true
 		}
 	}
-	if _, here := st[handleSt+key+"\x00"]; here {
+	if e, here := st[handleSt+key+"\x00"]; here && e.san {
 		return false // assigned in this function, by none of the receivers: the nearest assignment decides (S-295-4)
 	}
 	prop, isProp := strings.CutPrefix(key, "$this"+sepCh+".")

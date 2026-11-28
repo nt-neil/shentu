@@ -2,6 +2,7 @@ package engine
 
 import (
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -47,6 +48,10 @@ func TestHandleCondition(t *testing.T) {
 		// a property reassigned in the same method: the nearest assignment decides, not the file's table (S-295-4)
 		{"a property reopened as a file in the method", "<?php\nclass C {\n  function put() {\n    $this->fp = fsockopen($h, 80);\n    fclose($this->fp);\n    $this->fp = fopen('f.txt', 'w');\n    fwrite($this->fp, $_GET['p']);\n  }\n}\n", false},
 		{"a property set to a file here, a socket in another method", "<?php\nclass C {\n  function connect() { $this->fp = fsockopen($h, 80); }\n  function log() {\n    $this->fp = fopen('f.txt', 'w');\n    fwrite($this->fp, $_GET['p']);\n  }\n}\n", false},
+		// an assignment on one branch only does not hide the property table from the other path
+		{"a property set to a file on one branch only", "<?php\nclass C {\n  function connect() { $this->fp = fsockopen($h, 80); }\n  function put($log) {\n    if ($log) {\n      $this->fp = fopen('f.txt', 'w');\n    }\n    fwrite($this->fp, $_GET['p']);\n  }\n}\n", true},
+		{"a socket on one branch", "<?php\nif ($remote) {\n  $fp = fsockopen($h, 80);\n} else {\n  $fp = fopen('f.txt', 'w');\n}\nfwrite($fp, $_GET['p']);\n", true},
+		{"a compound assignment keeps the socket", "<?php\nclass C {\n  function connect() { $this->fp = fsockopen($h, 80); }\n  function put() {\n    $this->fp .= '';\n    fwrite($this->fp, $_GET['p']);\n  }\n}\n", true},
 		// known over-report: list() gives every target the whole right side
 		{"list() over-reports", "<?php\n[$a, $fp] = [$x, fsockopen($h, 80)];\nfwrite($a, $_GET['p']);\n", true},
 		{"through a ternary", "<?php\n$fp = $ssl ? stream_socket_client($u) : fsockopen($h, 80);\nfwrite($fp, $_GET['p']);\n", true},
@@ -111,7 +116,20 @@ func TestHandleCost(t *testing.T) {
 	b.WriteString("} }\n")
 	toks := lex("php", b.String(), newBudget(Limits{}))
 
-	plain := engineForTest(t)
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var none []rules.Rule // the shipped rules but those with a handle condition
+	for _, r := range rs {
+		if !slices.ContainsFunc(r.Args, func(a rules.Args) bool { return a.Handle > 0 }) {
+			none = append(none, r)
+		}
+	}
+	plain, err := New(none)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if h := plain.fileHandleProps("php", toks); h != nil {
 		t.Errorf("no handle rule: a property table was built")
 	}
