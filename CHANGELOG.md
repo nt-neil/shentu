@@ -230,8 +230,9 @@ Chinese for the zh-TW pages; keep the two in step.
   rules, macOS's listeners and accounts), and on Windows scheduled tasks, services' paths,
   registry values and event data.
 - In text (a log line, a shell's history, a cron line), a user's name of `mysql` given to an option
-  (`--user mysql -p5432`, `psql -U mysql -p5432`) is read as the program, and the `-p` after it is
-  masked; a process's command line, judged argument by argument, is not.
+  (`--user mysql -p5432`, `psql -U mysql -p5432`) or a file named `.mysql` (`psql -f backup.mysql
+  -p5432`) is read as the program, and the `-p` after it is masked; a process's command line,
+  judged argument by argument, is not.
 - log_search matches the masked text: what the mask covers cannot be found. A pattern matched
   against the text as written would tell, match by match, what a masked secret is.
 - A recording (a fixture) holds the masked text only, so a check replayed from it can decide
