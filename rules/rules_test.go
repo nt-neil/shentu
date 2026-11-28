@@ -90,6 +90,23 @@ var (
 	sevRank  = map[string]int{"low": 0, "medium": 1, "high": 2, "critical": 3}
 )
 
+// A route model naming its first argument twice (path and hooks), or hooks
+// with no register call to apply to, is refused when the models load.
+func TestRouteCheck(t *testing.T) {
+	for _, r := range []Route{
+		{ID: "both", Register: []string{"add_action"}, Path: true, Hooks: []string{"init"}},
+		{ID: "no-register", Hooks: []string{"init"}},
+		{ID: "blank", Register: []string{"add_action"}, Hooks: []string{" init"}},
+	} {
+		if r.check() == nil {
+			t.Errorf("%s: accepted", r.ID)
+		}
+	}
+	if err := (Route{ID: "ok", Register: []string{"add_action"}, Hooks: []string{"init"}}).check(); err != nil {
+		t.Errorf("ok: %v", err)
+	}
+}
+
 func TestRulesValid(t *testing.T) {
 	rs, err := Load()
 	if err != nil {
@@ -102,6 +119,9 @@ func TestRulesValid(t *testing.T) {
 	members := map[string]bool{} // lang/member a route model makes input
 	routeIDs := map[string]bool{}
 	for _, rt := range routes {
+		if rt.Path && len(rt.Hooks) > 0 {
+			t.Errorf("%s: route %s has both path and hooks", rt.File, rt.ID)
+		}
 		routeIDs[rt.ID] = true
 		for _, m := range rt.Members {
 			members[rt.Lang+"/"+m] = true

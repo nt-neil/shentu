@@ -10,7 +10,7 @@ import (
 )
 
 // TestProvenance checks the records in docs/rules-provenance/: each names an
-// existing rule (the file name up to "--") and, in its Case section, the
+// existing rule or route model (the file name up to "--") and, in its Case section, the
 // bench/cves case the change was designed from. That rule cites the case in
 // refs, the case is in bench/cves and not in bench/holdout, and no record names
 // another analysis tool or a model (the rules are designed from the
@@ -25,9 +25,16 @@ func TestProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	byID := map[string]Rule{}
+	byID := map[string][]string{} // rule or route model id → its refs
 	for _, r := range rs {
-		byID[r.ID] = r
+		byID[r.ID] = r.Refs
+	}
+	routes, err := LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range routes {
+		byID[r.ID] = r.Refs
 	}
 	caseRe := regexp.MustCompile("`bench/cves/((?:CVE|GHSA)-[A-Za-z0-9-]+)\\.toml`")
 	tools := regexp.MustCompile(`(?i)\b(semgrep|opengrep|codeql|snyk|sonar\w*|bandit|psalm|phpstan|nuclei|brakeman|gosec|gpt[\w.-]*|chatgpt|claude|gemini|llms?|copilot|openai|anthropic)\b`)
@@ -51,9 +58,9 @@ func TestProvenance(t *testing.T) {
 			t.Errorf("%s: name is not <rule id>--<short name>.md", base)
 			continue
 		}
-		r, ok := byID[id]
+		refs, ok := byID[id]
 		if !ok {
-			t.Errorf("%s: no rule %q", base, id)
+			t.Errorf("%s: no rule or route model %q", base, id)
 			continue
 		}
 		_, after, ok := strings.Cut(text, "\n## Case\n")
@@ -64,7 +71,7 @@ func TestProvenance(t *testing.T) {
 			continue
 		}
 		c := m[1]
-		if !slices.Contains(r.Refs, c) {
+		if !slices.Contains(refs, c) {
 			t.Errorf("%s: %s does not cite %s in refs", base, id, c)
 		}
 		if _, err := os.Stat(filepath.Join("..", "bench", "cves", c+".toml")); err != nil {

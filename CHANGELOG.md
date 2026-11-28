@@ -197,6 +197,12 @@ Chinese for the zh-TW pages; keep the two in step.
   `fs.createWriteStream()`, `fs.writeFile()`, `fs.writeFileSync()` or `fs.promises.writeFile()` under
   the name the client sent (multer's `file.originalname`) is reported. express-fileupload's `.name` is
   not read.
+- Route models can name the hook a call registers (`hooks`): the call counts only when its first
+  argument is one of those names, written out as one string; a variable, a constant or a joined
+  string there does not count. `path` and `hooks` cannot be used together.
+- PHP rules: the editor data Elementor passes to `elementor/editor/after_save` callbacks (the second
+  parameter, every element's settings, which contributors and up write) is request input. Before,
+  a URL read from a widget's settings there and fetched (`getimagesize()`) was not reported.
 - cvebench scans as app_code_audit does by default (`-scanpath product`): each file on its own,
   then the calls across files, merged. Before, it decided each flow with the calls across files
   (`Project.Scan`, now `-scanpath project`), so a check written in another file took a finding away
@@ -258,6 +264,10 @@ Chinese for the zh-TW pages; keep the two in step.
   web-root ACL check and its case-insensitive path comparison are not turned on yet, and
   app_vulns' and app_code_audit's path argument is refused unless it is one of the app paths
   exactly (v0.5.9).
+- A route model reads a handler only in the file that registers it: an
+  `elementor/editor/after_save` callback written in another file than its `add_action()` (the hook in
+  the main plugin file, the function in an include) is not read as one, so a fetch there is not
+  reported. The other route models share the limit.
 
 ## v0.5.7 — 2026-11-26
 

@@ -339,13 +339,17 @@ func TestHoldout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cited := ruleSource(rs)
+	routes, err := rules.LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cited := ruleSource(rs, routes)
 	for _, c := range hold {
 		if seen[c.ID] {
 			t.Errorf("%s is in both bench/cves and bench/holdout", c.ID)
 		}
 		if cited[c.ID] {
-			t.Errorf("%s is a hold-out case but a rule cites it in refs", c.ID)
+			t.Errorf("%s is a hold-out case but a rule or route model cites it in refs", c.ID)
 		}
 	}
 }

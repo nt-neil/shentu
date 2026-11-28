@@ -68,7 +68,9 @@ func TestBotClearsCanActOnExit(t *testing.T) {
 	b.run(ctx)
 	srv.Close() // waits for a request still being answered
 	if !polled.Load() {
-		t.Fatal("the service never asked for updates")
+		var st botState
+		withBotState(b.cfg.StateDir, func(s *botState) error { st = *s; return nil })
+		t.Fatalf("the service never asked for updates within 30s (it decided can act: %v; bot.json can_act after it stopped: %v)", b.canAct, st.CanAct)
 	}
 	if !seen.Load() {
 		t.Error("bot.json did not say the running service can act")
