@@ -137,9 +137,12 @@ Chinese for the zh-TW pages; keep the two in step.
   `--passwd <secret>` as the next argument, and curl's or wget's `-u user:<secret>` /
   `--user user:<secret>`; also in a JSON argv on one line (`["mysqladmin","ping","-p<secret>"]`,
   `"--password", "<secret>"`, `"-u", "user:<secret>"`, as docker inspect and a healthcheck write
-  them). `key=value` was masked before. A command reaches only to an unquoted `;`, `|` or `&`: a
-  git refspec (`git push -u main:main`) or `tar -pcf` after it, `-P 3306`, `docker run -p 8080:80`,
-  `--password-file=/path` and a bare `-p` are left as they are.
+  them). `key=value` was masked before. A process's command line (`/proc`, `ps`, Windows') is
+  masked argument by argument, so a `;`, `|` or `&` in a password is masked with it; in other text
+  (a log line, a shell's history) a command reaches only to an unquoted `;`, `|` or `&`, so a git
+  refspec (`git push -u main:main`) or `tar -pcf` after it is left. `-P 3306`, `docker run -p
+  8080:80`, the `mysqld` and `mariadbd` daemons' `-port=`, `--password-file=/path` and a bare `-p`
+  are left as they are.
 - The cryptominer check matches a process's command line as written (Linux, macOS, Windows): a
   renamed miner whose options follow a password the mask takes whole (`mysql -p' -o stratum+tcp://…
   '`) is still found. Its evidence, and what the model is given, stay masked.
@@ -207,14 +210,19 @@ Chinese for the zh-TW pages; keep the two in step.
 ### Known issues
 
 - A command's own password is not masked when it is only JSON punctuation (`, : { } [ ]` and
-  spaces), past a space or an unquoted `;`, `|` or `&` in it (a command line joins argv with
-  spaces; quoted in a shell line it is masked whole), in a JSON argv printed over several lines, or
-  given to another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
+  spaces), past a space in it (a command line joins argv with spaces; quoted in a shell line it is
+  masked whole), past an unquoted `;`, `|` or `&` in a log line or a shell's history, in a JSON
+  argv printed over several lines or after a string holding `]`, or given to another program's
+  option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
   `-E cert:<secret>`).
 - Some checks still read texts masked when read in: commands' output (packages, the firewall's
-  rules, macOS's listeners and accounts), PHP error logs and journald's messages (L3), log_search,
-  and on Windows scheduled tasks, services' paths, registry values and event data (v0.5.9).
+  rules, macOS's listeners and accounts), PHP error logs and journald's messages (L3), and on
+  Windows scheduled tasks, services' paths, registry values and event data.
+- log_search matches the masked text: what the mask covers cannot be found. A pattern matched
+  against the text as written would tell, match by match, what a masked secret is.
+- A recording (a fixture) holds the masked text only, so a check replayed from it can decide
+  otherwise than on the live host (the cryptominer check, on options the mask covered).
 - A redirect target checked in another file (a Tornado base class's `self.sanitize_next_url()`) is
   still reported: app_code_audit reads each file on its own first, and that finding stays when the
   calls across files show the check.
