@@ -119,3 +119,21 @@ func TestParseEventTextMarkerWhole(t *testing.T) {
 		t.Errorf("%q %v", got, err)
 	}
 }
+
+// S-304-1: a value's own capitals after its cut are not made a marker: the
+// text stays as it reads. Only the kinds secretRules write are markers, and
+// only where the value's own masking wrote one.
+func TestParseEventTextNoFalseMarker(t *testing.T) {
+	for _, v := range []string{"hunter2Abc CORRECT HORSE]", "hunter2Abc PRIVATE KEY]"} {
+		x := `<Event><System><EventID>7045</EventID><Channel>System</Channel></System><EventData>` +
+			`<Data Name="Password">` + v + `</Data></EventData></Event>`
+		got, err := ParseEventText(x)
+		if err != nil || !strings.Contains(got, "Password=[REDACTED] ") || strings.Contains(got, "hunter2") || strings.Contains(got, "[REDACTED CORRECT") || strings.Contains(got, "[REDACTED PRIVATE") {
+			t.Errorf("%q: %q %v", v, got, err)
+		}
+	}
+	s := splitMarker.String()
+	if !strings.Contains(s, "PRIVATE KEY") || !strings.Contains(s, "GITHUB TOKEN") || strings.Contains(s, "[A-Z]") {
+		t.Errorf("marker kinds not secretRules': %s", s)
+	}
+}
