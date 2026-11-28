@@ -266,7 +266,7 @@ func rpmOrigins(ctx context.Context, src Source, items []Package, osID string) (
 	if _, ok := rpmDistroVendors[osID]; !ok {
 		return []string{"rpm vendors (not judged: no known vendor for " + osID + ")"}
 	}
-	res, err := src.Run(ctx, rpmVendorArgv)
+	res, err := RunUnmasked(ctx, src, rpmVendorArgv)
 	cut := res.Truncated || errors.Is(err, ErrTruncated) // what was read is used, the rest said
 	switch {
 	case errors.Is(err, ErrNotRecorded):

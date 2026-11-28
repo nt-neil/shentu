@@ -21,6 +21,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 連到這台主機以外的模型時，如果連線被拒絕，Windows 上現在也會寫「connection refused」。以前在 Windows 上會寫成「connection failed」，因為 Windows 回的是 WSAECONNREFUSED。
 - sudo 的 risk 文字現在用檔案、對象、執行什麼和以哪個帳號執行來寫每一條規則（例如 `/etc/sudoers.d/90-admins: %admin (every command, as root)`），不再直接引用規則那一行，所以送出的文字不會再被遮成 `[REDACTED]`。指令參數或 runas 清單裡的密碼，只要是用 `key=value` 或下面那幾種寫法，在組文字時就先遮掉，所以 survey 自己的輸出（onboard 和存下來的 profile）也不會留著。
 - 密碼的遮罩（fixture、log、交給模型的內容，以及 Windows checks 的 command line）現在也會遮掉直接寫在指令參數裡的密碼：mysql 系列程式（`mysql`、`mysqldump`、`mysqlcheck`、`mysqladmin`、`mysqlbinlog` 等，以及 `mariadb` 和它的工具，不分大小寫，也包含 `.exe`）後面的 `-p<密碼>`、用空白隔開寫在 `--password` 或 `--passwd` 後面的密碼，以及 curl、wget 的 `-u user:<密碼>` 和 `--user user:<密碼>`；寫在同一行 JSON argv 裡的也會遮（`["mysqladmin","ping","-p<密碼>"]`、`"--password", "<密碼>"`、`"-u", "user:<密碼>"`，docker inspect 和 healthcheck 就是這樣寫）。`key=value` 的寫法以前就會遮。行程的 command line（`/proc`、`ps`、Windows 的）是一個參數一個參數分開遮，所以密碼裡的 `;`、`|` 或 `&` 會跟著一起遮掉；其他文字（log、shell 的指令紀錄）裡，一個指令只算到沒有引號的 `;`、`|` 或 `&` 為止，所以後面接的 git refspec（`git push -u main:main`）或 `tar -pcf` 不會遮。`-P 3306`、`docker run -p 8080:80`、`mysqld` 和 `mariadbd` 這類 daemon 的 `-port=`、`--password-file=/path`，以及單獨一個、後面沒有值的 `-p`，都不會遮。
+- 主機盤點改成直接解析指令輸出的原文，不再先遮（套件和 rpm vendor、防火牆規則、macOS 的平台、帳號、行程、listener、pf 和保護機制）：某個行程的路徑或 iptables 規則的 comment 裡有沒有結尾的私鑰標記時，後面的行程或規則不會再被一起遮掉。解析時用原文，存下來的欄位都有遮，訊息裡引用的指令錯誤文字也會先遮；nginx 和 PHP 的套件查詢照樣讀遮過的文字（那是套件管理程式的輸出）。
 - 挖礦程式的檢查（Linux、macOS、Windows）改成比對行程原本的 command line：改了名字的挖礦程式，就算參數寫在一個會被整段遮掉的密碼後面（`mysql -p' -o stratum+tcp://… '`），也找得到。它的證據和交給模型的內容照樣是遮過的。
 - 攻擊偵測讀 PHP 的 error log 和 journald 的訊息時，改成直接讀原文，不再先遮：請求裡被回寫到 PHP 位置前面的文字（例如沒有結尾的私鑰標記），不會再把位置一起遮掉，sink 的 error log 證據就留得住。解析出來的事件只留時間和位置，裡面的內容都不會輸出。
 - Windows 的檢查改成直接讀服務的 command line、登錄檔字串和排程工作 XML 的原文，不再先遮：服務路徑、使用者的 home 路徑或排程工作說明裡有沒有結尾的私鑰標記時，不會再藏住沒加引號的服務路徑、啟動資料夾或那個排程工作。輸出的內容照樣是遮過的。
@@ -45,7 +46,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ### 已知問題
 
 - 直接寫在指令參數裡的密碼，下面幾種情況不會遮：密碼全是 JSON 標點（`, : { } [ ]` 和空白）；密碼裡空白之後的部分（command line 是用空白把 argv 接起來的；在 shell 指令行裡加了引號的會整段遮掉）；log 或 shell 的指令紀錄裡，沒有引號的 `;`、`|`、`&` 之後的部分；分成多行寫出的 JSON argv，或前面的字串裡有 `]` 的 JSON argv；以及其他程式的密碼參數（`sshpass -p`、`redis-cli -a`、`ldapsearch -w`、`smbclient -U user%<密碼>`、`mongosh -p`、`htpasswd -b`、curl 的 `--pass` 和 `-E cert:<密碼>`）。
-- 有些檢查讀進來的文字仍然是先遮過的：指令的輸出（套件、防火牆規則、macOS 的 listener 和帳號），以及 Windows 的 event data（每一欄各自遮；log_search 裡的事件文字也是一欄一欄分開遮）。
+- 有些檢查讀進來的文字仍然是先遮過的：Windows 的 event data（每一欄各自遮；log_search 裡的事件文字也是一欄一欄分開遮）。
 - 一般文字裡（log、shell 的指令紀錄、cron），如果 `mysql` 是傳給參數的使用者名稱（`--user mysql -p5432`、`psql -U mysql -p5432`），會被當成程式名稱，後面的 `-p` 也會被遮掉；行程的 command line 是一個參數一個參數判斷的，不會這樣。檔名結尾是 `.mysql` 時（`psql -f backup.mysql -p5432`），一般文字和行程的 command line 都會這樣多遮。
 - log_search 比對的是遮過的文字，被遮罩遮住的內容找不到。如果改成比對原文，從每一次有沒有比對到，就能一點一點試出被遮掉的密碼。
 - 錄下來的 fixture 只存遮過的文字，所以用 fixture 重放時，檢查的判斷可能和在主機上直接跑不一樣：例如參數被遮罩遮住的挖礦程式，以及攻擊偵測拿到的 error log 證據可能比較少（error log 或 journald 訊息裡的位置被遮罩遮住時）。
