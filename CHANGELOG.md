@@ -127,10 +127,29 @@ Chinese for the zh-TW pages; keep the two in step.
   it was said "connection failed" there (Windows gives WSAECONNREFUSED).
 - sudo's risk texts say each rule by its file, whom it is for, what it runs and as whom
   (`/etc/sudoers.d/90-admins: %admin (every command, as root)`), not by its line: a pushed text
-  is no longer masked to `[REDACTED]`. A secret written as `key=value` in a command's arguments
-  or a run-as list (`mysql --password=...`) is masked in the text itself, so the survey's own
-  output (onboard, the saved profile) does not hold it either; `-p<secret>`, a password given as
-  the next argument and `-u user:<secret>` are not masked (known issue).
+  is no longer masked to `[REDACTED]`. A secret in a command's arguments or a run-as list,
+  written as `key=value` or in one of the forms below, is masked in the text itself, so the
+  survey's own output (onboard, the saved profile) does not hold it either.
+- The secret masking (fixtures, logs, what the model is given, Windows checks' command lines)
+  now also masks a password given as a command's own argument: `-p<secret>` after a program of
+  the mysql family (`mysql`, `mysqldump`, `mysqlcheck`, `mysqladmin`, `mysqlbinlog` and the
+  others, `mariadb` and its tools, in any case, `.exe` too), `--password <secret>` or
+  `--passwd <secret>` as the next argument, and curl's or wget's `-u user:<secret>` /
+  `--user user:<secret>`; also in a JSON argv on one line (`["mysqladmin","ping","-p<secret>"]`,
+  `"--password", "<secret>"`, `"-u", "user:<secret>"`, as docker inspect and a healthcheck write
+  them). `key=value` was masked before. A process's command line (`/proc`, `ps`, Windows') is
+  masked argument by argument, so a `;`, `|` or `&` in a password is masked with it; in other text
+  (a log line, a shell's history) a command reaches only to an unquoted `;`, `|` or `&`, so a git
+  refspec (`git push -u main:main`) or `tar -pcf` after it is left. `-P 3306`, `docker run -p
+  8080:80`, the `mysqld` and `mariadbd` daemons' `-port=`, `--password-file=/path` and a bare `-p`
+  are left as they are.
+- The cryptominer check matches a process's command line as written (Linux, macOS, Windows): a
+  renamed miner whose options follow a password the mask takes whole (`mysql -p' -o stratum+tcp://…
+  '`) is still found. Its evidence, and what the model is given, stay masked.
+- Attack detection reads PHP's error logs and journald's messages as written, not masked first:
+  a request's text echoed before PHP's location (an unclosed private key marker) no longer takes
+  the location with it, so the sink keeps its error-log evidence. The events keep only times and
+  locations, and nothing from them is output.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
@@ -204,6 +223,26 @@ Chinese for the zh-TW pages; keep the two in step.
   handle the file does not show the origin of does not count. No shipped rule uses it yet.
 ### Known issues
 
+- A command's own password is not masked when it is only JSON punctuation (`, : { } [ ]` and
+  spaces), past a space in it (a command line joins argv with spaces; quoted in a shell line it is
+  masked whole), past an unquoted `;`, `|` or `&` in a log line or a shell's
+  history, in a JSON argv printed over several lines or after a string holding `]`, or given to
+  another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
+  `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
+  `-E cert:<secret>`).
+- Some checks still read texts masked when read in: commands' output (packages, the firewall's
+  rules, macOS's listeners and accounts), and on Windows scheduled tasks, services' paths,
+  registry values and event data.
+- In text (a log line, a shell's history, a cron line), a user's name of `mysql` given to an option
+  (`--user mysql -p5432`, `psql -U mysql -p5432`) or a file named `.mysql` (`psql -f backup.mysql
+  -p5432`) is read as the program, and the `-p` after it is masked; a process's command line,
+  judged argument by argument, is not.
+- log_search matches the masked text: what the mask covers cannot be found. A pattern matched
+  against the text as written would tell, match by match, what a masked secret is.
+- A recording (a fixture) holds the masked text only, so a check replayed from it can decide
+  otherwise than on the live host: the cryptominer check, on options the mask covered, and attack
+  detection, which can have less error-log evidence (an error log or journald message whose
+  location the mask covered).
 - A redirect target checked in another file (a Tornado base class's `self.sanitize_next_url()`) is
   still reported: app_code_audit reads each file on its own first, and that finding stays when the
   calls across files show the check.
@@ -230,8 +269,6 @@ Chinese for the zh-TW pages; keep the two in step.
   (`h.env.from_string(s)`) is known by its name only, even where the file assigns it
   (`h.env = Engine()`). `o.system(cmd)` after `import os as o`, and a function imported under
   another name (`m(x)` after `from hashlib import md5 as m`), are not reported.
-- In a sudo rule's commands, a password not written as `key=value` (`mysql -p<secret>`,
-  `--password <secret>`, `curl -u user:<secret>`) is not masked in the survey's texts.
 - On a non-Windows machine replaying a Windows host's recording, the code audit's ASP check, its
   web-root ACL check and its case-insensitive path comparison are not turned on yet, and
   app_vulns' and app_code_audit's path argument is refused unless it is one of the app paths

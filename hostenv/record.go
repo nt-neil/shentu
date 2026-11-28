@@ -215,6 +215,15 @@ func (r *Recorder) Run(ctx context.Context, argv []string) (CmdResult, error) {
 	return res, err
 }
 
+// RunUnmasked passes the output as written on and keeps it masked, line by
+// line, for the fixture.
+func (r *Recorder) RunUnmasked(ctx context.Context, argv []string) (CmdResult, error) {
+	res, err := RunUnmasked(ctx, r.Inner, argv)
+	r.put(&entry{Op: "cmd", Argv: append([]string(nil), argv...), Err: errCode(err), data: maskLines(res.Stdout),
+		ExitCode: res.ExitCode, Stderr: MaskSecrets(res.Stderr), Truncated: res.Truncated})
+	return res, err
+}
+
 // Save writes the recording after passing it through m (nil: secrets only,
 // which every Source already did). It creates dir itself (0700, files 0600)
 // and fails if dir already exists, so it never writes into a directory
