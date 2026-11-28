@@ -13,11 +13,14 @@ import (
 // is right for a log line or a shell's history but would leave the rest of
 // such a password.
 var (
-	argvMySQL  = regexp.MustCompile(`(?i)^(?:mysql(?:dump|check|import|show|pump|binlog|_upgrade|slap|admin|sh)?\d*|mariadb(?:-?(?:dump|admin|check|import|show|binlog|upgrade|slap|backup))?)(?:\.exe)?$`)
-	argvCurl   = regexp.MustCompile(`(?i)^(?:curl|wget)(?:\.exe)?$`)
+	argvMySQL  = regexp.MustCompile(`(?i)(?:^|[^=\w])(?:mysql(?:dump|check|import|show|pump|binlog|_upgrade|slap|admin|sh)?\d*|mariadb(?:-?(?:dump|admin|check|import|show|binlog|upgrade|slap|backup))?)(?:\.exe)?$`)
+	argvCurl   = regexp.MustCompile(`(?i)(?:^|[^=\w])(?:curl|wget)(?:\.exe)?$`)
 	argvKV     = regexp.MustCompile(`(?i)^(-{0,2}(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)=).{3,}$`)
 	argvUserAt = regexp.MustCompile(`^(?:-[uU]|--(?:proxy-)?user=)[^:]*:`)
 )
+
+// argvUserOpt are options whose next argument is a user's name.
+var argvUserOpt = map[string]bool{"-u": true, "-U": true, "--user": true, "--username": true}
 
 // MaskArgv masks a command line given as its arguments and joins them with
 // spaces. An argument that is a password by its place is masked whole: -p<v>
@@ -57,26 +60,51 @@ func maskArgv(args []string, view func(string) string) string {
 		default:
 			a = MaskSecrets(a)
 		}
-		base := v[strings.LastIndexAny(v, `/\`)+1:]
-		mysql = mysql || argvMySQL.MatchString(base)
-		curl = curl || argvCurl.MatchString(base)
+		// A user's name (--user mysql, psql -U mysql) names no program
+		// (S-286-10).
+		// The program may end an argument after a path or a shell's
+		// ; | ( $( or ` (ps joins sh -c's line with spaces: x;mysql).
+		if !argvUserOpt[prev] {
+			mysql = mysql || argvMySQL.MatchString(v)
+			curl = curl || argvCurl.MatchString(v)
+		}
 		prev = v
 		out = append(out, a)
 	}
-	return MaskSecrets(strings.Join(out, " "))
+	return maskJoinedArgv(strings.Join(out, " "))
+}
+
+// maskJoinedArgv masks the joined arguments with every rule but the four a
+// command line's own password is found by in text (mysql's -p, --password,
+// curl's -u): each argument was judged by its place above, and in text
+// they would read psql -U mysql -p5432 as mysql's password again.
+func maskJoinedArgv(s string) string {
+	for _, r := range secretRules {
+		if !argvTextRule(r.re.String()) {
+			s = replaceOutsideSudoTags(s, r.re, r.repl)
+		}
+	}
+	return s
+}
+
+func argvTextRule(src string) bool {
+	return strings.Contains(src, "(?i:(?:mysql(") || strings.Contains(src, "(?i:(?:curl|wget)") || strings.HasPrefix(src, `(--pass(?:word|wd)\s+)`)
 }
 
 // SplitWinCmdline splits a Windows command line at spaces and tabs outside
-// double quotes, each argument as written (its quotes kept). A quote after
-// a backslash does not open or close one.
+// double quotes, each argument as written (its quotes kept). As Windows
+// reads it (CommandLineToArgvW), a quote after an odd number of
+// backslashes is a literal one, after an even number (none, or \\ as in
+// "C:\dir\\") it opens or closes a quoted part (S-286-9).
 func SplitWinCmdline(s string) []string {
 	var out []string
 	var b strings.Builder
 	quoted := false
+	bs := 0 // backslashes just before
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {
-		case c == '"' && (i == 0 || s[i-1] != '\\'):
+		case c == '"' && bs%2 == 0:
 			quoted = !quoted
 			b.WriteByte(c)
 		case (c == ' ' || c == '\t') && !quoted:
@@ -86,6 +114,11 @@ func SplitWinCmdline(s string) []string {
 			}
 		default:
 			b.WriteByte(c)
+		}
+		if c == '\\' {
+			bs++
+		} else {
+			bs = 0
 		}
 	}
 	if b.Len() > 0 {

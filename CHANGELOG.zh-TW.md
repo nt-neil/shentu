@@ -33,6 +33,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - PHP 規則：Symfony request 的 body（`$request->getContent()`、`$request->toArray()`）在同一個函式裡寫進 SQL 時會回報，當成 ORDER BY 欄位也會。
 - PHP 規則：用 `fgetcsv()` 讀出的欄位（例如使用者上傳的 CSV 檔）沒加 `['allowed_classes' => false]` 就傳給 `unserialize()` 時會回報。
 - 新的 JavaScript 規則 `js-file-upload-client-name-write`：上傳的檔案用 `fs.createWriteStream()`、`fs.writeFile()`、`fs.writeFileSync()` 或 `fs.promises.writeFile()`，以用戶端送來的名稱（multer 的 `file.originalname`）寫入時會回報。express-fileupload 的 `.name` 不在範圍內。
+- route 模型可以指定註冊呼叫的 hook 名稱（`hooks`）：第一個參數必須是其中一個名稱、而且直接寫成一個字串，這個呼叫才算數；寫成變數、常數或串接字串的都不算。`path` 和 `hooks` 不能同時使用。
+- PHP 規則：Elementor 傳給 `elementor/editor/after_save` callback 的第二個參數（存檔時頁面上每個區塊和 widget 的設定，contributor 以上的角色就能寫入）現在當成 request 輸入。以前從這裡的 widget 設定讀出網址再去抓取（`getimagesize()`）時，不會回報。
 - cvebench 預設改用和 app_code_audit 相同的掃描方式（`-scanpath product`）：先逐檔掃描，再追蹤跨檔呼叫，兩者的結果合併。以前它直接用跨檔呼叫來判斷每條流向（`Project.Scan`，現在是 `-scanpath project`），所以檢查寫在另一個檔案時，結果會被拿掉，但 app_code_audit 仍然會顯示。規則沒有改變；bench 的修正版誤報通常會變多，數字更接近使用者實際看到的（用 v0.5.8 的案例量測，結果是少報 0）。報告最前面會寫明掃描方式和專案的上限。
 - bench：比較用的基準改用和 app_code_audit 相同的掃描方式（`-scanpath product`）重新量測（cves 是 `baseline.md`，另外新增 `baseline-holdout.md`、`baseline-cves-ts.md`）；先前的基準是第一次量測，只有 59 案，逐檔掃描。
 
@@ -40,6 +42,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 - 直接寫在指令參數裡的密碼，下面幾種情況不會遮：密碼全是 JSON 標點（`, : { } [ ]` 和空白）；密碼裡空白之後的部分（command line 是用空白把 argv 接起來的；在 shell 指令行裡加了引號的會整段遮掉）；log 或 shell 的指令紀錄裡，沒有引號的 `;`、`|`、`&` 之後的部分；分成多行寫出的 JSON argv，或前面的字串裡有 `]` 的 JSON argv；以及其他程式的密碼參數（`sshpass -p`、`redis-cli -a`、`ldapsearch -w`、`smbclient -U user%<密碼>`、`mongosh -p`、`htpasswd -b`、curl 的 `--pass` 和 `-E cert:<密碼>`）。
 - 有些檢查讀進來的文字仍然是先遮過的：指令的輸出（套件、防火牆規則、macOS 的 listener 和帳號）、PHP error log 和 journald 的訊息（L3），以及 Windows 的排程工作、服務路徑、登錄檔的值和 event data。
+- 一般文字裡（log、shell 的指令紀錄、cron），如果 `mysql` 是傳給參數的使用者名稱（`--user mysql -p5432`、`psql -U mysql -p5432`），會被當成程式名稱，後面的 `-p` 也會被遮掉；行程的 command line 是一個參數一個參數判斷的，不會這樣。
 - log_search 比對的是遮過的文字，被遮罩遮住的內容找不到。如果改成比對原文，從每一次有沒有比對到，就能一點一點試出被遮掉的密碼。
 - 錄下來的 fixture 只存遮過的文字，所以用 fixture 重放時，檢查的判斷可能和在主機上直接跑不一樣：例如參數被遮罩遮住的挖礦程式，以及攻擊偵測拿到的 error log 證據可能比較少（error log 或 journald 訊息裡的位置被遮罩遮住時）。
 - 轉址目標的檢查寫在另一個檔案時（例如 Tornado base class 的 `self.sanitize_next_url()`），仍然會回報：app_code_audit 先逐檔讀，跨檔追蹤看到檢查之後，那筆結果也不會拿掉。
@@ -51,6 +54,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 對輸入 `extract()` 之後，它設定的變數讀屬性（`$cfg->path`）不算輸入，因為 request 資料只會設定字串和 array。`extract((array) json_decode($in))` 和 `extract(get_object_vars(json_decode($in)))` 可能設定物件，它的屬性是輸入，這兩種會漏報。
 - `reference` 規則有幾種寫法判斷不準：指令其實整行寫在程式裡，但拆成幾個中間沒有 `+` 的字串（`os.system('ls ' '-l')`，Python 會自動接成一個），或用 `' '.join()` 接起全是字面值的串列，仍然會報；屬性形式的物件（`h.env.from_string(s)`）只看名稱判斷，就算檔案裡寫了 `h.env = Engine()` 也一樣；`import os as o` 之後的 `o.system(cmd)`，以及換了名稱 import 的函式（`from hashlib import md5 as m` 之後的 `m(x)`），不會報。
 - 在非 Windows 的機器上 replay Windows 主機的記錄時，code audit 的 ASP 檢查、web root 的 ACL 檢查，以及不分大小寫的路徑比對，都還沒有打開，app_vulns 和 app_code_audit 的 path 參數，除非和某個 app path 完全相同，否則會被拒絕（v0.5.9 處理）。
+- route 模型只在註冊它的那個檔案裡找 handler：`elementor/editor/after_save` 的 callback 如果寫在另一個檔案（hook 寫在外掛主檔、函式寫在 include 裡），就不會被當成 handler，那裡的抓取也不會回報。其他 route 模型也有同樣的限制。
 
 ## v0.5.7 — 2026-11-26
 

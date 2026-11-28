@@ -34,14 +34,26 @@ func TestMaskCommandArgs(t *testing.T) {
 		// a , or \ in a value is masked with it, an unquoted ; | & ends it (the
 		// next command's); a quoted value is masked to its closing quote; a
 		// JSON string that ends right after -p keeps its line's shape
-		"mysql -pab,cd\\,ef" + s + " shop":            "mysql -p[REDACTED] shop",
-		"mysql -pab" + s + ";rm -rf /tmp/x":           "mysql -p[REDACTED];rm -rf /tmp/x",
-		"mysql -pab\\ " + s + " db":                   "mysql -p[REDACTED] db",
-		"mysql -p\"" + s + " x\"; echo done":          "mysql -p[REDACTED]; echo done",
-		"mysql -p'" + s + "' && " + dl + " https://x": "mysql -p[REDACTED] && " + dl + " https://x",
-		`{"msg":"mysql -p","ip":"192.0.2.9"}`:         `{"msg":"mysql -p","ip":"192.0.2.9"}`,
-		`{"msg":"tool --password ","ip":"192.0.2.9"}`: `{"msg":"tool --password ","ip":"192.0.2.9"}`,
-		"tool --password a\\,b" + s + " next":         "tool --password [REDACTED] next",
+		"mysql -pab,cd\\,ef" + s + " shop":  "mysql -p[REDACTED] shop",
+		"mysql -pab" + s + ";rm -rf /tmp/x": "mysql -p[REDACTED];rm -rf /tmp/x",
+		// N-286-5: the program after ; | & ( ` $( in shell text, and in a
+		// cron line, a shell script and a shell's history
+		"x;mysql -p" + s + " db":                         "x;mysql -p[REDACTED] db",
+		"(mysql -p" + s + ")":                            "(mysql -p[REDACTED]",
+		"`mysql -p" + s + "`":                            "`mysql -p[REDACTED]",
+		"$(mysql -p" + s + ")":                           "$(mysql -p[REDACTED]",
+		"mysql -pab)" + s + " db":                        "mysql -p[REDACTED] db",
+		"echo|mysql -p" + s + " db":                      "echo|mysql -p[REDACTED] db",
+		"0 3 * * * root out=$(mysqldump -p" + s + " db)": "0 3 * * * root out=$(mysqldump -p[REDACTED] db)",
+		"rows=`mysql -p" + s + " -e \"select 1\"`":       "rows=`mysql -p[REDACTED] -e \"select 1\"`",
+		"cat dump.sql|mysql -p" + s + " shop":            "cat dump.sql|mysql -p[REDACTED] shop",
+		"{ " + dl + " -u bob:" + s + " https://x; }":     "{ " + dl + " -u bob:[REDACTED] https://x; }",
+		"mysql -pab\\ " + s + " db":                      "mysql -p[REDACTED] db",
+		"mysql -p\"" + s + " x\"; echo done":             "mysql -p[REDACTED]; echo done",
+		"mysql -p'" + s + "' && " + dl + " https://x":    "mysql -p[REDACTED] && " + dl + " https://x",
+		`{"msg":"mysql -p","ip":"192.0.2.9"}`:            `{"msg":"mysql -p","ip":"192.0.2.9"}`,
+		`{"msg":"tool --password ","ip":"192.0.2.9"}`:    `{"msg":"tool --password ","ip":"192.0.2.9"}`,
+		"tool --password a\\,b" + s + " next":            "tool --password [REDACTED] next",
 		// a quoted value starting with JSON punctuation is still a value; a
 		// quoted segment after other characters is the same word
 		"tool --password \",ab" + s + "\" next":                       "tool --password [REDACTED] next",
