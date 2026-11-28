@@ -136,7 +136,7 @@ type ngxInstall struct {
 // error, its output kept (dpkg-query's "config-files").
 var (
 	ngxRun = func(ctx context.Context, argv []string) ([]byte, error) {
-		res, err := hostSource().Run(ctx, argv)
+		res, err := hostSource().Run(ctx, argv) // masked: package metadata, its fields kept as output (N-293-1)
 		if err == nil && res.ExitCode != 0 {
 			err = fmt.Errorf("%s exited %d", argv[0], res.ExitCode)
 		}

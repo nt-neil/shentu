@@ -143,6 +143,11 @@ Chinese for the zh-TW pages; keep the two in step.
   refspec (`git push -u main:main`) or `tar -pcf` after it is left. `-P 3306`, `docker run -p
   8080:80`, the `mysqld` and `mariadbd` daemons' `-port=`, `--password-file=/path` and a bare `-p`
   are left as they are.
+- The host survey parses commands' output as written, not masked first (packages and rpm vendors,
+  the firewall's rules, macOS's platform, accounts, processes, listeners, pf and protections): an unclosed private key marker in one process's path, or in
+  an iptables rule's comment, no longer hides the processes or rules after it. The output is
+  parsed as written; the fields kept from it are masked, and so is a command's error text in a
+  message. nginx's and PHP's package queries are read masked (the package manager's text).
 - The cryptominer check matches a process's command line as written (Linux, macOS, Windows): a
   renamed miner whose options follow a password the mask takes whole (`mysql -p' -o stratum+tcp://…
   '`) is still found. Its evidence, and what the model is given, stay masked.
@@ -230,9 +235,8 @@ Chinese for the zh-TW pages; keep the two in step.
   another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
   `-E cert:<secret>`).
-- Some checks still read texts masked when read in: commands' output (packages, the firewall's
-  rules, macOS's listeners and accounts), and on Windows event data (each field masked on its
-  own; log_search's text of an event is masked field by field, then once more as a line
+- Some checks still read texts masked when read in: on Windows event data (each field masked on
+  its own; log_search's text of an event is masked field by field, then once more as a line
   for a secret named in one field and given in the next).
 - A user's name of `mysql` given to an option in text (a log line, a shell's history, a cron line:
   `--user mysql -p5432`, `psql -U mysql -p5432`) is read as the program, and the `-p` after it is

@@ -64,7 +64,7 @@ func (c DarwinCollector) Collect(ctx context.Context, src Source) *Facts {
 	f := NewFacts(c.Name(), CollectorVersion, info.RecordedAt)
 	f.Privilege = OK(Privilege{Elevated: info.Elevated})
 	var sysctl []string
-	if r, err := src.Run(ctx, macSysctlArgv); err == nil && r.ExitCode == 0 {
+	if r, err := RunUnmasked(ctx, src, macSysctlArgv); err == nil && r.ExitCode == 0 {
 		sysctl = strings.Split(strings.TrimSpace(string(r.Stdout)), "\n")
 	}
 	f.Platform = c.Platform(ctx, src, sysctl)
@@ -132,7 +132,7 @@ func (DarwinCollector) Platform(ctx context.Context, src Source, sysctl []string
 		err = rerr
 	}
 	if p.Version == "" {
-		r, rerr := src.Run(ctx, swVersArgv)
+		r, rerr := RunUnmasked(ctx, src, swVersArgv)
 		if rerr == nil && r.ExitCode == 0 {
 			for _, l := range strings.Split(string(r.Stdout), "\n") {
 				k, v, _ := strings.Cut(l, ":")
@@ -149,6 +149,8 @@ func (DarwinCollector) Platform(ctx context.Context, src Source, sysctl []string
 			err = rerr
 		}
 	}
+	// Read as written; kept masked (N-293-1).
+	p.PrettyName, p.Version, p.Build, p.Kernel = MaskSecrets(p.PrettyName), MaskSecrets(p.Version), MaskSecrets(p.Build), MaskSecrets(p.Kernel)
 	if p.PrettyName == "" {
 		p.PrettyName = "macOS"
 	}
@@ -269,14 +271,14 @@ func (DarwinCollector) Packages(src Source, osVersion string) Obs[PackageSet] {
 // Accounts come from Directory Services (dscl), read-only. Names starting
 // with "_" are system accounts; a shell of false or nologin cannot log in.
 func (DarwinCollector) Accounts(ctx context.Context, src Source) Obs[[]Account] {
-	r, err := src.Run(ctx, dsclUIDArgv)
+	r, err := RunUnmasked(ctx, src, dsclUIDArgv)
 	if err != nil || r.ExitCode != 0 {
 		return unknownFrom[[]Account]("dscl", cmdErr(err, r))
 	}
 	uids := dsclList(r.Stdout)
 	var why []string // what dscl could not tell, and what is not read because of it
 	col := func(argv []string, what string) map[string]string {
-		r, err := src.Run(ctx, argv)
+		r, err := RunUnmasked(ctx, src, argv)
 		if err != nil || r.ExitCode != 0 {
 			why = append(why, what+" unknown ("+cmdErr(err, r).Error()+")")
 			return nil
@@ -286,7 +288,7 @@ func (DarwinCollector) Accounts(ctx context.Context, src Source) Obs[[]Account] 
 	shells := col(dsclShellArgv, "shells")
 	homes := col(dsclHomeArgv, "homes")
 	admins := map[string]bool{}
-	if r, err := src.Run(ctx, dsclAdminArgv); err == nil && r.ExitCode == 0 {
+	if r, err := RunUnmasked(ctx, src, dsclAdminArgv); err == nil && r.ExitCode == 0 {
 		_, list, _ := strings.Cut(string(r.Stdout), ":")
 		for _, n := range strings.Fields(list) {
 			admins[n] = true
@@ -299,6 +301,7 @@ func (DarwinCollector) Accounts(ctx context.Context, src Source) Obs[[]Account] 
 		a := Account{Name: name, UID: uid, Shell: shells[name], Home: homes[name]} // a home may hold spaces
 		a.CanLogin = !strings.HasPrefix(name, "_") && CanLoginShell(a.Shell)
 		a.IsAdmin = uid == "0" || admins[name]
+		a.Name, a.Shell, a.Home = MaskSecrets(a.Name), MaskSecrets(a.Shell), MaskSecrets(a.Home) // judged as written, kept masked
 		out = append(out, a)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -327,14 +330,14 @@ func cmdErr(err error, r CmdResult) error {
 	if err != nil {
 		return err
 	}
-	return fmt.Errorf("exit %d: %s", r.ExitCode, CutString(strings.TrimSpace(r.Stderr), 200))
+	return fmt.Errorf("exit %d: %s", r.ExitCode, CutString(MaskSecrets(strings.TrimSpace(r.Stderr)), 200)) // run unmasked: masked for the message
 }
 
 // Processes come from ps: the executable path (comm), the command line
 // (args, masked) and the elapsed time, which gives the start time against
 // the Source's clock, so a replay gives the same answer anywhere.
 func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time) Obs[[]Process] {
-	r, err := src.Run(ctx, macPsArgv)
+	r, err := RunUnmasked(ctx, src, macPsArgv)
 	if err != nil || r.ExitCode != 0 {
 		return unknownFrom[[]Process]("ps", cmdErr(err, r))
 	}
@@ -399,9 +402,11 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 			continue
 		}
 		comm := l[at:]
-		p := Process{PID: pid, PPID: ppid, UID: f[2], User: f[3], Cmdline: args[pid], RawCmdline: raws[pid], Name: path.Base(comm)}
+		// ps's output is parsed as written; what is kept is masked, the
+		// executable as written too for checks (N-293-1).
+		p := Process{PID: pid, PPID: ppid, UID: f[2], User: MaskSecrets(f[3]), Cmdline: args[pid], RawCmdline: raws[pid], Name: MaskSecrets(path.Base(comm))}
 		if strings.HasPrefix(comm, "/") {
-			p.Exe, p.ExeKnown = comm, true
+			p.Exe, p.RawExe, p.ExeKnown = MaskSecrets(comm), comm, true
 			_, serr := Stat(src, comm)
 			p.ExeExists = serr == nil || errors.Is(serr, ErrNoStat)
 			p.InTemp = MacInTempDir(comm)
@@ -496,7 +501,7 @@ func (c DarwinCollector) Listeners(ctx context.Context, src Source) Obs[[]Listen
 	var unread []string // socket lines netstat wrote that netstatLine does not read
 	var cut []string    // netstat runs cut at the output cap
 	for _, argv := range [][]string{netstatTCPArgv, netstatUDPArgv} {
-		r, err := src.Run(ctx, argv)
+		r, err := RunUnmasked(ctx, src, argv)
 		switch {
 		case errors.Is(err, ErrTruncated): // past the output cap: what was read is kept, and said
 			cut = append(cut, strings.Join(argv, " "))
@@ -542,7 +547,7 @@ func (c DarwinCollector) Listeners(ctx context.Context, src Source) Obs[[]Listen
 				pidField = m[7] // macOS 15: the pid alone, its name from ps below
 			}
 			pid, _ := strconv.Atoi(pidField)
-			ln := Listener{Proto: base, Addr: addr, Port: port, PID: pid, Process: strings.TrimSpace(m[5])}
+			ln := Listener{Proto: base, Addr: addr, Port: port, PID: pid, Process: MaskSecrets(strings.TrimSpace(m[5]))}
 			k := fmt.Sprintf("%s %s %d %d", ln.Proto, ln.Addr, ln.Port, ln.PID)
 			if !seen[k] {
 				seen[k] = true
@@ -592,7 +597,7 @@ func macProcNames(ctx context.Context, src Source, out []Listener) string {
 		return strings.Join(why, "; ")
 	}
 	names := map[int]string{}
-	r, err := src.Run(ctx, macPsArgv)
+	r, err := RunUnmasked(ctx, src, macPsArgv)
 	if err == nil && r.ExitCode == 0 {
 		for _, l := range strings.Split(string(r.Stdout), "\n") {
 			// pid ppid uid user etime comm (comm, a path, may hold spaces)
@@ -610,7 +615,7 @@ func macProcNames(ctx context.Context, src Source, out []Listener) string {
 	missing := 0
 	for i := range out {
 		if out[i].Process == "" && out[i].PID > 0 {
-			out[i].Process = names[out[i].PID]
+			out[i].Process = MaskSecrets(names[out[i].PID])
 			if out[i].Process == "" {
 				missing++
 			}
@@ -630,7 +635,7 @@ func macProcNames(ctx context.Context, src Source, out []Listener) string {
 // P<TCP|UDP>, n<addr:port>. lsof sees only this user's processes unless
 // run as root.
 func (DarwinCollector) lsofListeners(ctx context.Context, src Source, why string) Obs[[]Listener] {
-	r, err := src.Run(ctx, lsofListenArgv)
+	r, err := RunUnmasked(ctx, src, lsofListenArgv)
 	if err != nil || r.ExitCode > 1 { // 1: nothing matched
 		return unknownFrom[[]Listener](why+", and lsof", cmdErr(err, r))
 	}
@@ -672,7 +677,7 @@ func (DarwinCollector) lsofListeners(ctx context.Context, src Source, why string
 					addr = "::"
 				}
 			}
-			ln := Listener{Proto: p, Addr: addr, Port: port, PID: pid, Process: cmd}
+			ln := Listener{Proto: p, Addr: addr, Port: port, PID: pid, Process: MaskSecrets(cmd)}
 			k := fmt.Sprintf("%s %s %d %d", ln.Proto, ln.Addr, ln.Port, ln.PID)
 			if !seen[k] {
 				seen[k] = true
@@ -704,7 +709,7 @@ func sortListeners(out []Listener) {
 // needs root; without it, extra.pf says so and the fact is partial.
 func (DarwinCollector) Firewall(ctx context.Context, src Source) Obs[Firewall] {
 	run := func(argv []string) (string, error) {
-		r, err := src.Run(ctx, argv)
+		r, err := RunUnmasked(ctx, src, argv)
 		if err != nil || r.ExitCode != 0 {
 			return "", cmdErr(err, r)
 		}
@@ -758,7 +763,7 @@ func (DarwinCollector) Protections(ctx context.Context, src Source) Obs[Protecti
 	var p Protections
 	var failed, notes []string
 	run := func(argv []string) (string, bool) { // each command once
-		r, err := src.Run(ctx, argv)
+		r, err := RunUnmasked(ctx, src, argv)
 		if err != nil || r.ExitCode != 0 {
 			failed = append(failed, path.Base(argv[0]))
 			return "", false
@@ -783,7 +788,7 @@ func (DarwinCollector) Protections(ctx context.Context, src Source) Obs[Protecti
 		// "enabled (Custom Configuration)" or "unknown (Custom Configuration)"
 		// lists components; any one off is SIP partly off, so it is not "on".
 		p.Integrity = "off"
-		p.Extra = map[string]string{"sip": CutString(strings.Join(strings.Fields(csr), " "), 400)}
+		p.Extra = map[string]string{"sip": CutString(MaskSecrets(strings.Join(strings.Fields(csr), " ")), 400)}
 		notes = append(notes, "SIP is in a custom configuration (some protections off); see extra.sip")
 	} else {
 		p.Integrity = state(csr, ok, "status: enabled", "status: disabled", "csrutil")
@@ -796,7 +801,7 @@ func (DarwinCollector) Protections(ctx context.Context, src Source) Obs[Protecti
 		if p.Extra == nil {
 			p.Extra = map[string]string{}
 		}
-		p.Extra["filevault"] = strings.TrimSpace(fde)
+		p.Extra["filevault"] = MaskSecrets(strings.TrimSpace(fde))
 	}
 	if len(failed) == 3 {
 		return Unknown[Protections](ReasonCommandFailed, "no answer from "+strings.Join(failed, ", "))
