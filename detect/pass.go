@@ -316,7 +316,7 @@ func entryEvent(e hostenv.JournalEntry, verified bool) (ErrorEvent, bool) {
 	if e.Time.IsZero() || e.MessageMissing {
 		return ErrorEvent{}, false
 	}
-	msg := hostenv.MaskSecrets(e.Message)
+	msg := e.Message // as written, as ErrorEvents parses its lines
 	ev := ErrorEvent{Time: e.Time, Verified: verified, From: JournalKey(e.Unit)}
 	if m := phpLocation("[" + e.Time.UTC().Format("02-Jan-2006 15:04:05") + " UTC] " + strings.TrimPrefix(msg, "PHP message: ")); m != nil {
 		if line, err := strconv.Atoi(m[2]); err == nil {
