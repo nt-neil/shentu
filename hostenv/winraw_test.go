@@ -97,3 +97,46 @@ func TestParseEventTextFieldByField(t *testing.T) {
 		t.Errorf("a typed name or a secret shown: %q", got)
 	}
 }
+
+// S-294-2: a secret named in one field and given in the next is masked by
+// the joined line's pass; that pass leaves out the rules that run across
+// fields, so a key BEGIN and END in two fields hide none between them.
+func TestParseEventTextAcrossFields(t *testing.T) {
+	ev := func(data string) string {
+		return `<Event><System><EventID>7045</EventID><Channel>System</Channel></System><EventData>` + data + `</EventData></Event>`
+	}
+	tok := "tok" + "en0123456789abcdef"
+	got, _ := ParseEventText(ev(`<Data Name="param1">--password</Data><Data Name="param2">hunter2x9</Data>`))
+	if strings.Contains(got, "hunter2x9") {
+		t.Errorf("--password then its value: %q", got)
+	}
+	got, _ = ParseEventText(ev(`<Data Name="Header">Bearer</Data><Data Name="Value">` + tok + `</Data>`))
+	if strings.Contains(got, tok) {
+		t.Errorf("Bearer then its token: %q", got)
+	}
+	got, _ = ParseEventText(ev(`<Data Name="a">x ` + winKeyBegin() + `</Data><Data Name="IpAddress">203.0.113.9</Data><Data Name="b">-----END ` + `RSA PRIVATE KEY-----</Data>`))
+	if !strings.Contains(got, "IpAddress=203.0.113.9") {
+		t.Errorf("a key's BEGIN and END in two fields hid the one between: %q", got)
+	}
+	// A quoted user:password left open in one field (masked there to its
+	// end) would take every field after it in a pass over the line.
+	dl := "cu" + "rl"
+	got, _ = ParseEventText(ev(`<Data Name="a">x ` + dl + ` -u 'bob:hunter2x9</Data><Data Name="IpAddress">203.0.113.9</Data>`))
+	if !strings.Contains(got, "IpAddress=203.0.113.9") || strings.Contains(got, "hunter2x9") {
+		t.Errorf("an open quoted user:password hid the fields after it: %q", got)
+	}
+	// A program at a value's start (the field's name and = before it).
+	got, _ = ParseEventText(ev(`<Data Name="CommandLine">mysql -u root -phunter2x9 db</Data>`))
+	if strings.Contains(got, "hunter2x9") {
+		t.Errorf("a program at a value's start: %q", got)
+	}
+	n := 0
+	for _, r := range secretRules {
+		if acrossFieldsRule(r.re.String()) {
+			n++
+		}
+	}
+	if n != 3 {
+		t.Errorf("%d rules left out of the joined pass, want 3 (two private key, quoted user:password)", n)
+	}
+}

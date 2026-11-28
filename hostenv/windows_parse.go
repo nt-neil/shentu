@@ -225,9 +225,10 @@ func ParseEventText(s string) (string, error) {
 		}
 		// Each field masked on its own (S-294-1): an unclosed key BEGIN in
 		// one a client sent (a logon's names) masked every field after it,
-		// the source address among them. Name and value together, so a
-		// field named for a secret is masked as key=value.
-		b.WriteString(" " + MaskSecrets(name+"="+value))
+		// the source address among them. The value first (a program at its
+		// start: "curl -u ..."), then name and value together (a field named
+		// for a secret, as key=value).
+		b.WriteString(" " + MaskSecrets(name+"="+MaskSecrets(value)))
 	}
 	for _, d := range x.EventData.Data {
 		field(d.Name, d.Value)
@@ -235,7 +236,26 @@ func ParseEventText(s string) (string, error) {
 	for _, d := range x.UserData.Inner.Fields {
 		field(d.XMLName.Local, d.Value)
 	}
-	return b.String(), nil
+	return maskJoinedEvent(b.String()), nil
+}
+
+// maskJoinedEvent masks an event's joined fields once more (S-294-2): a
+// secret named in one field and given in the next ("--password" then the
+// value, "Bearer" then the token). It leaves out the rules that can run
+// across fields to hide the ones between or after (a private key's BEGIN
+// to its END or to the line's end, a quoted user:password to the line's
+// end): each field had those on its own above.
+func maskJoinedEvent(s string) string {
+	for _, r := range secretRules {
+		if !acrossFieldsRule(r.re.String()) {
+			s = replaceOutsideSudoTags(s, r.re, r.repl)
+		}
+	}
+	return s
+}
+
+func acrossFieldsRule(src string) bool {
+	return strings.Contains(src, "PRIVATE KEY") || strings.HasSuffix(src, `[^"'\n]*`)
 }
 
 type taskXML struct {
