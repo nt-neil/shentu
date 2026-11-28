@@ -143,6 +143,11 @@ Chinese for the zh-TW pages; keep the two in step.
   refspec (`git push -u main:main`) or `tar -pcf` after it is left. `-P 3306`, `docker run -p
   8080:80`, the `mysqld` and `mariadbd` daemons' `-port=`, `--password-file=/path` and a bare `-p`
   are left as they are.
+- The host survey parses commands' output as written, not masked first (packages and rpm vendors,
+  the firewall's rules, macOS's platform, accounts, processes, listeners, pf and protections,
+  nginx's and PHP's package queries): an unclosed private key marker in one process's path, or in
+  an iptables rule's comment, no longer hides the processes or rules after it. What is kept from
+  the output is parsed fields; a command's error text in a message is masked.
 - The cryptominer check matches a process's command line as written (Linux, macOS, Windows): a
   renamed miner whose options follow a password the mask takes whole (`mysql -p' -o stratum+tcp://…
   '`) is still found. Its evidence, and what the model is given, stay masked.
@@ -222,9 +227,8 @@ Chinese for the zh-TW pages; keep the two in step.
   another program's option (`sshpass -p`, `redis-cli -a`, `ldapsearch -w`,
   `smbclient -U user%<secret>`, `mongosh -p`, `htpasswd -b`, curl's `--pass` and
   `-E cert:<secret>`).
-- Some checks still read texts masked when read in: commands' output (packages, the firewall's
-  rules, macOS's listeners and accounts), PHP error logs and journald's messages (L3), and on
-  Windows scheduled tasks, services' paths, registry values and event data.
+- Some checks still read texts masked when read in: PHP error logs and journald's messages (L3),
+  and on Windows scheduled tasks, services' paths, registry values and event data.
 - In text (a log line, a shell's history, a cron line), a user's name of `mysql` given to an option
   (`--user mysql -p5432`, `psql -U mysql -p5432`) is read as the program, and the `-p` after it is
   masked; a process's command line, judged argument by argument, is not.
