@@ -31,6 +31,19 @@ type RegValue struct {
 	Strings []string `json:"strings,omitempty"`
 	Int     uint64   `json:"int,omitempty"`
 	Bytes   []byte   `json:"bytes,omitempty"`
+
+	// Raw and RawStrings are String and Strings as written, for checks
+	// only (N-286-1); never output, empty from a fixture (masked there).
+	Raw        string   `json:"-"`
+	RawStrings []string `json:"-"`
+}
+
+// text is the value a check reads: as written when the source gave it so.
+func (r RegValue) text() string {
+	if r.Raw != "" {
+		return r.Raw
+	}
+	return r.String
 }
 
 // MaxRegBinary caps a REG_BINARY value; the collector only needs FILETIMEs.
@@ -53,7 +66,7 @@ func RedactRegValues(v map[string]RegValue) map[string]RegValue {
 		n := strings.ToLower(name)
 		for _, s := range secretValueNames {
 			if strings.Contains(n, s) {
-				v[name] = RegValue{Type: r.Type, String: "[REDACTED]"}
+				v[name] = RegValue{Type: r.Type, String: "[REDACTED]"} // Raw blanked too
 				break
 			}
 		}
@@ -119,12 +132,22 @@ type WinFirewallProfile struct {
 type WinService struct {
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name,omitempty"`
-	BinaryPath  string `json:"binary_path,omitempty"`
-	StartType   string `json:"start_type,omitempty"` // boot, system, auto, manual, disabled
-	State       string `json:"state,omitempty"`      // running, stopped, …
+	BinaryPath  string `json:"binary_path,omitempty"` // masked
+	StartType   string `json:"start_type,omitempty"`  // boot, system, auto, manual, disabled
+	State       string `json:"state,omitempty"`       // running, stopped, …
 	Account     string `json:"account,omitempty"`
 	PID         int    `json:"pid,omitempty"`
 	ConfigErr   string `json:"config_err,omitempty"` // why the config could not be read (errCode)
+	rawBinary   string // BinaryPath as written, for checks only (N-286-1)
+}
+
+// Binary is the service's command line a check reads: as written when the
+// source gave it so (rawBinary), else the masked one (a fixture).
+func (s WinService) Binary() string {
+	if s.rawBinary != "" {
+		return s.rawBinary
+	}
+	return s.BinaryPath
 }
 
 // WinProcess is one Toolhelp32 entry, with the image path, owner and
@@ -298,7 +321,11 @@ func (c WindowsCollector) Collect(ctx context.Context, src Source) *Facts {
 	return f
 }
 
+// regString is a value as output: masked. regRaw is the same value as
+// written, for a check only (N-286-1).
 func regString(v map[string]RegValue, name string) string { return v[name].String }
+
+func regRaw(v map[string]RegValue, name string) string { return v[name].text() }
 
 func regInt(v map[string]RegValue, name string, def uint64) uint64 {
 	r, ok := v[name]
@@ -308,7 +335,7 @@ func regInt(v map[string]RegValue, name string, def uint64) uint64 {
 	if r.Type == "DWORD" || r.Type == "QWORD" {
 		return r.Int
 	}
-	if n, err := strconv.ParseUint(r.String, 10, 64); err == nil {
+	if n, err := strconv.ParseUint(r.text(), 10, 64); err == nil {
 		return n
 	}
 	return def
@@ -330,7 +357,7 @@ func winPlatform(ws WinSource, info SourceInfo) Obs[Platform] {
 		p.Build += "." + strconv.FormatUint(ubr, 10)
 	}
 	p.Kernel = p.Build
-	typ := regString(v, "InstallationType") // Server, Server Core, Client
+	typ := regRaw(v, "InstallationType") // Server, Server Core, Client
 	p.ServerCore = typ == "Server Core"
 	p.Family = "windows-client"
 	if strings.HasPrefix(typ, "Server") {
@@ -451,7 +478,7 @@ func winServices(svcs []WinService, err error) Obs[[]Service] {
 		if s.ConfigErr != "" {
 			unread++
 		}
-		out = append(out, Service{Name: s.Name, Exe: ServiceImage(s.BinaryPath), StartMode: s.StartType, State: s.State, RunAs: s.Account})
+		out = append(out, Service{Name: s.Name, Exe: MaskSecrets(ServiceImage(s.Binary())), StartMode: s.StartType, State: s.State, RunAs: s.Account})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	if unread > 0 {
@@ -748,7 +775,7 @@ func winPersistence(ws WinSource, svcs []WinService, svcErr error) Obs[[]Persist
 			add(PersistenceItem{Kind: "run_key", Location: KeyWinlogon + `\` + name, Command: regText(r), Detail: "winlogon"})
 		}
 	}
-	if v := values(KeyWindowsNT); strings.TrimSpace(regString(v, "AppInit_DLLs")) != "" {
+	if v := values(KeyWindowsNT); strings.TrimSpace(regRaw(v, "AppInit_DLLs")) != "" {
 		detail := "appinit_dlls"
 		if regInt(v, "LoadAppInit_DLLs", 0) == 0 {
 			detail += " (LoadAppInit_DLLs=0)"
@@ -758,7 +785,7 @@ func winPersistence(ws WinSource, svcs []WinService, svcErr error) Obs[[]Persist
 	ifeo, err := ws.RegSubkeys(KeyIFEO)
 	note(KeyIFEO, err)
 	for _, exe := range ifeo {
-		if v := values(KeyIFEO + `\` + exe); regString(v, "Debugger") != "" {
+		if v := values(KeyIFEO + `\` + exe); regRaw(v, "Debugger") != "" {
 			add(PersistenceItem{Kind: "run_key", Location: KeyIFEO + `\` + exe + `\Debugger`, Command: regString(v, "Debugger"), Detail: "ifeo"})
 		}
 	}
@@ -775,7 +802,7 @@ func winPersistence(ws WinSource, svcs []WinService, svcErr error) Obs[[]Persist
 		if s.Account != "" {
 			detail += " as " + s.Account
 		}
-		if UnquotedServicePath(s.BinaryPath) {
+		if UnquotedServicePath(s.Binary()) {
 			detail += "; unquoted path with spaces"
 		}
 		add(PersistenceItem{Kind: "service", Location: "service:" + s.Name, Command: s.BinaryPath, Detail: detail})
@@ -810,18 +837,18 @@ func winPersistence(ws WinSource, svcs []WinService, svcErr error) Obs[[]Persist
 		if !strings.HasPrefix(sid, "S-1-5-21-") {
 			continue
 		}
-		if home := regString(values(KeyProfileList+`\`+sid), "ProfileImagePath"); home != "" {
+		if home := regRaw(values(KeyProfileList+`\`+sid), "ProfileImagePath"); home != "" {
 			startup = append(startup, home+`\`+winStartupPerUser)
 		}
 	}
-	for _, dir := range startup {
+	for _, dir := range startup { // a home as written (regRaw): masked where it is output
 		names, err := ws.ReadDir(dir)
-		note(dir, err)
+		note(MaskSecrets(dir), err)
 		for _, n := range names {
 			if strings.EqualFold(n, "desktop.ini") {
 				continue
 			}
-			add(PersistenceItem{Kind: "startup_folder", Location: dir + `\` + n})
+			add(PersistenceItem{Kind: "startup_folder", Location: MaskSecrets(dir + `\` + n)})
 		}
 	}
 
@@ -928,7 +955,7 @@ func (WindowsCollector) Web(src Source) Obs[Web] {
 func winWeb(ws WinSource, svcs []WinService, svcErr error) Obs[Web] {
 	root := `C:\Windows`
 	if v, err := ws.RegValues(KeyCurrentVersion); err == nil {
-		if r := strings.TrimRight(regString(v, "SystemRoot"), `\`); r != "" {
+		if r := strings.TrimRight(regRaw(v, "SystemRoot"), `\`); r != "" {
 			root = r
 		}
 	}
@@ -975,7 +1002,7 @@ func IISFastCGI(src Source) ([]string, error) {
 	}
 	root := `C:\Windows`
 	if v, err := ws.RegValues(KeyCurrentVersion); err == nil {
-		if r := strings.TrimRight(regString(v, "SystemRoot"), `\`); r != "" {
+		if r := strings.TrimRight(regRaw(v, "SystemRoot"), `\`); r != "" {
 			root = r
 		}
 	}

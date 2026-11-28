@@ -299,7 +299,13 @@ func ParseTaskXML(path string, b []byte) (WinTask, error) {
 		t.Actions = append(t.Actions, capCmdline(cmd))
 	}
 	for _, c := range x.Actions.ComHandler {
-		t.Actions = append(t.Actions, "com:"+strings.TrimSpace(c.ClassID))
+		t.Actions = append(t.Actions, "com:"+MaskSecrets(strings.TrimSpace(c.ClassID)))
+	}
+	// The XML is read as written (a mask first could break it); what
+	// leaves is masked: the actions above, the account and the triggers.
+	t.RunAs = MaskSecrets(t.RunAs)
+	for i := range t.Triggers {
+		t.Triggers[i] = MaskSecrets(t.Triggers[i])
 	}
 	return t, nil
 }

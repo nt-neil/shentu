@@ -116,7 +116,7 @@ var (
 		if ws, ok := phpSource().(hostenv.WinSource); ok {
 			if svcs, err := ws.Services(); err == nil {
 				for _, s := range svcs {
-					bins = append(bins, s.BinaryPath)
+					bins = append(bins, s.Binary()) // as written, for the check
 				}
 			}
 		}
