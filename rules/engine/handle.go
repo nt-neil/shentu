@@ -84,9 +84,9 @@ func buildHandleProps(toks []Token, raws []string, ps []*pat) *handleProps {
 	for _, r := range raws {
 		n := strings.TrimSuffix(r, "(")
 		n = n[strings.LastIndexAny(n, ".>:")+1:]
-		names[n] = true
+		names[strings.ToLower(n)] = true // PHP function names are not case sensitive (FSOCKOPEN()), as the patterns fold them
 	}
-	if !slices.ContainsFunc(toks, func(t Token) bool { return t.Kind == Ident && names[t.Text] }) {
+	if !slices.ContainsFunc(toks, func(t Token) bool { return t.Kind == Ident && names[strings.ToLower(t.Text)] }) {
 		return &handleProps{} // no receiver in the file: no table, and assignments in it are not recorded
 	}
 	h := &handleProps{props: map[string][]string{}, mention: true}
